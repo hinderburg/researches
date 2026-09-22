@@ -66,13 +66,19 @@ select, input[type=text] { background: var(--panel2); color: var(--text); border
 #hand-area { display: flex; flex-direction: column; gap: 5px; }
 #prompt { font-size: 14px; min-height: 20px; text-align: center; }
 #hand-title { text-align: center; font-size: 12px; }
-#hand { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.card { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 7px 7px 8px; min-height: 96px; cursor: pointer; user-select: none; position: relative; }
+#hand { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.card { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 7px 7px 8px; min-height: 96px; min-width: 0; overflow: hidden; cursor: pointer; user-select: none; position: relative; }
 .card:hover { border-color: #6a6a78; }
 .card.selected { border-color: var(--accent); background: #2b2716; box-shadow: 0 0 0 1px var(--accent); }
 .card.disabled { opacity: .35; cursor: default; }
 .card.poi { border-style: dashed; }
 .card.hidden-card { visibility: hidden; }
+.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; }
+.card-icon { flex: 0 0 auto; color: #fff; }
+.card-icon svg { width: 34px; height: 34px; display: block; }
+.card.disabled .card-icon { color: var(--muted); }
+.pick-icon { float: right; margin: -2px -2px 0 6px; color: var(--accent); }
+.pick-icon svg { width: 26px; height: 26px; display: block; }
 .card-type { font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .card-name { font-weight: 700; font-size: 13px; line-height: 1.15; margin: 2px 0 4px; }
 .card-text { font-size: 10.5px; line-height: 1.25; color: #cfcac0; }

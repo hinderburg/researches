@@ -49,7 +49,7 @@ window.HB = window.HB || {};
       const grid = el('div', 'pick-grid');
       for (const id of HB.cards.DECK_POOL) {
         const d = CARDS[id], on = sel.cards.includes(id);
-        const c = el('div', 'pick' + (on ? ' on' : '') + (HB.cards.ADVANCED_POOL.includes(id) ? ' adv' : ''), `<div class="pick-name">${d.name}</div><div class="pick-type">${d.type}</div><div class="pick-text">${d.text}</div>`);
+        const c = el('div', 'pick' + (on ? ' on' : '') + (HB.cards.ADVANCED_POOL.includes(id) ? ' adv' : ''), `<div class="pick-icon">${HB.icons.svg(id)}</div><div class="pick-name">${d.name}</div><div class="pick-type">${d.type}</div><div class="pick-text">${d.text}</div>`);
         c.addEventListener('click', () => {
           if (on) sel.cards = sel.cards.filter(x => x !== id); else if (sel.cards.length < CFG.DECK_SIZE) sel.cards.push(id); else return;
           this.renderBuilder(pid); this.validateSetup();
@@ -98,6 +98,7 @@ window.HB = window.HB || {};
         $('#btn-play').addEventListener('click', () => this.commit(null));
         $('#btn-cancel').addEventListener('click', () => this.clearSelection());
         $('#btn-pass').addEventListener('click', () => this.pass());
+        $('#btn-end').addEventListener('click', () => this.endTurn());
         $('#btn-quit').addEventListener('click', () => this.toSetup());
       }
       this.renderer.setState(this.state);
@@ -132,8 +133,9 @@ window.HB = window.HB || {};
       const s = this.state, move = HB.ai.choose(s);
       this.renderer.prevPos = this.positions();
       this.lastActor = s.current;
-      if (move.pass) { if (move.uid != null) R.passTurn(s, move.uid); else s.turnIndex++; }
-      else R.playCard(s, move.uid, move.choice);
+      if (move.end) R.endTurn(s);
+      else if (move.pass) { if (!R.passTurn(s, move.uid)) { s.playedThisTurn = 1; R.endTurn(s); } }
+      else if (!R.playCard(s, move.uid, move.choice)) { if (!R.endTurn(s)) { s.playedThisTurn = 1; R.endTurn(s); } }
       this.afterAction();
     },
     afterAction() {
@@ -165,7 +167,7 @@ window.HB = window.HB || {};
         const d = CARDS[card.def];
         const play = R.getPlay(s, card);
         const c = el('div', 'card' + (play.ok ? '' : ' disabled') + (this.selected === card.uid ? ' selected' : '') + (card.poi >= 0 ? ' poi' : ''),
-          `<div class="card-type">${d.type}${card.poi >= 0 ? ' · POI' : ''}</div><div class="card-name">${d.name}</div><div class="card-text">${d.text}</div>`);
+          `<div class="card-head"><div><div class="card-type">${d.type}${card.poi >= 0 ? ' · POI' : ''}</div><div class="card-name">${d.name}</div></div><div class="card-icon">${HB.icons.svg(card.def)}</div></div><div class="card-text">${d.text}</div>`);
         if (hideHand) c.classList.add('hidden-card');
         c.addEventListener('click', () => this.onCardClick(card.uid));
         hand.appendChild(c);
@@ -175,7 +177,10 @@ window.HB = window.HB || {};
       const busy = this.busy || p.bot || s.phase !== 'play';
       $('#btn-play').hidden = busy || !this.selected || !!(this.play && this.play.options);
       $('#btn-cancel').hidden = busy || !this.selected;
-      $('#btn-pass').hidden = busy || !this.selected;
+      $('#btn-pass').hidden = busy || !this.selected || s.playedThisTurn > 0;
+      $('#btn-end').hidden = busy || this.handoverPending;
+      $('#btn-end').disabled = s.playedThisTurn < 1;
+      $('#btn-end').classList.toggle('primary', s.playedThisTurn >= 1 && !this.selected);
       $('#choice-row').innerHTML = '';
       if (!busy && this.selected && this.play && this.play.options && this.play.optionsUI === 'buttons') {
         for (const o of this.play.options) {
@@ -191,7 +196,8 @@ window.HB = window.HB || {};
       if (s.phase !== 'play') return 'Матч окончен.';
       if (p.bot) return `${p.name} думают…`;
       if (busy) return '…';
-      if (!this.selected) return 'Выберите карту.';
+      const n = s.playedThisTurn;
+      if (!this.selected) return n ? `Сыграно карт: ${n}. Выберите ещё карту или завершите ход.` : 'Выберите карту (за ход можно сыграть несколько, минимум одну).';
       const d = CARDS[this.selectedCard().def];
       switch (d.kind) {
         case 'pivot': return 'Выберите новое направление на поле.';
@@ -268,6 +274,12 @@ window.HB = window.HB || {};
       if (!ok) { this.clearSelection(); return; }
       this.afterAction();
     },
+    endTurn() {
+      const s = this.state; if (!s || s.playedThisTurn < 1 || this.busy) return;
+      this.renderer.prevPos = this.positions();
+      this.lastActor = s.current;
+      if (R.endTurn(s)) this.afterAction();
+    },
     pass() {
       const s = this.state; if (!this.selected) return;
       this.renderer.prevPos = this.positions();
@@ -300,7 +312,8 @@ window.HB = window.HB || {};
     showHelp() {
       const ov = $('#overlay'); ov.hidden = false;
       ov.innerHTML = `<div class="panel help"><h2>Как играть</h2>
-        <p>Каждый ход: рука добирается до 4 карт, вы разыгрываете <b>одну</b>. Пройденные гексы окрашиваются в ваш цвет. Если ваши гексы замыкают область, всё внутри становится вашим.</p>
+        <p>В начале хода рука добирается до 4 карт. За ход можно сыграть <b>любое число карт, минимум одну</b>; эффект каждой применяется сразу. Ход завершается кнопкой «Завершить ход». Пройденные гексы окрашиваются в ваш цвет. Если ваши гексы замыкают область, всё внутри становится вашим.</p>
+        <p>Пиктограмма на карте показывает эффект: стрелки — движение (число шевронов = число шагов), круговая стрелка — поворот, фигурки — миньоны, меч — атака, щит — защита, глаз — Overwatch, флаг — очки территории.</p>
         <p><b>POI</b> захватываются проходом через гекс или замыканием контура и дают временную карту в колоду. Потеря POI забирает карту.</p>
         <p><b>Бой</b> начинается автоматически после вашей карты, если противник стоит на соседнем гексе в одном из трёх фронтальных направлений вашего отряда. Урон зависит от того, где вы стоите относительно взгляда противника: фронт ×1.0, фланг (задние диагонали) ×1.25, спина ×1.5.</p>
         <p><b>Победа</b>: уничтожить отряд противника или иметь больше Territory Points после лимита раундов. Тай-брейк: POI → миньоны → захват в последнем раунде.</p>

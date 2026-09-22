@@ -4,7 +4,7 @@ window.HB = window.HB || {};
 (function () {
   const R = HB.rules, hex = HB.hex, CARDS = HB.cards.CARDS, CFG = HB.CONFIG;
 
-  const W = { territory: 1.0, minions: 1.2, poi: 3.0, poiPull: 0.5, threat: 1.0, threatIfMustPivot: 0.5, opportunity: 0.5, noise: 0.6 };
+  const W = { territory: 1.0, minions: 1.2, poi: 3.0, poiPull: 0.5, threat: 1.0, threatIfMustPivot: 0.5, opportunity: 0.5, noise: 0.6, minGain: 0.3 };
 
   function evaluate(s, me) {
     const en = 3 - me, p = s.players[me], e = s.players[en];
@@ -42,12 +42,14 @@ window.HB = window.HB || {};
     return out;
   }
 
-  // Returns { uid, choice } or { pass: true, uid } when nothing is playable.
+  // Returns { uid, choice } for the next card to play, { end: true } to end the turn (D-022: a turn holds any number
+  // of cards; the bot keeps playing while a card improves its evaluation), or { pass: true, uid } when nothing is playable.
   function choose(s) {
-    const me = s.current, base = R.clone(s);
+    const me = s.current, base = R.clone(s), played = s.playedThisTurn;
     const cands = candidates(base);
-    const fallback = { pass: true, uid: s.players[me].hand.length ? s.players[me].hand[0].uid : null };
+    const fallback = played ? { end: true } : { pass: true, uid: s.players[me].hand.length ? s.players[me].hand[0].uid : null };
     if (!cands.length) return fallback;
+    const cur = evaluate(base, me);
     let best = null, bestScore = -Infinity;
     for (const c of cands) {
       const sim = R.clone(base);
@@ -55,7 +57,9 @@ window.HB = window.HB || {};
       const sc = evaluate(sim, me) + (R.rand(sim) - 0.5) * W.noise;
       if (sc > bestScore) { bestScore = sc; best = c; }
     }
-    return best || fallback;
+    if (!best) return fallback;
+    if (played >= 1 && bestScore < cur + W.minGain) return { end: true };
+    return best;
   }
 
   HB.ai = { choose, evaluate, W };

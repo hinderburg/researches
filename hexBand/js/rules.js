@@ -45,7 +45,7 @@ window.HB = window.HB || {};
       version: CFG.VERSION, seed, rng: seed, nextUid: 1,
       cols: CFG.COLS, rows: CFG.ROWS, roundLimit: opts.roundLimit || CFG.ROUND_LIMIT,
       diagonalTurns: !!opts.diagonalTurns,
-      turnIndex: 0, current: 1, phase: 'play', winner: 0, endReason: '', scores: null,
+      turnIndex: 0, current: 1, playedThisTurn: 0, phase: 'play', winner: 0, endReason: '', scores: null,
       cells: {}, pois: [], players: [null, null, null], blocked: {}, paintBuf: [], events: [], log: [],
     };
     for (let c = 0; c < s.cols; c++) for (let r = 0; r < hex.rowsInCol(c, s.rows); r++) {
@@ -370,12 +370,21 @@ window.HB = window.HB || {};
     resolve(s, p, card, def, choice);
     flushPaint(s, p);
     combatCheck(s, p);
+    // D-022: effects apply at once and the card goes to the discard; the turn continues until endTurn().
+    if (p.inPlay) { p.discard.push(p.inPlay); p.inPlay = null; }
+    s.playedThisTurn++;
+    return true;
+  }
+  // D-022: a turn ends on demand, after at least one card was played.
+  function endTurn(s) {
+    if (s.phase !== 'play' || s.playedThisTurn < 1) return false;
     finishTurn(s);
     return true;
   }
   // D-009: a pass discards one card so that a hand full of unplayable cards cannot lock the player.
+  // Only allowed when nothing was played this turn (otherwise use endTurn).
   function passTurn(s, uid) {
-    if (s.phase !== 'play') return false;
+    if (s.phase !== 'play' || s.playedThisTurn > 0) return false;
     const p = s.players[s.current];
     const idx = p.hand.findIndex(c => c.uid === uid);
     if (idx < 0) return false;
@@ -393,6 +402,7 @@ window.HB = window.HB || {};
     s.turnIndex++;
     if (s.turnIndex >= s.roundLimit * 2) { territoryVictory(s); return; }
     s.current = 3 - s.current;
+    s.playedThisTurn = 0;
     if (s.turnIndex % 2 === 0) for (const pid of [1, 2]) { const q = s.players[pid]; q.gainedLastRound = q.gained; q.gained = 0; }
     const np = s.players[s.current];
     draw(s, np, CFG.HAND_SIZE);
@@ -428,6 +438,6 @@ window.HB = window.HB || {};
   function takeEvents(s) { const e = s.events; s.events = []; return e; }
   function clone(s) { const e = s.events, l = s.log; s.events = []; s.log = []; const c = JSON.parse(JSON.stringify(s)); s.events = e; s.log = l; return c; }
 
-  HB.rules = { createGame, playCard, passTurn, getPlay, scoutOptions, takeEvents, clone, territory, cellCount, poiCount, totalCells,
+  HB.rules = { createGame, playCard, endTurn, passTurn, getPlay, scoutOptions, takeEvents, clone, territory, cellCount, poiCount, totalCells,
     scoreboard, round, occupant, isBlocked, active, rand };
 })();

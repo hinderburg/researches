@@ -44,11 +44,13 @@
   function runOne(a, b, seed, rounds, diag) {
     const s = HB.rules.createGame({ seed, roundLimit: rounds, diagonalTurns: diag, players: { 1: { deck: P[a].cards, pois: P[a].pois, bot: true }, 2: { deck: P[b].cards, pois: P[b].pois, bot: true } } });
     HB.rules.takeEvents(s);
-    const r = { fills: 0, filled: 0, attacks: 0, dmg: 0, pois: 0, passes: 0, backstabs: 0, flanks: 0 };
+    const r = { fills: 0, filled: 0, attacks: 0, dmg: 0, pois: 0, passes: 0, backstabs: 0, flanks: 0, cards: 0 };
     let guard = 0;
-    while (s.phase === 'play' && guard++ < 200) {
+    while (s.phase === 'play' && guard++ < 2000) {
       const mv = HB.ai.choose(s);
-      if (mv.pass) { r.passes++; HB.rules.passTurn(s, mv.uid); } else HB.rules.playCard(s, mv.uid, mv.choice);
+      if (mv.end) HB.rules.endTurn(s);
+      else if (mv.pass) { r.passes++; HB.rules.passTurn(s, mv.uid); }
+      else { r.cards++; HB.rules.playCard(s, mv.uid, mv.choice); }
       for (const e of HB.rules.takeEvents(s)) {
         if (e.type === 'fill') { r.fills++; r.filled += e.count; }
         if (e.type === 'poi') r.pois++;
@@ -61,13 +63,13 @@
     const n = rows.length, avg = k => (rows.reduce((x, r) => x + r[k], 0) / n);
     const wins = { 0: 0, 1: 0, 2: 0 }, reasons = {};
     for (const r of rows) { wins[r.winner]++; reasons[r.reason] = (reasons[r.reason] || 0) + 1; }
-    return { n, wins, reasons, t1: avg('t1'), t2: avg('t2'), used: (avg('t1') + avg('t2')) / rows[0].total, m1: avg('m1'), m2: avg('m2'), fills: avg('fills'), filled: avg('filled'), attacks: avg('attacks'), dmg: avg('dmg'), backstabs: avg('backstabs'), flanks: avg('flanks'), pois: avg('pois'), passes: avg('passes'), turns: avg('turns') };
+    return { n, wins, reasons, t1: avg('t1'), t2: avg('t2'), used: (avg('t1') + avg('t2')) / rows[0].total, m1: avg('m1'), m2: avg('m2'), fills: avg('fills'), filled: avg('filled'), attacks: avg('attacks'), dmg: avg('dmg'), backstabs: avg('backstabs'), flanks: avg('flanks'), pois: avg('pois'), passes: avg('passes'), turns: avg('turns'), cardsPerTurn: avg('cards') / Math.max(1, avg('turns')) };
   }
   function renderTable(list) {
     const f = x => (Math.round(x * 100) / 100).toString();
-    let h = '<table><tr><th>Пара</th><th>N</th><th>Синие</th><th>Красные</th><th>Ничьи</th><th>Уничт.</th><th>Терр. С/К</th><th>Поле %</th><th>Миньоны С/К</th><th>Заливок</th><th>Гексов заливкой</th><th>Атак</th><th>Урон</th><th>Фланг/Спина</th><th>POI</th><th>Пропусков</th></tr>';
+    let h = '<table><tr><th>Пара</th><th>N</th><th>Синие</th><th>Красные</th><th>Ничьи</th><th>Уничт.</th><th>Терр. С/К</th><th>Поле %</th><th>Миньоны С/К</th><th>Заливок</th><th>Гексов заливкой</th><th>Атак</th><th>Урон</th><th>Фланг/Спина</th><th>POI</th><th>Пропусков</th><th>Карт/ход</th></tr>';
     for (const { label, s } of list) {
-      h += `<tr><td>${label}</td><td>${s.n}</td><td>${s.wins[1]}</td><td>${s.wins[2]}</td><td>${s.wins[0]}</td><td>${s.reasons.elimination || 0}</td><td>${f(s.t1)} / ${f(s.t2)}</td><td>${Math.round(s.used * 100)}</td><td>${f(s.m1)} / ${f(s.m2)}</td><td>${f(s.fills)}</td><td>${f(s.filled)}</td><td>${f(s.attacks)}</td><td>${f(s.dmg)}</td><td>${f(s.flanks)} / ${f(s.backstabs)}</td><td>${f(s.pois)}</td><td>${f(s.passes)}</td></tr>`;
+      h += `<tr><td>${label}</td><td>${s.n}</td><td>${s.wins[1]}</td><td>${s.wins[2]}</td><td>${s.wins[0]}</td><td>${s.reasons.elimination || 0}</td><td>${f(s.t1)} / ${f(s.t2)}</td><td>${Math.round(s.used * 100)}</td><td>${f(s.m1)} / ${f(s.m2)}</td><td>${f(s.fills)}</td><td>${f(s.filled)}</td><td>${f(s.attacks)}</td><td>${f(s.dmg)}</td><td>${f(s.flanks)} / ${f(s.backstabs)}</td><td>${f(s.pois)}</td><td>${f(s.passes)}</td><td>${f(s.cardsPerTurn)}</td></tr>`;
     }
     $('#result').innerHTML = h + '</table>';
   }
