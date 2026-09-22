@@ -4,7 +4,7 @@ window.HB = window.HB || {};
 (function () {
   const R = HB.rules, hex = HB.hex, CARDS = HB.cards.CARDS, CFG = HB.CONFIG;
 
-  const W = { territory: 1.0, minions: 1.2, poi: 3.0, poiPull: 0.5, threat: 1.0, threatIfMustPivot: 0.5, opportunity: 0.5, noise: 0.6, minGain: 0.3 };
+  const W = { territory: 1.0, minions: 1.2, poi: 3.0, poiPull: 0.5, threat: 1.0, threatIfMustPivot: 0.5, opportunity: 0.5, noise: 0.6, minGain: 0.3, aggression: 5 };
 
   function evaluate(s, me) {
     const en = 3 - me, p = s.players[me], e = s.players[en];
@@ -47,7 +47,13 @@ window.HB = window.HB || {};
     for (const c of cands) {
       const sim = R.clone(base);
       if (!R.playCard(sim, c.uid, c.choice)) continue;
-      const sc = evaluate(sim, me) + (R.rand(sim) - 0.5) * W.noise;
+      let sc = evaluate(sim, me) + (R.rand(sim) - 0.5) * W.noise;
+      // D-045: aggression — an attack that pushes the enemy back (or eliminates it) is worth pressing
+      for (const ev of R.takeEvents(sim)) {
+        if (ev.type !== 'clash' || ev.attacker !== me) continue;
+        if (ev.result === 'defenderRetreats' || (ev.result === 'eliminated' && ev.aAfter > 0)) sc += W.aggression;
+        else if (ev.result === 'attackerRetreats') sc -= W.aggression * 0.5;
+      }
       if (sc > bestScore) { bestScore = sc; best = c; }
     }
     if (!best) return fallback;
