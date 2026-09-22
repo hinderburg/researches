@@ -94,8 +94,8 @@ window.HB = window.HB || {};
             const col = ev.col, row = ev.row, def = ev.defender;
             this.schedule(t, () => {
               this.shake[def] = performance.now();
-              const label = ev.overwatch ? 'ДОЗОР' : ev.zone === 'back' ? 'В СПИНУ!' : ev.zone === 'side' ? 'ВО ФЛАНГ!' : '';
-              if (label) this.addText(col, row, label, ev.zone === 'back' ? '#ffd45a' : '#ffffff', { dy: -this.size * 1.9, big: true, dur: 1400 });
+              const label = ev.overwatch ? 'ДОЗОР' : ev.counter ? 'ОТВЕТНЫЙ УДАР' : '';
+              if (label) this.addText(col, row, label, '#ffd45a', { dy: -this.size * 1.9, big: true, dur: 1400 });
               this.addText(col, row, `−${ev.dmg}`, '#ff6b6b', { dy: -this.size * 0.6, big: true });
             });
             t += 500;
@@ -312,10 +312,6 @@ window.HB = window.HB || {};
       const sh = now - this.shake[p.id];
       if (sh < 350) x += Math.sin(sh / 18) * S * 0.12 * (1 - sh / 350);
       const color = COL[p.id], light = COL[p.id + 'Light'], dark = COL[p.id + 'Dark'];
-      // front arc (derived facing, D-024) — subtle
-      const a = hex.dirAngle(w.facing);
-      ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, S * 1.5, a - Math.PI / 3, a + Math.PI / 3); ctx.closePath();
-      ctx.fillStyle = light; ctx.globalAlpha = 0.16; ctx.fill(); ctx.globalAlpha = 1;
       // shadow
       ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(x, y + S * 0.3, S * 0.55, S * 0.22, 0, 0, Math.PI * 2); ctx.fill();
       // crowd

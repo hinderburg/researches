@@ -28,7 +28,7 @@ window.HB = window.HB || {};
     rally: wrap(minions, '+4'),
     battle_cry: wrap(sword, '+25%'),
     reinforced_formation: wrap(shield + `<path d="M11 13 H21 M11 18 H21"/>`, '×0.7'),
-    rear_assault: wrap(sword + `<path d="M6 10 L10 6 M6 6 L10 10"/>`, '×1.9'),
+    counter: wrap(shield + `<path d="M11 21 L21 11 M17 11 L21 11 L21 15"/>`, '50%'),
     split_march: wrap(arrow(0) + `<path d="M7 27 V14 M25 27 V14"/>`, '×2'),
     warband_reinforcements: wrap(minions, '+7'),
     recruitment: wrap(minions, '+6'),

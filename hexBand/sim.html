@@ -67,9 +67,9 @@
   }
   function renderTable(list) {
     const f = x => (Math.round(x * 100) / 100).toString();
-    let h = '<table><tr><th>Пара</th><th>N</th><th>Синие</th><th>Красные</th><th>Ничьи</th><th>Уничт.</th><th>Терр. С/К</th><th>Поле %</th><th>Миньоны С/К</th><th>Заливок</th><th>Гексов заливкой</th><th>Атак</th><th>Урон</th><th>Фланг/Спина</th><th>POI</th><th>Пропусков</th><th>Карт/ход</th></tr>';
+    let h = '<table><tr><th>Пара</th><th>N</th><th>Синие</th><th>Красные</th><th>Ничьи</th><th>Уничт.</th><th>Терр. С/К</th><th>Поле %</th><th>Миньоны С/К</th><th>Заливок</th><th>Гексов заливкой</th><th>Атак</th><th>Урон</th><th>POI</th><th>Пропусков</th><th>Карт/ход</th></tr>';
     for (const { label, s } of list) {
-      h += `<tr><td>${label}</td><td>${s.n}</td><td>${s.wins[1]}</td><td>${s.wins[2]}</td><td>${s.wins[0]}</td><td>${s.reasons.elimination || 0}</td><td>${f(s.t1)} / ${f(s.t2)}</td><td>${Math.round(s.used * 100)}</td><td>${f(s.m1)} / ${f(s.m2)}</td><td>${f(s.fills)}</td><td>${f(s.filled)}</td><td>${f(s.attacks)}</td><td>${f(s.dmg)}</td><td>${f(s.flanks)} / ${f(s.backstabs)}</td><td>${f(s.pois)}</td><td>${f(s.passes)}</td><td>${f(s.cardsPerTurn)}</td></tr>`;
+      h += `<tr><td>${label}</td><td>${s.n}</td><td>${s.wins[1]}</td><td>${s.wins[2]}</td><td>${s.wins[0]}</td><td>${s.reasons.elimination || 0}</td><td>${f(s.t1)} / ${f(s.t2)}</td><td>${Math.round(s.used * 100)}</td><td>${f(s.m1)} / ${f(s.m2)}</td><td>${f(s.fills)}</td><td>${f(s.filled)}</td><td>${f(s.attacks)}</td><td>${f(s.dmg)}</td><td>${f(s.pois)}</td><td>${f(s.passes)}</td><td>${f(s.cardsPerTurn)}</td></tr>`;
     }
     $('#result').innerHTML = h + '</table>';
   }

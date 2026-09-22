@@ -13,16 +13,9 @@ window.HB = window.HB || {};
       + W.minions * (p.warband.minions - e.warband.minions)
       + W.poi * (R.poiCount(s, me) - R.poiCount(s, en));
     if (hex.distance(p.warband, e.warband) === 1) {
-      const dirMeToEnemy = hex.dirBetween(p.warband, e.warband), dirEnemyToMe = hex.dirBetween(e.warband, p.warband);
-      // what the enemy could deal to me next turn (it may need to pivot first)
-      const zoneOfEnemyOnMe = hex.relZone(p.warband.facing, dirMeToEnemy);
-      const expected = CFG.DMG_PER_MINION * e.warband.minions * CFG.FACING_MOD[zoneOfEnemyOnMe];
-      score -= expected * (hex.inFrontArc(e.warband.facing, dirEnemyToMe) ? W.threat : W.threatIfMustPivot);
-      // what I could deal next turn if I keep facing the enemy
-      if (hex.inFrontArc(p.warband.facing, dirMeToEnemy)) {
-        const zoneOfMeOnEnemy = hex.relZone(e.warband.facing, dirEnemyToMe);
-        score += W.opportunity * CFG.DMG_PER_MINION * p.warband.minions * CFG.FACING_MOD[zoneOfMeOnEnemy];
-      }
+      // D-034: no facing — adjacency means the enemy hits me on its turn and I can hit it on mine
+      score -= W.threat * CFG.DMG_PER_MINION * e.warband.minions;
+      score += W.opportunity * CFG.DMG_PER_MINION * p.warband.minions;
     }
     let nearest = 99;
     for (const poi of s.pois) if (poi.owner !== me) nearest = Math.min(nearest, hex.distance(p.warband, poi));

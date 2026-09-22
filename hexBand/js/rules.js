@@ -34,7 +34,7 @@ window.HB = window.HB || {};
     return { uid: s.nextUid++, def: defId, poi: poiId == null ? -1 : poiId };
   }
   function newStatus() {
-    return { nextAttackMult: 1, chargeMult: 1, rearAssault: false, blessingUntil: -1, formationUntil: -1, forcedUntil: -1,
+    return { nextAttackMult: 1, chargeMult: 1, blessingUntil: -1, formationUntil: -1, forcedUntil: -1, counterUntil: -1,
       overwatchUntil: -1, shieldsOnce: false, splitSteps: 0, splitSide: 1, claimSteps: 0 };
   }
   // D-030: movement cards carry no direction; the option chosen at drop time holds absolute directions.
@@ -59,7 +59,7 @@ window.HB = window.HB || {};
       s.players[pid] = {
         id: pid, name: o.name || (pid === 1 ? 'Синие' : 'Красные'), bot: !!o.bot,
         deckIds: o.deck.slice(), poiIds: o.pois.slice(),
-        warband: { col: st.col, row: st.row, facing: st.facing, minions: CFG.START_MINIONS },
+        warband: { col: st.col, row: st.row, minions: CFG.START_MINIONS },
         status: newStatus(), deck: [], hand: [], discard: [], inPlay: null, gained: 0, gainedLastRound: 0,
       };
     }
@@ -187,7 +187,6 @@ window.HB = window.HB || {};
     const e = enemyOf(s, p.id);
     if (!active(s, e.status.overwatchUntil)) return;
     if (hex.distance(e.warband, p.warband) !== 1) return;
-    if (!hex.inFrontArc(e.warband.facing, hex.dirBetween(e.warband, p.warband))) return;
     e.status.overwatchUntil = -1;
     attack(s, e, p, { overwatch: true });
   }
@@ -203,7 +202,7 @@ window.HB = window.HB || {};
       enterCell(s, p, n, d);
       if (w.minions <= 0) break;
     }
-    if (path.length) { w.facing = lastDir; s.events.push({ type: 'move', player: p.id, path }); } // D-024: the crowd faces where it last walked
+    if (path.length) s.events.push({ type: 'move', player: p.id, path });
     return { path, lastDir };
   }
   function previewPath(s, p, dirs) {
@@ -215,37 +214,39 @@ window.HB = window.HB || {};
   // ---------------------------------------------------------------- combat
   function attack(s, a, d, opts) {
     opts = opts || {};
+    // D-034: no facing — damage depends on the attacker's size and card effects only.
+    // opts.overwatch / opts.counter are automatic reactions: they use no card buffs and do not count toward the turn limit.
     const aw = a.warband, dw = d.warband, st = a.status, ds = d.status, notes = [];
-    let zone = hex.relZone(dw.facing, hex.dirBetween(dw, aw));
-    let mult = CFG.FACING_MOD[zone], amod = 1, dmod = 1;
-    if (!opts.overwatch) {
-      if (st.rearAssault) { st.rearAssault = false; if (zone === 'back') mult = 1.9; else amod *= 1.1; notes.push('Rear Assault'); }
+    const reaction = opts.overwatch || opts.counter;
+    let amod = 1, dmod = 1;
+    if (!reaction) {
       if (st.chargeMult !== 1) { amod *= st.chargeMult; st.chargeMult = 1; notes.push('Charge'); }
       if (st.nextAttackMult !== 1) { amod *= st.nextAttackMult; st.nextAttackMult = 1; notes.push('Battle Cry'); }
       if (active(s, st.blessingUntil)) { amod *= 1.15; notes.push('War Blessing'); }
     }
-    if (active(s, ds.formationUntil)) { dmod *= zone === 'front' ? 0.7 : zone === 'side' ? 0.85 : 1; notes.push('Reinforced Formation'); }
+    if (active(s, ds.formationUntil)) { dmod *= CFG.FORMATION_MULT; notes.push('Reinforced Formation'); }
     if (active(s, ds.forcedUntil)) { dmod *= 1.15; notes.push('Forced March'); }
-    if (zone === 'front' && ds.shieldsOnce) { ds.shieldsOnce = false; dmod *= 0.6; notes.push('Reinforced Shields'); }
-    let dmg = CFG.DMG_PER_MINION * aw.minions * mult * amod * dmod * (opts.overwatch ? CFG.OVERWATCH_MULT : 1);
-    dmg = Math.max(1, Math.round(dmg));
+    if (ds.shieldsOnce) { ds.shieldsOnce = false; dmod *= CFG.SHIELDS_MULT; notes.push('Reinforced Shields'); }
+    const rmod = opts.overwatch ? CFG.OVERWATCH_MULT : opts.counter ? CFG.COUNTER_MULT : 1;
+    const dmg = Math.max(1, Math.round(CFG.DMG_PER_MINION * aw.minions * amod * dmod * rmod));
     const before = dw.minions;
     dw.minions = Math.max(0, dw.minions - dmg);
-    if (!opts.overwatch) s.attacksThisTurn++;
-    const label = opts.overwatch ? 'OVERWATCH' : zone === 'back' ? 'BACKSTAB!' : zone === 'side' ? 'FLANK!' : '';
-    s.events.push({ type: 'attack', attacker: a.id, defender: d.id, zone, dmg, before, after: dw.minions, label, notes,
-      overwatch: !!opts.overwatch, col: dw.col, row: dw.row });
-    const zoneRu = { front: 'во фронт', side: 'во фланг', back: 'в спину' }[zone];
-    log(s, `${a.name} ${opts.overwatch ? 'Overwatch: ' : ''}атакуют ${zoneRu}: −${dmg} (${before} → ${dw.minions})` + (notes.length ? ` [${notes.join(', ')}]` : ''));
-    if (dw.minions <= 0) endGame(s, a.id, 'elimination');
+    if (!reaction) s.attacksThisTurn++;
+    const label = opts.overwatch ? 'OVERWATCH' : opts.counter ? 'COUNTER' : '';
+    s.events.push({ type: 'attack', attacker: a.id, defender: d.id, dmg, before, after: dw.minions, label, notes,
+      overwatch: !!opts.overwatch, counter: !!opts.counter, col: dw.col, row: dw.row });
+    const kind = opts.overwatch ? 'Дозор: ' : opts.counter ? 'Ответный удар: ' : '';
+    log(s, `${a.name} ${kind}атакуют: −${dmg} (${before} → ${dw.minions})` + (notes.length ? ` [${notes.join(', ')}]` : ''));
+    if (dw.minions <= 0) { endGame(s, a.id, 'elimination'); return; }
+    // retaliation (Ответный удар): once per incoming attack, never against a reaction
+    if (!reaction && active(s, ds.counterUntil)) attack(s, d, a, { counter: true });
   }
   // GDD §9.1 + D-006: after any card, the active warband attacks if the enemy stands in its front arc.
   function combatCheck(s, p) {
     if (s.phase !== 'play') return;
     if (s.attackLimit && s.attacksThisTurn >= s.attackLimit) return; // D-031: at most N attacks per turn
     const e = enemyOf(s, p.id);
-    if (hex.distance(p.warband, e.warband) !== 1) return;
-    if (!hex.inFrontArc(p.warband.facing, hex.dirBetween(p.warband, e.warband))) return;
+    if (hex.distance(p.warband, e.warband) !== 1) return; // D-034: adjacency is all that matters
     attack(s, p, e, {});
   }
 
@@ -306,7 +307,7 @@ window.HB = window.HB || {};
       }
       case 'buff_next': st.nextAttackMult *= def.mult; break;
       case 'formation': st.formationUntil = T + 2; break;
-      case 'rear_assault': st.rearAssault = true; break;
+      case 'counter': st.counterUntil = T + 2; break;
       case 'split': st.splitSteps = 2; st.splitSide = choice.side; break;
       case 'overwatch': st.overwatchUntil = T + 2; break;
       case 'explosive': {
@@ -336,7 +337,7 @@ window.HB = window.HB || {};
       case 'blink': {
         const f = choice.dir, mid = hex.neighbor(w.col, w.row, f), tgt = hex.neighbor(mid.col, mid.row, f);
         if (canEnter(s, tgt)) {
-          w.col = tgt.col; w.row = tgt.row; w.facing = f;
+          w.col = tgt.col; w.row = tgt.row;
           s.events.push({ type: 'move', player: p.id, path: [tgt], blink: true });
           enterCell(s, p, tgt, -1);
           enclosure(s, p);
