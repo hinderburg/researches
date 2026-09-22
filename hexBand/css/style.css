@@ -103,6 +103,13 @@ select, input[type=text] { background: var(--panel2); color: var(--text); border
 #overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
 .panel { background: var(--panel); border: 2px solid var(--line); border-radius: 14px; padding: 20px; max-width: 420px; width: 100%; max-height: 90vh; overflow: auto; text-align: center; }
 .panel .help { text-align: left; }
+.panel .intro { text-align: left; }
+.intro h2 { text-align: center; margin-bottom: 14px; }
+.intro-item { display: flex; gap: 12px; align-items: flex-start; margin: 0 0 12px; font-size: 14px; line-height: 1.4; }
+.intro-ic { flex: 0 0 44px; width: 44px; height: 44px; border-radius: 10px; background: linear-gradient(var(--paper), var(--paper2)); border: 2px solid var(--paper-edge); color: var(--ink); display: flex; align-items: center; justify-content: center; }
+.intro-ic svg { width: 32px; height: 32px; display: block; }
+.intro-skip { justify-content: center; color: var(--muted); font-size: 13px; margin: 6px 0 10px; }
+.intro .btn { display: block; margin: 0 auto; }
 .panel h2.w1 { color: var(--blue-l); }
 .panel h2.w2 { color: var(--red-l); }
 .pick-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 96px)); gap: 8px; justify-content: center; margin: 12px 0; }

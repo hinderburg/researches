@@ -161,8 +161,8 @@ window.HB = window.HB || {};
       log(s, `${prev.name} теряют ${def.name} и карту ${CARDS[def.card].name}.`);
     }
     poi.owner = p.id;
+    // D-032: the reward card goes on top of the deck and arrives with the next turn's draw, never straight into the hand
     p.deck.unshift(makeCard(s, def.card, poiId));
-    draw(s, p, 1); // GDD §6.2: comes to hand at once when there is a free slot
     s.events.push({ type: 'poi', player: p.id, poiId, cardName: CARDS[def.card].name, col: poi.col, row: poi.row });
     log(s, `${p.name} захватывают ${def.name}: карта ${CARDS[def.card].name} в колоду.`);
   }
