@@ -12,8 +12,8 @@ window.HB = window.HB || {};
     zigzag:             { id: 'zigzag', name: 'Zigzag', ru: 'Зигзаг', type: 'Maneuver', kind: 'move', pattern: [0, 2], mirror: true, text: 'Два шага с поворотом на 120°: зубец в любую сторону.' },
     around:             { id: 'around', name: 'Around', ru: 'Обход', type: 'Maneuver', kind: 'move', pattern: [0, 1, 2], mirror: true, text: 'Три шага полукольцом вокруг соседнего гекса.' },
     rally:              { id: 'rally', name: 'Rally', ru: 'Сбор', type: 'Reinforcement', kind: 'reinforce', amount: 4, text: '+4 миньона.' },
-    battle_cry:         { id: 'battle_cry', name: 'Battle Cry', ru: 'Боевой клич', type: 'Combat', kind: 'buff_next', mult: 1.25, text: 'Следующий удар вашего отряда наносит +25% урона.' },
-    reinforced_formation:{ id: 'reinforced_formation', name: 'Reinforced Formation', ru: 'Плотный строй', type: 'Defense', kind: 'formation', text: 'До следующего хода: весь входящий урон ×0.75.' },
+    battle_cry:         { id: 'battle_cry', name: 'Battle Cry', ru: 'Боевой клич', type: 'Combat', kind: 'buff_next', bonus: 2, text: 'Следующий удар вашего отряда наносит +2 урона.' },
+    reinforced_formation:{ id: 'reinforced_formation', name: 'Reinforced Formation', ru: 'Плотный строй', type: 'Defense', kind: 'formation', text: 'До следующего хода: каждый удар по вашему отряду наносит на 2 меньше (но не меньше 1).' },
     // ---- advanced pool
     forced_march:       { id: 'forced_march', name: 'Forced March', ru: 'Форсированный марш', type: 'Movement', kind: 'move', pattern: [0, 0, 0], text: 'Три шага по прямой в любом направлении.' },
     long_hook:          { id: 'long_hook', name: 'Long Hook', ru: 'Дальний крюк', type: 'Maneuver', kind: 'move', pattern: [0, 0, 1], mirror: true, text: 'Два шага прямо, затем шаг с поворотом на 60°.' },

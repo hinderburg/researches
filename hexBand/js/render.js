@@ -71,6 +71,11 @@ window.HB = window.HB || {};
 
     applyEvents(events) {
       let t = 0;
+      // hold every warband at its pre-action position until its own slide starts (no jump-then-slide flicker)
+      if (this.prevPos) for (const pid of [1, 2]) {
+        const w = this.s.players[pid].warband, pp = this.prevPos[pid];
+        if (pp && (pp.col !== w.col || pp.row !== w.row)) this.slide[pid] = { path: [{ col: pp.col, row: pp.row }], t0: performance.now(), per: 1, start: this.cellXY(pp.col, pp.row), hold: true };
+      }
       for (const ev of events) {
         const light = ev.player ? COL[ev.player + 'Light'] : '#fff';
         switch (ev.type) {
@@ -147,6 +152,7 @@ window.HB = window.HB || {};
           case 'gameover': t += 400; break;
         }
       }
+      this.schedule(t, () => { for (const pid of [1, 2]) if (this.slide[pid] && this.slide[pid].hold) this.slide[pid] = null; });
       return t;
     }
 
@@ -223,9 +229,11 @@ window.HB = window.HB || {};
       for (const h of this.highlights) {
         const p = this.cellXY(h.col, h.row);
         if (h.kind === 'path') {
-          ctx.fillStyle = h.strong ? 'rgba(255,255,255,0.42)' : 'rgba(255,255,255,0.22)'; this.hexPath(ctx, p.x, p.y, 3); ctx.fill();
-          ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2.5; ctx.setLineDash([S * 0.2, S * 0.12]); this.hexPath(ctx, p.x, p.y, 4); ctx.stroke(); ctx.setLineDash([]);
-          if (h.label != null) { ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 4; ctx.font = `bold ${Math.round(S * 0.55)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.strokeText(String(h.label), p.x, p.y + 1); ctx.fillText(String(h.label), p.x, p.y + 1); }
+          const atk = h.attack; // D-042: the last step onto the enemy is an attack — red
+          ctx.fillStyle = atk ? `rgba(255,70,50,${0.35 + 0.2 * pulse})` : h.strong ? 'rgba(255,255,255,0.42)' : 'rgba(255,255,255,0.22)'; this.hexPath(ctx, p.x, p.y, 3); ctx.fill();
+          ctx.strokeStyle = atk ? '#ff5a3c' : 'rgba(255,255,255,0.9)'; ctx.lineWidth = atk ? 3.5 : 2.5; ctx.setLineDash(atk ? [] : [S * 0.2, S * 0.12]); this.hexPath(ctx, p.x, p.y, 4); ctx.stroke(); ctx.setLineDash([]);
+          const lbl = atk ? '⚔' : h.label;
+          if (lbl != null) { ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 4; ctx.font = `bold ${Math.round(S * 0.55)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.strokeText(String(lbl), p.x, p.y + 1); ctx.fillText(String(lbl), p.x, p.y + 1); }
         } else {
           ctx.lineWidth = 3; ctx.strokeStyle = `rgba(255,255,255,${(h.strong ? 0.9 : 0.5) + 0.3 * pulse})`; this.hexPath(ctx, p.x, p.y, 4); ctx.stroke();
           ctx.fillStyle = `rgba(255,255,255,${(h.strong ? 0.3 : 0.1) + 0.12 * pulse})`; ctx.fill();
@@ -363,6 +371,13 @@ window.HB = window.HB || {};
       ctx.fillStyle = color; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px + fw, top + fh * 0.1); ctx.lineTo(px + fw - S * 0.12, top + fh * 0.55); ctx.lineTo(px + fw, top + fh); ctx.lineTo(px, top + fh + fh * 0.1); ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, px + fw / 2 - S * 0.04, top + fh * 0.55);
+      // strike badge (D-043): current damage of the warband, with a pending Battle Cry bonus highlighted
+      const strike = R.strikeOf(this.s, p), boosted = p.status.attackBonus > 0;
+      const bs = Math.round(S * 0.3), bt = '⚔' + strike, bw = S * 0.78, bh = S * 0.36, bx = px - bw - S * 0.06, by = top + fh * 0.1;
+      ctx.font = `900 ${bs}px system-ui, sans-serif`;
+      ctx.fillStyle = boosted ? '#ffb020' : '#2a1a10'; ctx.strokeStyle = boosted ? '#fff' : '#ffd766'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, bh / 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = boosted ? '#2a1a10' : '#ffd766'; ctx.fillText(bt, bx + bw / 2, by + bh / 2 + 1);
       if (p.id === this.s.current && this.s.phase === 'play') {
         ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 2; ctx.setLineDash([5, 5]);
         ctx.beginPath(); ctx.ellipse(x, y + S * 0.05, S * 0.78, S * 0.62, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);

@@ -1,7 +1,7 @@
 // HEXBand prototype — tunables. See docs/DECISIONS.md for the reasoning behind each value.
 window.HB = window.HB || {};
 HB.CONFIG = {
-  VERSION: '0.7.0',
+  VERSION: '0.8.0',
   COLS: 7,               // flat-top hex columns; odd columns are shifted down and hold one cell less (see D-002)
   ROWS: 11,              // rows in even columns; odd columns have ROWS-1
   HAND_SIZE: 4,
@@ -10,7 +10,9 @@ HB.CONFIG = {
   ROUND_LIMIT: 10,       // GDD §23: 10 rounds per player for the first prototype
   START_MINIONS: 24,
   // D-039: a warband's strike = floor(log2(minions)), min 1 (see rules.baseDamage); clashes are mutual
-  FORMATION_MULT: 0.75,  // "Плотный строй": incoming damage multiplier
+  // D-043: card modifiers are flat
+  BATTLE_CRY_BONUS: 2,   // "Боевой клич": + to the next strike
+  FORMATION_REDUCE: 2,   // "Плотный строй": − from every incoming strike until the next turn (never below 1)
   EXPLOSIVE_DAMAGE: 4,
   ATTACKS_PER_TURN: 1,   // D-031: how many times a warband may attack per turn (0 = unlimited); Overwatch does not count
   BOT_DELAY_MS: 700,

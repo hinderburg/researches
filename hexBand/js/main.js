@@ -11,7 +11,9 @@ window.HB = window.HB || {};
   const rectOf = e => e.getBoundingClientRect();
 
   const UI = {
-    state: null, renderer: null, busy: false, opts: null, drag: null, lastActor: null, handoverPending: false, lastEvents: [],
+    state: null, renderer: null, busy: false, opts: null, drag: null, lastActor: null, handoverPending: false, lastEvents: [], pendingIncoming: new Set(),
+    // whose hand the bottom panel shows: the human in bot mode, the current player in hotseat (D-044)
+    handPlayer() { const s = this.state; return this.opts && this.opts.players[2].bot ? s.players[1] : s.players[s.current]; },
     setup: { mode: 'bot', rounds: CFG.ROUND_LIMIT, seed: '', p: { 1: null, 2: null }, botPreset: 'balanced' },
 
     // ------------------------------------------------------------ setup screen
@@ -42,7 +44,7 @@ window.HB = window.HB || {};
         <div class="intro-item">${ic('hook')}<div><b>Ходите картами.</b> Перетащите карту на поле: карта задаёт форму маршрута, а куда идти — решаете вы, отпустив её в нужной стороне. Отряд идёт сразу. За ход можно сыграть сколько угодно карт, минимум одну; затем «Закончить ход».</div></div>
         <div class="intro-item">${ic('ring')}<div><b>Захватывайте территорию.</b> Каждый пройденный гекс становится вашим. Замкните область своими гексами — всё внутри тоже станет вашим. Очки = ваши гексы.</div></div>
         <div class="intro-item">${ic('recruitment')}<div><b>Берите форпосты.</b> Пройдите через форпост или обведите его контуром. Карта, парящая над ним, сразу прилетает вам в руку — её эффект срабатывает мгновенно. Потеряете форпост — потеряете и карту.</div></div>
-        <div class="intro-item">${ic('battle_cry')}<div><b>Бой.</b> Если после вашей карты противник стоит на соседнем гексе — ваш отряд набегает на него (не больше раза за ход). Оба бьют одновременно: урон = log₂ от числа миньонов (24 → 4, 8 → 3). Кто остался меньше — отступает на гекс, больший стоит на месте.</div></div>
+        <div class="intro-item">${ic('battle_cry')}<div><b>Бой.</b> Чтобы атаковать, доведите маршрут карты до гекса противника (он подсветится красным). Отряд набегает, оба бьют одновременно: сила удара написана на знамени (⚔), это log₂ от числа миньонов. Кто остался меньше — отступает на гекс, больший стоит на месте. Не больше одной атаки за ход.</div></div>
         <div class="intro-item">${ic('claim')}<div><b>Победа.</b> Уничтожили отряд противника — победа сразу. Иначе после ${this.setup.rounds} раундов побеждает тот, у кого больше очков территории.</div></div>
         <label class="radio intro-skip"><input type="checkbox" id="intro-skip"> Больше не показывать</label>
         <button class="btn primary" id="btn-intro-close">${manual ? 'Понятно' : 'К настройке матча'}</button></div>`);
@@ -113,7 +115,7 @@ window.HB = window.HB || {};
     // ------------------------------------------------------------ game
     startGame(opts) {
       this.state = R.createGame(opts);
-      this.lastActor = null; this.handoverPending = false; this.busy = false; this.lastEvents = [];
+      this.lastActor = null; this.handoverPending = false; this.busy = false; this.lastEvents = []; this.pendingIncoming = new Set();
       $('#setup').hidden = true; $('#game').hidden = false; $('#overlay').hidden = true;
       if (!this.renderer) {
         this.renderer = new HB.Renderer($('#board'));
@@ -167,6 +169,13 @@ window.HB = window.HB || {};
     afterAction() {
       const s = this.state, events = R.takeEvents(s);
       this.lastEvents = events;
+      // cards that will fly into the hand must not flash in the hand before their flight (D-044)
+      const hp = this.handPlayer();
+      for (const ev of events) {
+        if (ev.player !== hp.id) continue;
+        if (ev.type === 'draw') ev.uids.forEach(u => this.pendingIncoming.add(u));
+        else if (ev.type === 'poiCard' || ev.type === 'cardToHand') this.pendingIncoming.add(ev.uid);
+      }
       this.appendLog(events.filter(e => e.type === 'log').map(e => e.text));
       const dur = this.renderer.applyEvents(events);
       this.renderer.highlights = []; this.renderer.pathFrom = null;
@@ -188,11 +197,12 @@ window.HB = window.HB || {};
         $(`#hud-${pid}`).classList.toggle('active', s.current === pid && s.phase === 'play');
       }
       $('#hud-round').textContent = `Раунд ${R.round(s)} / ${s.roundLimit}`;
-      const p = this.current();
-      const busy = this.busy || p.bot || s.phase !== 'play' || this.handoverPending;
-      const hideHand = p.bot || this.handoverPending;
+      // D-044: against the bot the hand, deck and discard always belong to the human player
+      const p = this.handPlayer(), mine = s.current === p.id;
+      const busy = this.busy || !mine || s.phase !== 'play' || this.handoverPending;
+      const hideHand = this.handoverPending;
       const hand = $('#hand'); hand.innerHTML = '';
-      const playable = p.hand.map(card => R.getPlay(s, card).ok);
+      const playable = p.hand.map(card => mine && R.getPlay(s, card).ok);
       for (let i = 0; i < CFG.HAND_SIZE; i++) {
         const slot = el('div', 'slot');
         const card = p.hand[i];
@@ -200,6 +210,7 @@ window.HB = window.HB || {};
           const c = el('div', cardClass(card.def, card.poi >= 0) + (playable[i] ? '' : ' disabled'), cardHTML(card.def, card.poi >= 0));
           c.dataset.uid = card.uid;
           if (hideHand) c.classList.add('hidden-card');
+          if (this.pendingIncoming.has(card.uid)) c.classList.add('incoming');
           slot.appendChild(c);
         } else if (i === CFG.HAND_SIZE - 1 && s.playedThisTurn >= 1 && !busy) {
           const b = el('button', 'btn end-turn', 'Закончить<br>ход');
@@ -214,14 +225,14 @@ window.HB = window.HB || {};
       $('#pile-discard').classList.toggle('empty', p.discard.length === 0);
       const last = p.discard[p.discard.length - 1];
       $('#pile-discard').innerHTML = last ? `<div class="pile-face">${HB.icons.svg(last.def)}</div>` : '';
-      $('#status-line').textContent = busy ? (p.bot ? `${p.name} думают…` : '') : this.statusText(p);
+      $('#status-line').textContent = busy ? (!mine && s.phase === 'play' ? `Ход: ${this.current().name}…` : '') : this.statusText(p);
       $('#btn-pass').hidden = busy || s.playedThisTurn > 0 || playable.some(x => x);
       // a full hand (outpost card arrived) leaves no slot for the end-turn button — show a fallback under the hand
       $('#btn-end-fb').hidden = busy || s.playedThisTurn < 1 || p.hand.length < CFG.HAND_SIZE;
     },
     statusText(p) {
       const s = this.state, st = p.status, out = [];
-      if (st.nextAttackMult !== 1) out.push(`Боевой клич ×${st.nextAttackMult.toFixed(2)}`);
+      if (st.attackBonus) out.push(`Боевой клич +${st.attackBonus}`);
       if (R.active(s, st.counterUntil)) out.push('Ответный удар');
       if (R.active(s, st.blessingUntil)) out.push('Благословение +15%');
       if (R.active(s, st.formationUntil)) out.push('Плотный строй');
@@ -273,8 +284,9 @@ window.HB = window.HB || {};
       };
       const flights = cards.map((x, i) => new Promise(res => setTimeout(async () => {
         await this.fly(srcRect(x.it), rectOf(x.el), x.el.innerHTML, x.el.className.replace('card', '').replace('incoming', ''), x.it.from === 'cell' ? 520 : 360);
-        x.el.classList.remove('incoming'); res();
+        x.el.classList.remove('incoming'); this.pendingIncoming.delete(x.it.uid); res();
       }, i * 110)));
+      items.forEach(it => { if (!cards.some(x => x.it.uid === it.uid)) this.pendingIncoming.delete(it.uid); }); // card no longer in hand
       await Promise.all(flights);
     },
 
@@ -292,8 +304,8 @@ window.HB = window.HB || {};
     },
     showDesc(d) { $('#card-desc').innerHTML = `<b>${d.ru}</b><span>${d.text}</span>`; $('#card-desc').hidden = false; },
     startDrag(e, uid, cardEl) {
-      const s = this.state, p = this.current();
-      if (!s || this.busy || p.bot || s.phase !== 'play' || this.handoverPending) return;
+      const s = this.state, p = this.handPlayer();
+      if (!s || this.busy || s.current !== p.id || s.phase !== 'play' || this.handoverPending) return;
       const card = p.hand.find(c => c.uid === uid); if (!card) return;
       const play = R.getPlay(s, card), d = CARDS[card.def];
       this.showDesc(d);
@@ -323,7 +335,7 @@ window.HB = window.HB || {};
         dg.choice = opt; dg.valid = true;
         const ends = new Set(play.options.map(o => hex.key(o.end.col, o.end.row)));
         for (const k of ends) { const [c, r] = k.split(',').map(Number); hl.push({ col: c, row: r, kind: 'target', strong: false }); }
-        opt.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: i + 1, strong: true }));
+        opt.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: i + 1, strong: true, attack: !!c.attack }));
       } else if (play.options && play.options[0] && play.options[0].axis != null) {
         // Flank Claim: pick the axis whose direction is closest to pointer-from-warband
         const wc = rd.cellXY(p.warband.col, p.warband.row);
@@ -347,7 +359,7 @@ window.HB = window.HB || {};
         dg.valid = true;
       } else {
         dg.valid = true;
-        if (play.path) play.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: i + 1, strong: dg.over }));
+        if (play.path) play.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: i + 1, strong: dg.over, attack: !!c.attack }));
       }
       rd.highlights = hl;
       fx.classList.toggle('ok', dg.over && dg.valid);
@@ -434,7 +446,7 @@ window.HB = window.HB || {};
         <p><b>Ход.</b> В начале хода рука добирается до 4 карт из колоды (если колода пуста, сброс перемешивается в колоду). Чтобы сыграть карту, перетащите её на поле: маршрут показывается заранее, отряд выполняет действие сразу после того, как вы отпустите карту, и она уходит в сброс. Отпустите над рукой — карта вернётся на место. За ход можно сыграть сколько угодно карт, минимум одну; после первой карты в правом слоте появляется «Закончить ход».</p>
         <p><b>Направления.</b> Карта движения задаёт только форму и длину маршрута (прямая, крюк, зигзаг, полукольцо, кольцо). Куда идти — решаете вы: пока тянете карту, на поле подсвечены все возможные концы маршрута, а выбирается тот, что ближе к точке, где вы отпустите карту. Для «Широкого марша» сторона — слева или справа от отряда.</p>
         <p><b>Территория.</b> Пройденные гексы окрашиваются в ваш цвет. Если ваши гексы замыкают область, всё внутри становится вашим. <b>Форпосты</b> захватываются проходом через гекс или замыканием контура; карта, парящая над форпостом, сразу прилетает в руку (если рука полна — ложится наверх колоды). Все карты форпостов срабатывают мгновенно: Вербовка +6, Оцепление красит гексы вокруг отряда, Взрывной заряд бьёт соседний гекс, Молитва возвращает верхнюю карту сброса, Катапульта бьёт на 3 гекса, Разведка добирает руку, Знамя даёт +1 очко вашим гексам вокруг отряда, Прыжок — через гекс. Потеря форпоста забирает карту.</p>
-        <p><b>Бой.</b> После вашей карты бой начинается автоматически, если противник стоит на соседнем гексе — не больше одного раза за ход. Ваш отряд набегает на гекс противника, оба бьют одновременно: урон каждого = ⌊log₂(его миньонов)⌋, не меньше 1 (24 → 4, 16 → 4, 8 → 3, 4 → 2). «Боевой клич» усиливает ваш удар на 25 %, «Плотный строй» ослабляет входящий до ×0.75. После обмена отряд, в котором осталось меньше бойцов, отступает на гекс назад (атакующий — откуда пришёл, защитник — прочь от атакующего, и тогда атакующий занимает его гекс); при равенстве отступает атакующий. «Залп» и «Катапульта» бьют на расстоянии без ответа.</p>
+        <p><b>Бой.</b> Отряды не дерутся сами по себе: чтобы атаковать, доведите маршрут карты движения до гекса противника — этот шаг подсвечивается красным с мечом, и движение на нём заканчивается. Ваш отряд набегает на гекс противника, оба бьют одновременно: сила удара показана на знамени (⚔) и равна ⌊log₂(миньонов)⌋, не меньше 1 (24 → 4, 16 → 4, 8 → 3, 4 → 2). «Боевой клич» даёт +2 к следующему удару, «Плотный строй» уменьшает каждый входящий удар на 2 (но не ниже 1). После обмена отряд, в котором осталось меньше бойцов, отступает на гекс (атакующий — откуда пришёл, защитник — прочь от атакующего, и тогда атакующий занимает его гекс); при равенстве отступает атакующий. Не больше одной атаки за ход. «Залп» и «Катапульта» бьют на расстоянии без ответа.</p>
         <p><b>Победа</b>: уничтожить отряд противника или иметь больше очков территории после лимита раундов. Тай-брейк: точки → миньоны → захват в последнем раунде.</p>
         <p class="muted">Пиктограммы: стрелки — движение (шевроны = число шагов), фигурки — миньоны, меч — атака, щит — защита, глаз — дозор, флаг — очки территории.</p>
         <button class="btn primary" id="btn-help-close">Понятно</button></div>`);

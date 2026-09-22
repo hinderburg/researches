@@ -35,7 +35,10 @@ window.HB = window.HB || {};
   function makeCard(s, defId, poiId) {
     return { uid: s.nextUid++, def: defId, poi: poiId == null ? -1 : poiId };
   }
-  function newStatus() { return { nextAttackMult: 1, formationUntil: -1 }; }
+  function newStatus() { return { attackBonus: 0, formationUntil: -1 }; }
+  const attackAllowed = s => !s.attackLimit || s.attacksThisTurn < s.attackLimit;
+  // D-042: a step onto the enemy's hex is an attack (if attacks are still allowed this turn)
+  const isEnemyCell = (s, pid, c) => { const o = occupant(s, c); return o && o !== pid; };
 
   // ---------------------------------------------------------------- setup
   function createGame(opts) {
@@ -178,16 +181,23 @@ window.HB = window.HB || {};
   // Walks along absolute directions, stopping at the first illegal step (D-008).
   function moveAlong(s, p, dirs, def) {
     const w = p.warband, path = [];
-    let lastDir = -1;
+    let lastDir = -1, clashed = false;
     for (const d of dirs) {
       const n = hex.neighbor(w.col, w.row, d);
+      if (exists(s, n) && isEnemyCell(s, p.id, n) && attackAllowed(s)) { // D-042: stepping onto the enemy = attack
+        if (path.length) s.events.push({ type: 'move', player: p.id, path: path.slice() });
+        flushPaint(s, p);
+        clash(s, p, enemyOf(s, p.id));
+        clashed = true;
+        break;
+      }
       if (!canEnter(s, n)) break;
       w.col = n.col; w.row = n.row; lastDir = d;
       path.push({ col: n.col, row: n.row });
       enterCell(s, p, n, d, def);
     }
-    if (path.length) s.events.push({ type: 'move', player: p.id, path });
-    if (def && def.ahead && lastDir >= 0) { // Dash: claim the next cell(s) in the direction of travel without moving
+    if (!clashed && path.length) s.events.push({ type: 'move', player: p.id, path });
+    if (!clashed && def && def.ahead && lastDir >= 0) { // Dash: claim the next cell(s) in the direction of travel without moving
       let c = { col: w.col, row: w.row };
       for (let i = 0; i < def.ahead; i++) { c = hex.neighbor(c.col, c.row, lastDir); if (!exists(s, c) || occupant(s, c)) break; paint(s, p, c, 'split'); }
     }
@@ -195,19 +205,27 @@ window.HB = window.HB || {};
   }
   function previewPath(s, p, dirs) {
     let cur = { col: p.warband.col, row: p.warband.row }; const path = [];
-    for (const d of dirs) { const n = hex.neighbor(cur.col, cur.row, d); if (!canEnter(s, n)) break; path.push(n); cur = n; }
+    for (const d of dirs) {
+      const n = hex.neighbor(cur.col, cur.row, d);
+      if (exists(s, n) && isEnemyCell(s, p.id, n) && attackAllowed(s)) { path.push({ col: n.col, row: n.row, attack: true }); break; }
+      if (!canEnter(s, n)) break;
+      path.push(n); cur = n;
+    }
     return path;
   }
 
   // ---------------------------------------------------------------- combat (D-039)
   // outgoing strike of a warband with its card modifiers, reduced by the target's formation
+  // D-043: flat modifiers — base + attack bonus (Battle Cry, consumed) − defender's formation reduction, never below 1
   function strikeValue(s, a, d, consume) {
     let v = baseDamage(a.warband.minions);
     const notes = [];
-    if (a.status.nextAttackMult !== 1) { v = Math.round(v * a.status.nextAttackMult); if (consume) a.status.nextAttackMult = 1; notes.push('Боевой клич'); }
-    if (active(s, d.status.formationUntil)) { v = Math.round(v * CFG.FORMATION_MULT); notes.push('Плотный строй'); }
+    if (a.status.attackBonus) { v += a.status.attackBonus; if (consume) a.status.attackBonus = 0; notes.push('Боевой клич'); }
+    if (d && active(s, d.status.formationUntil)) { v -= CFG.FORMATION_REDUCE; notes.push('Плотный строй'); }
     return { value: Math.max(1, v), notes };
   }
+  // current strike shown on the banner (base + pending bonus)
+  const strikeOf = (s, p) => baseDamage(p.warband.minions) + (p.status.attackBonus || 0);
   // one-sided hit (Volley, Catapult): no clash, no retreat
   function strike(s, a, d, dmg, kind) {
     const dw = d.warband, before = dw.minions;
@@ -252,14 +270,6 @@ window.HB = window.HB || {};
       return;
     }
     if (result === 'defenderRetreats') { enclosure(s, a); flushPaint(s, a); }
-  }
-  // GDD §9.1 + D-006/D-034: after any card, the active warband attacks if the enemy is adjacent (D-031: limited per turn)
-  function combatCheck(s, p) {
-    if (s.phase !== 'play') return;
-    if (s.attackLimit && s.attacksThisTurn >= s.attackLimit) return;
-    const e = enemyOf(s, p.id);
-    if (hex.distance(p.warband, e.warband) !== 1) return;
-    clash(s, p, e);
   }
 
   // ---------------------------------------------------------------- card play
@@ -329,7 +339,7 @@ window.HB = window.HB || {};
         s.events.push({ type: 'reinforce', player: p.id, amount: def.amount, before, after: w.minions, col: w.col, row: w.row });
         log(s, `${p.name}: +${def.amount} миньонов (${before} → ${w.minions}).`); break;
       }
-      case 'buff_next': st.nextAttackMult *= def.mult; break;
+      case 'buff_next': st.attackBonus += def.bonus; break;
       case 'formation': st.formationUntil = T + 2; break;
       case 'explosive': {
         const c = choice.cell, victim = occupant(s, c);
@@ -380,7 +390,6 @@ window.HB = window.HB || {};
     log(s, `${p.name} играют «${def.ru}»${choice && choice.label ? ' (' + choice.label + ')' : ''}.`);
     resolve(s, p, card, def, choice);
     flushPaint(s, p);
-    combatCheck(s, p);
     // D-022: effects apply at once and the card goes to the discard; the turn continues until endTurn().
     if (p.inPlay) { p.discard.push(p.inPlay); p.inPlay = null; }
     s.playedThisTurn++;
@@ -449,5 +458,5 @@ window.HB = window.HB || {};
   function clone(s) { const e = s.events, l = s.log; s.events = []; s.log = []; const c = JSON.parse(JSON.stringify(s)); s.events = e; s.log = l; return c; }
 
   HB.rules = { createGame, playCard, endTurn, passTurn, getPlay, takeEvents, clone, territory, cellCount, poiCount, totalCells,
-    scoreboard, round, occupant, isBlocked, active, rand, baseDamage };
+    scoreboard, round, occupant, isBlocked, active, rand, baseDamage, strikeOf };
 })();
