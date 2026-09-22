@@ -23,7 +23,7 @@
     <div class="field"><label>Партий</label><input id="n" type="number" value="100" min="1" max="2000"></div>
     <div class="field"><label>Лимит раундов</label><input id="rounds" type="number" value="10" min="2" max="40"></div>
     <div class="field"><label>Стартовый seed</label><input id="seed" type="number" value="1"></div>
-    <div class="field"><label>Диагональ поворачивает</label><select id="diag"><option value="0">нет</option><option value="1">да</option></select></div>
+    <div class="field"><label>Атак за ход на отряд</label><select id="attacks"><option value="1">1</option><option value="2">2</option><option value="0">без лимита</option></select></div>
   </div>
   <div class="row"><button class="btn primary" id="run">Запустить</button><button class="btn ghost" id="all">Все пары пресетов</button></div>
   <div id="result"></div>
@@ -41,8 +41,8 @@
   for (const id of ['#a', '#b']) for (const k of keys) { const o = document.createElement('option'); o.value = k; o.textContent = P[k].name; $(id).appendChild(o); }
   $('#b').value = 'duel';
 
-  function runOne(a, b, seed, rounds, diag) {
-    const s = HB.rules.createGame({ seed, roundLimit: rounds, diagonalTurns: diag, players: { 1: { deck: P[a].cards, pois: P[a].pois, bot: true }, 2: { deck: P[b].cards, pois: P[b].pois, bot: true } } });
+  function runOne(a, b, seed, rounds, attackLimit) {
+    const s = HB.rules.createGame({ seed, roundLimit: rounds, attackLimit, players: { 1: { deck: P[a].cards, pois: P[a].pois, bot: true }, 2: { deck: P[b].cards, pois: P[b].pois, bot: true } } });
     HB.rules.takeEvents(s);
     const r = { fills: 0, filled: 0, attacks: 0, dmg: 0, pois: 0, passes: 0, backstabs: 0, flanks: 0, cards: 0 };
     let guard = 0;
@@ -73,7 +73,7 @@
     }
     $('#result').innerHTML = h + '</table>';
   }
-  function params() { return { n: +$('#n').value, rounds: +$('#rounds').value, seed: +$('#seed').value, diag: $('#diag').value === '1' }; }
+  function params() { return { n: +$('#n').value, rounds: +$('#rounds').value, seed: +$('#seed').value, diag: +$('#attacks').value }; }
   function batch(pairs) {
     const { n, rounds, seed, diag } = params(), list = [], t0 = performance.now();
     $('#out').textContent = 'Считаю…';
@@ -83,7 +83,7 @@
         list.push({ label: `${P[a].name} vs ${P[b].name}`, s: summarize(rows) });
       }
       renderTable(list);
-      $('#out').textContent = `${pairs.length * n} партий за ${Math.round(performance.now() - t0)} мс · раундов ${rounds} · seed ${seed}… · диагональ поворачивает: ${diag ? 'да' : 'нет'}`;
+      $('#out').textContent = `${pairs.length * n} партий за ${Math.round(performance.now() - t0)} мс · раундов ${rounds} · seed ${seed}… · атак за ход: ${diag || 'без лимита'}`;
     }, 20);
   }
   $('#run').addEventListener('click', () => batch([[$('#a').value, $('#b').value]]));

@@ -1,7 +1,7 @@
 // HEXBand prototype — tunables. See docs/DECISIONS.md for the reasoning behind each value.
 window.HB = window.HB || {};
 HB.CONFIG = {
-  VERSION: '0.3.1',
+  VERSION: '0.4.0',
   COLS: 7,               // flat-top hex columns; odd columns are shifted down and hold one cell less (see D-002)
   ROWS: 11,              // rows in even columns; odd columns have ROWS-1
   HAND_SIZE: 4,
@@ -14,6 +14,7 @@ HB.CONFIG = {
   OVERWATCH_MULT: 0.5,
   EXPLOSIVE_DAMAGE: 4,
   CHARGE_MULT: 1.3,
+  ATTACKS_PER_TURN: 1,   // D-031: how many times a warband may attack per turn (0 = unlimited); Overwatch does not count
   BOT_DELAY_MS: 700,
   // POI slots (D-026): three per side on a diagonal — the left one close to the player, the middle one mid-half,
   // the right one near the centre line. The red side is the 180° rotation of the blue side.

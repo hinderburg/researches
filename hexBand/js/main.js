@@ -21,6 +21,8 @@ window.HB = window.HB || {};
       $('#sel-rounds').value = String(S.rounds);
       $('#sel-rounds').addEventListener('change', e => S.rounds = +e.target.value);
       $('#inp-seed').addEventListener('input', e => S.seed = e.target.value);
+      $('#sel-attacks').value = String(CFG.ATTACKS_PER_TURN);
+      $('#sel-attacks').addEventListener('change', e => S.attacks = +e.target.value);
       $('#sel-bot-preset').addEventListener('change', e => { S.botPreset = e.target.value; this.renderSetup(); });
       $('#btn-start').addEventListener('click', () => this.startFromSetup());
       $('#btn-help').addEventListener('click', () => this.showHelp());
@@ -82,7 +84,7 @@ window.HB = window.HB || {};
       const p2 = S.mode === 'bot' ? { deck: PRESETS[S.botPreset].cards.slice(), pois: PRESETS[S.botPreset].pois.slice(), bot: true, name: 'Красные (бот)' }
         : { deck: S.p[2].cards, pois: S.p[2].pois, bot: false, name: 'Красные' };
       const seed = S.seed.trim() ? (parseInt(S.seed, 10) || hashStr(S.seed)) : (Math.random() * 0xffffffff) >>> 0;
-      this.opts = { seed, roundLimit: S.rounds, players: { 1: { deck: S.p[1].cards, pois: S.p[1].pois, bot: false, name: 'Синие' }, 2: p2 } };
+      this.opts = { seed, roundLimit: S.rounds, attackLimit: S.attacks != null ? S.attacks : CFG.ATTACKS_PER_TURN, players: { 1: { deck: S.p[1].cards, pois: S.p[1].pois, bot: false, name: 'Синие' }, 2: p2 } };
       this.startGame(this.opts);
     },
 
@@ -236,21 +238,21 @@ window.HB = window.HB || {};
       dg.over = e.clientX >= br.left && e.clientX <= br.right && e.clientY >= br.top && e.clientY <= br.bottom;
       const hl = [], play = dg.play, kind = dg.def.kind;
       dg.choice = null; dg.valid = false;
-      if (play.options && play.options[0] && play.options[0].abs != null) {
-        // D-029: pick the direction whose angle is closest to pointer-from-warband
-        const cr = $('#board').getBoundingClientRect(), wc = rd.cellXY(p.warband.col, p.warband.row);
-        const ang = Math.atan2(e.clientY - (cr.top + wc.y), e.clientX - (cr.left + wc.x));
-        const diff = (a, b) => { let d = Math.abs(a - b) % (Math.PI * 2); return d > Math.PI ? Math.PI * 2 - d : d; };
+      if (play.options && play.options[0] && play.options[0].end) {
+        // D-030: pick the pattern variant whose end cell is closest to the pointer; the first cell breaks ties
+        const cr = $('#board').getBoundingClientRect(), px = e.clientX - cr.left, py = e.clientY - cr.top;
+        const dist = c => { const q = rd.cellXY(c.col, c.row); return Math.hypot(q.x - px, q.y - py); };
         let opt = play.options[0], best = Infinity;
-        for (const o of play.options) { const d = diff(ang, hex.dirAngle(o.abs)); if (d < best) { best = d; opt = o; } }
+        for (const o of play.options) { const sc = dist(o.end) + 0.35 * dist(o.path[0]); if (sc < best) { best = sc; opt = o; } }
         dg.choice = opt; dg.valid = true;
-        for (const o of play.options) o.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: o === opt ? i + 1 : null, strong: o === opt }));
+        const ends = new Set(play.options.map(o => hex.key(o.end.col, o.end.row)));
+        for (const k of ends) { const [c, r] = k.split(',').map(Number); hl.push({ col: c, row: r, kind: 'target', strong: false }); }
+        opt.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: i + 1, strong: true }));
       } else if (play.options && play.options[0] && play.options[0].side != null) {
         const wx = rd.warbandScreenX(p.id), side = e.clientX < wx ? -1 : 1;
         const opt = play.options.find(o => o.side === side) || play.options[0];
         dg.choice = opt; dg.valid = true;
-        for (const o of play.options) if (o.path) o.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: o === opt ? i + 1 : null, strong: o === opt }));
-        if (kind === 'split') { const w = p.warband; for (const o of play.options) { const n = hex.neighbor(w.col, w.row, R.absDir(p, o.side < 0 ? 5 : 1)); hl.push({ col: n.col, row: n.row, kind: 'target', strong: o === opt }); } }
+        $('#prompt').textContent = `${dg.def.ru}: ${opt.label}`;
       } else if (kind === 'explosive') {
         const cell = dg.over ? rd.cellFromPointer(e.clientX, e.clientY) : null;
         const opt = cell && play.options.find(o => o.cell.col === cell.col && o.cell.row === cell.row);
@@ -351,7 +353,7 @@ window.HB = window.HB || {};
     showHelp() {
       const ov = this.overlay(`<div class="help"><h2>Как играть</h2>
         <p><b>Ход.</b> В начале хода рука добирается до 4 карт. Чтобы сыграть карту, перетащите её на поле: маршрут показывается заранее, отряд выполняет действие сразу после того, как вы отпустите карту. Отпустите карту над рукой — она вернётся на место. За ход можно сыграть сколько угодно карт, минимум одну; затем «Завершить ход».</p>
-        <p><b>Направления.</b> «Вперёд» — всегда вверх по экрану (к противнику), «назад» — вниз, влево/вправо — по экрану. Для карт с выбором стороны (Шаг вбок, Зигзаг, Широкий марш) сторона определяется тем, слева или справа от отряда вы отпустили карту.</p>
+        <p><b>Направления.</b> Карта движения задаёт только форму и длину маршрута (прямая, крюк, зигзаг, полукольцо, кольцо). Куда идти — решаете вы: пока тянете карту, на поле подсвечены все возможные концы маршрута, а выбирается тот, что ближе к точке, где вы отпустите карту. Для «Широкого марша» сторона — слева или справа от отряда.</p>
         <p><b>Территория.</b> Пройденные гексы окрашиваются в ваш цвет. Если ваши гексы замыкают область, всё внутри становится вашим. <b>Форпосты</b> захватываются проходом через гекс или замыканием контура; карта, парящая над форпостом, — та, что вы получите в колоду.</p>
         <p><b>Бой.</b> Отряд смотрит туда, куда шёл последним. После вашей карты бой начинается автоматически, если противник стоит рядом в одном из трёх гексов перед вашим отрядом. Урон зависит от того, откуда вы бьёте относительно его взгляда: фронт ×1.0, фланг ×1.25, спина ×1.5.</p>
         <p><b>Победа</b>: уничтожить отряд противника или иметь больше очков территории после лимита раундов.</p>

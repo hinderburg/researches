@@ -37,11 +37,7 @@ window.HB = window.HB || {};
     return { nextAttackMult: 1, chargeMult: 1, rearAssault: false, blessingUntil: -1, formationUntil: -1, forcedUntil: -1,
       overwatchUntil: -1, shieldsOnce: false, splitSteps: 0, splitSide: 1, claimSteps: 0 };
   }
-  // D-025: card directions are absolute for the board as the player sees it (forward = toward the enemy).
-  // Blue plays bottom-up; for red the vertical axis is mirrored so "left" stays screen-left.
-  const MIRROR = [3, 2, 1, 0, 5, 4];
-  const absDir = (p, r) => p.id === 1 ? r : MIRROR[r];
-  const absDirs = (p, rel) => rel.map(r => absDir(p, r));
+  // D-030: movement cards carry no direction; the option chosen at drop time holds absolute directions.
 
   // ---------------------------------------------------------------- setup
   function createGame(opts) {
@@ -49,7 +45,9 @@ window.HB = window.HB || {};
     const s = {
       version: CFG.VERSION, seed, rng: seed, nextUid: 1,
       cols: CFG.COLS, rows: CFG.ROWS, roundLimit: opts.roundLimit || CFG.ROUND_LIMIT,
-      turnIndex: 0, current: 1, playedThisTurn: 0, phase: 'play', winner: 0, endReason: '', scores: null,
+      turnIndex: 0, current: 1, playedThisTurn: 0, attacksThisTurn: 0,
+      attackLimit: opts.attackLimit != null ? opts.attackLimit : CFG.ATTACKS_PER_TURN,
+      phase: 'play', winner: 0, endReason: '', scores: null,
       decorSeed: seed,
       cells: {}, pois: [], players: [null, null, null], blocked: {}, paintBuf: [], events: [], log: [],
     };
@@ -233,6 +231,7 @@ window.HB = window.HB || {};
     dmg = Math.max(1, Math.round(dmg));
     const before = dw.minions;
     dw.minions = Math.max(0, dw.minions - dmg);
+    if (!opts.overwatch) s.attacksThisTurn++;
     const label = opts.overwatch ? 'OVERWATCH' : zone === 'back' ? 'BACKSTAB!' : zone === 'side' ? 'FLANK!' : '';
     s.events.push({ type: 'attack', attacker: a.id, defender: d.id, zone, dmg, before, after: dw.minions, label, notes,
       overwatch: !!opts.overwatch, col: dw.col, row: dw.row });
@@ -243,6 +242,7 @@ window.HB = window.HB || {};
   // GDD §9.1 + D-006: after any card, the active warband attacks if the enemy stands in its front arc.
   function combatCheck(s, p) {
     if (s.phase !== 'play') return;
+    if (s.attackLimit && s.attacksThisTurn >= s.attackLimit) return; // D-031: at most N attacks per turn
     const e = enemyOf(s, p.id);
     if (hex.distance(p.warband, e.warband) !== 1) return;
     if (!hex.inFrontArc(p.warband.facing, hex.dirBetween(p.warband, e.warband))) return;
@@ -253,26 +253,27 @@ window.HB = window.HB || {};
   // Returns { ok, options?, path? }. options: array of { key, label, cell?, facing?, side?, uid?, path? }.
   function getPlay(s, card) {
     const p = s.players[s.current], def = CARDS[card.def], w = p.warband;
-    const sideOpts = dirsFor => {
-      const opts = [];
-      for (const side of [-1, 1]) {
-        const dirs = dirsFor(side), path = previewPath(s, p, absDirs(p, dirs));
-        if (path.length) opts.push({ key: side < 0 ? 'L' : 'R', side, dirs, label: side < 0 ? '← влево' : 'вправо →', path });
-      }
-      return { ok: opts.length > 0, options: opts };
-    };
     switch (def.kind) {
       case 'move': case 'charge': {
-        if (def.pick === 'side') return sideOpts(side => def.sideDirs[side < 0 ? 'L' : 'R']);
-        // D-029: one of three forward (or rear) directions, chosen by where the card is dropped
-        const rels = def.pick === 'rear3' ? [4, 3, 2] : [5, 0, 1];
-        const opts = rels.map(r => { const dirs = new Array(def.steps).fill(r); return { key: 'd' + r, rel: r, abs: absDir(p, r), dirs, label: HB.cards.DIR_RU[r], path: previewPath(s, p, absDirs(p, dirs)) }; }).filter(o => o.path.length);
+        // D-030: every rotation (and mirror image) of the card's pattern is an option; the UI picks the one
+        // whose end cell is closest to where the card is dropped.
+        const opts = [], seen = new Set();
+        for (let d = 0; d < 6; d++) for (const m of def.mirror ? [1, -1] : [1]) {
+          const dirs = def.pattern.map(o => ((d + m * o) % 6 + 6) % 6), key = dirs.join('');
+          if (seen.has(key)) continue; seen.add(key);
+          const path = previewPath(s, p, dirs);
+          if (path.length) opts.push({ key: 'p' + key, dirs, path, end: path[path.length - 1], label: HB.cards.DIR_RU[d] + (m < 0 ? ' (зеркально)' : '') });
+        }
         return { ok: opts.length > 0, options: opts };
       }
       case 'split': return { ok: true, options: [{ key: 'L', side: -1, label: '← левый бок' }, { key: 'R', side: 1, label: 'правый бок →' }] };
       case 'blink': {
-        const f = absDir(p, 0), mid = hex.neighbor(w.col, w.row, f), tgt = hex.neighbor(mid.col, mid.row, f);
-        return { ok: canEnter(s, tgt), path: [tgt] };
+        const opts = [];
+        for (let d = 0; d < 6; d++) {
+          const mid = hex.neighbor(w.col, w.row, d), tgt = hex.neighbor(mid.col, mid.row, d);
+          if (canEnter(s, tgt)) opts.push({ key: 'b' + d, dir: d, path: [tgt], end: tgt, label: HB.cards.DIR_RU[d] });
+        }
+        return { ok: opts.length > 0, options: opts };
       }
       case 'explosive': {
         const opts = [];
@@ -291,11 +292,11 @@ window.HB = window.HB || {};
     const st = p.status, w = p.warband, T = s.turnIndex;
     switch (def.kind) {
       case 'move': {
-        moveAlong(s, p, absDirs(p, choice.dirs));
+        moveAlong(s, p, choice.dirs);
         if (def.forcedMarch && hex.distance(w, enemyOf(s, p.id).warband) === 1) st.forcedUntil = T + 2;
         enclosure(s, p); break;
       }
-      case 'charge': { st.chargeMult = CFG.CHARGE_MULT; moveAlong(s, p, absDirs(p, choice.dirs)); enclosure(s, p); break; }
+      case 'charge': { st.chargeMult = CFG.CHARGE_MULT; moveAlong(s, p, choice.dirs); enclosure(s, p); break; }
       case 'reinforce': {
         let amt = def.amount;
         if (def.poiBonus && poiCount(s, p.id) >= 2) amt += def.poiBonus;
@@ -333,7 +334,7 @@ window.HB = window.HB || {};
       }
       case 'claim': st.claimSteps = 3; break;
       case 'blink': {
-        const f = absDir(p, 0), mid = hex.neighbor(w.col, w.row, f), tgt = hex.neighbor(mid.col, mid.row, f);
+        const f = choice.dir, mid = hex.neighbor(w.col, w.row, f), tgt = hex.neighbor(mid.col, mid.row, f);
         if (canEnter(s, tgt)) {
           w.col = tgt.col; w.row = tgt.row; w.facing = f;
           s.events.push({ type: 'move', player: p.id, path: [tgt], blink: true });
@@ -399,7 +400,7 @@ window.HB = window.HB || {};
     s.turnIndex++;
     if (s.turnIndex >= s.roundLimit * 2) { territoryVictory(s); return; }
     s.current = 3 - s.current;
-    s.playedThisTurn = 0;
+    s.playedThisTurn = 0; s.attacksThisTurn = 0;
     if (s.turnIndex % 2 === 0) for (const pid of [1, 2]) { const q = s.players[pid]; q.gainedLastRound = q.gained; q.gained = 0; }
     const np = s.players[s.current];
     draw(s, np, CFG.HAND_SIZE);
@@ -435,6 +436,6 @@ window.HB = window.HB || {};
   function takeEvents(s) { const e = s.events; s.events = []; return e; }
   function clone(s) { const e = s.events, l = s.log; s.events = []; s.log = []; const c = JSON.parse(JSON.stringify(s)); s.events = e; s.log = l; return c; }
 
-  HB.rules = { createGame, playCard, endTurn, passTurn, getPlay, absDir, scoutOptions, takeEvents, clone, territory, cellCount, poiCount, totalCells,
+  HB.rules = { createGame, playCard, endTurn, passTurn, getPlay, scoutOptions, takeEvents, clone, territory, cellCount, poiCount, totalCells,
     scoreboard, round, occupant, isBlocked, active, rand };
 })();

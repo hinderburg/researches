@@ -1,26 +1,24 @@
-// Card and POI definitions (GDD §12, §13, §16 with the 0.3.x changes: no facing control, absolute directions — D-024..D-026, D-029).
+// Card and POI definitions. Movement cards define a PATTERN and a DISTANCE, never a direction (D-030):
+// `pattern` lists turn offsets relative to a base direction d chosen by the player when the card is dropped
+// (0 = keep going, +1 = turn 60° right, +2 = 120° right ...). `mirror: true` also allows the left-handed version.
 // `name` keeps the GDD English name (used in docs/logs), `ru` is what the UI shows.
 window.HB = window.HB || {};
 (function () {
-  // Relative directions for the board as the player sees it: 0 = forward (toward the enemy), 5 = forward-left,
-  // 1 = forward-right, 3 = back, 4 = back-left, 2 = back-right. For the red player they are mirrored vertically (D-025).
-  // pick: 'fwd3' — the player picks one of the three forward directions by where the card is dropped (D-029);
-  //       'rear3' — one of the three rear directions; 'side' — left or right variant (sideDirs).
   const CARDS = {
     // ---- base pool
-    advance:            { id: 'advance', name: 'Advance', ru: 'Марш', type: 'Movement', kind: 'move', pick: 'fwd3', steps: 1, text: 'Шаг на 1 гекс в любом из трёх передних направлений.' },
-    double_advance:     { id: 'double_advance', name: 'Double Advance', ru: 'Двойной марш', type: 'Movement', kind: 'move', pick: 'fwd3', steps: 2, text: 'Два шага в одном из трёх передних направлений.' },
-    diagonal_march:     { id: 'diagonal_march', name: 'Diagonal March', ru: 'Косой марш', type: 'Movement', kind: 'move', pick: 'side', sideDirs: { L: [5, 5], R: [1, 1] }, text: 'Два шага по диагонали вперёд-влево или вперёд-вправо.' },
-    flank_march:        { id: 'flank_march', name: 'Flank March', ru: 'Обход', type: 'Maneuver', kind: 'move', pick: 'side', sideDirs: { L: [5, 4], R: [1, 2] }, text: 'Обойти на два гекса вбок (влево или вправо), оставаясь на том же ряду.' },
-    backstep:           { id: 'backstep', name: 'Backstep', ru: 'Назад', type: 'Movement', kind: 'move', pick: 'rear3', steps: 1, text: 'Шаг на 1 гекс в любом из трёх задних направлений.' },
-    zigzag:             { id: 'zigzag', name: 'Zigzag', ru: 'Зигзаг', type: 'Maneuver', kind: 'move', pick: 'side', sideDirs: { L: [5, 1], R: [1, 5] }, text: 'Шаг вперёд-влево, затем вперёд-вправо (или наоборот).' },
+    advance:            { id: 'advance', name: 'March', ru: 'Марш', type: 'Movement', kind: 'move', pattern: [0], text: 'Один шаг в любом направлении.' },
+    double_advance:     { id: 'double_advance', name: 'Double March', ru: 'Двойной марш', type: 'Movement', kind: 'move', pattern: [0, 0], text: 'Два шага по прямой в любом направлении.' },
+    hook:               { id: 'hook', name: 'Hook', ru: 'Крюк', type: 'Maneuver', kind: 'move', pattern: [0, 1], mirror: true, text: 'Два шага с поворотом на 60° (в любую сторону).' },
+    zigzag:             { id: 'zigzag', name: 'Zigzag', ru: 'Зигзаг', type: 'Maneuver', kind: 'move', pattern: [0, 2], mirror: true, text: 'Два шага с поворотом на 120°: зубец в любую сторону.' },
+    around:             { id: 'around', name: 'Around', ru: 'Обход', type: 'Maneuver', kind: 'move', pattern: [0, 1, 2], mirror: true, text: 'Три шага полукольцом вокруг соседнего гекса.' },
     rally:              { id: 'rally', name: 'Rally', ru: 'Сбор', type: 'Reinforcement', kind: 'reinforce', amount: 4, text: '+4 миньона.' },
     battle_cry:         { id: 'battle_cry', name: 'Battle Cry', ru: 'Боевой клич', type: 'Combat', kind: 'buff_next', mult: 1.25, text: 'Следующая атака наносит +25% урона.' },
-    // ---- advanced pool
-    forced_march:       { id: 'forced_march', name: 'Forced March', ru: 'Форсированный марш', type: 'Movement', kind: 'move', pick: 'fwd3', steps: 3, forcedMarch: true, text: 'Три шага в одном из трёх передних направлений. Если рядом окажется противник — −15% защиты до следующего хода.' },
-    retreat:            { id: 'retreat', name: 'Retreat', ru: 'Отход', type: 'Maneuver', kind: 'move', pick: 'rear3', steps: 2, text: 'Два шага в одном из трёх задних направлений.' },
-    charge:             { id: 'charge', name: 'Charge', ru: 'Натиск', type: 'Combat', kind: 'charge', pick: 'fwd3', steps: 1, text: 'Шаг в одном из передних направлений. Если сразу после этого начинается бой — атака наносит +30% урона.' },
     reinforced_formation:{ id: 'reinforced_formation', name: 'Reinforced Formation', ru: 'Плотный строй', type: 'Defense', kind: 'formation', text: 'До следующего хода: урон во фронт ×0.7, сбоку ×0.85.' },
+    // ---- advanced pool
+    forced_march:       { id: 'forced_march', name: 'Forced March', ru: 'Форсированный марш', type: 'Movement', kind: 'move', pattern: [0, 0, 0], forcedMarch: true, text: 'Три шага по прямой. Если рядом окажется противник — −15% защиты до следующего хода.' },
+    long_hook:          { id: 'long_hook', name: 'Long Hook', ru: 'Дальний крюк', type: 'Maneuver', kind: 'move', pattern: [0, 0, 1], mirror: true, text: 'Два шага прямо, затем шаг с поворотом на 60°.' },
+    ring:               { id: 'ring', name: 'Ring', ru: 'Кольцо', type: 'Territory', kind: 'move', pattern: [0, 1, 2, 3, 4], mirror: true, text: 'Пять шагов вокруг соседнего гекса — замыкает кольцо и захватывает его.' },
+    charge:             { id: 'charge', name: 'Charge', ru: 'Натиск', type: 'Combat', kind: 'charge', pattern: [0], text: 'Один шаг в любом направлении. Если сразу после этого начинается бой — атака наносит +30% урона.' },
     rear_assault:       { id: 'rear_assault', name: 'Rear Assault', ru: 'Удар в спину', type: 'Combat', kind: 'rear_assault', text: 'Следующая атака: в спину — модификатор ×1.9 вместо ×1.5; иначе +10% урона.' },
     split_march:        { id: 'split_march', name: 'Split March', ru: 'Широкий марш', type: 'Territory', kind: 'split', target: 'side', text: 'Следующие 2 пройденных гекса красят также по одному боковому соседу (сторона на выбор).' },
     warband_reinforcements:{ id: 'warband_reinforcements', name: 'Warband Reinforcements', ru: 'Подкрепление', type: 'Reinforcement', kind: 'reinforce', amount: 7, poiBonus: 2, text: '+7 миньонов. Если контролируете 2+ точки — ещё +2.' },
@@ -32,12 +30,13 @@ window.HB = window.HB || {};
     reinforced_shields: { id: 'reinforced_shields', name: 'Reinforced Shields', ru: 'Крепкие щиты', type: 'Defense', kind: 'shields', poi: true, text: 'Следующая атака во фронт по отряду наносит на 40% меньше урона.' },
     scout_route:        { id: 'scout_route', name: 'Scout Route', ru: 'Разведка', type: 'Utility', kind: 'scout', target: 'scout', poi: true, text: 'Посмотреть 3 верхние карты колоды и положить одну из них наверх.' },
     claim:              { id: 'claim', name: 'Claim', ru: 'Знамя', type: 'Territory', kind: 'claim', poi: true, text: 'Следующие 3 пройденных гекса дают по 2 очка территории вместо 1.' },
-    blink:              { id: 'blink', name: 'Blink', ru: 'Прыжок', type: 'Movement', kind: 'blink', poi: true, text: 'Переместиться через 1 гекс вперёд. Промежуточный гекс не окрашивается.' },
+    blink:              { id: 'blink', name: 'Blink', ru: 'Прыжок', type: 'Movement', kind: 'blink', poi: true, text: 'Прыжок через один гекс в любом направлении. Промежуточный гекс не окрашивается.' },
   };
-  const BASE_POOL = ['advance', 'double_advance', 'diagonal_march', 'flank_march', 'backstep', 'zigzag', 'rally', 'battle_cry'];
-  const ADVANCED_POOL = ['forced_march', 'retreat', 'charge', 'reinforced_formation', 'rear_assault', 'split_march', 'warband_reinforcements'];
+  const BASE_POOL = ['advance', 'double_advance', 'hook', 'zigzag', 'around', 'rally', 'battle_cry', 'reinforced_formation'];
+  const ADVANCED_POOL = ['forced_march', 'long_hook', 'ring', 'charge', 'rear_assault', 'split_march', 'warband_reinforcements'];
   const DECK_POOL = BASE_POOL.concat(ADVANCED_POOL);
-  const DIR_RU = { 0: 'вперёд', 5: 'вперёд-влево', 1: 'вперёд-вправо', 3: 'назад', 4: 'назад-влево', 2: 'назад-вправо' };
+  // absolute directions for logs / labels: 0 N, 1 NE, 2 SE, 3 S, 4 SW, 5 NW
+  const DIR_RU = ['вверх', 'вверх-вправо', 'вниз-вправо', 'вниз', 'вниз-влево', 'вверх-влево'];
 
   // `build` selects the outpost drawing in render.js
   const POIS = {
@@ -53,10 +52,10 @@ window.HB = window.HB || {};
   const POI_POOL = Object.keys(POIS);
 
   const PRESETS = {
-    balanced:  { name: 'Balanced Starter', ru: 'Сбалансированная', cards: ['advance', 'double_advance', 'diagonal_march', 'flank_march', 'backstep', 'zigzag', 'rally', 'battle_cry'], pois: ['village', 'watchtower', 'shrine'] },
-    expansion: { name: 'Expansion', ru: 'Экспансия', cards: ['advance', 'double_advance', 'diagonal_march', 'flank_march', 'zigzag', 'split_march', 'forced_march', 'backstep'], pois: ['war_banner', 'scout_camp', 'portal'] },
-    duel:      { name: 'Duel', ru: 'Дуэль', cards: ['advance', 'diagonal_march', 'flank_march', 'charge', 'battle_cry', 'rear_assault', 'retreat', 'rally'], pois: ['shrine', 'mine', 'workshop'] },
-    swarm:     { name: 'Swarm', ru: 'Орда', cards: ['advance', 'double_advance', 'diagonal_march', 'flank_march', 'backstep', 'rally', 'warband_reinforcements', 'battle_cry'], pois: ['village', 'shrine', 'war_banner'] },
+    balanced:  { name: 'Balanced Starter', ru: 'Сбалансированная', cards: ['advance', 'double_advance', 'hook', 'zigzag', 'around', 'rally', 'battle_cry', 'reinforced_formation'], pois: ['village', 'watchtower', 'shrine'] },
+    expansion: { name: 'Expansion', ru: 'Экспансия', cards: ['advance', 'double_advance', 'hook', 'zigzag', 'around', 'ring', 'split_march', 'forced_march'], pois: ['war_banner', 'scout_camp', 'portal'] },
+    duel:      { name: 'Duel', ru: 'Дуэль', cards: ['advance', 'double_advance', 'hook', 'charge', 'battle_cry', 'rear_assault', 'rally', 'reinforced_formation'], pois: ['shrine', 'mine', 'workshop'] },
+    swarm:     { name: 'Swarm', ru: 'Орда', cards: ['advance', 'double_advance', 'hook', 'around', 'rally', 'warband_reinforcements', 'battle_cry', 'long_hook'], pois: ['village', 'shrine', 'war_banner'] },
   };
 
   HB.cards = { CARDS, BASE_POOL, ADVANCED_POOL, DECK_POOL, POIS, POI_POOL, PRESETS, DIR_RU };
