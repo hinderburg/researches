@@ -1,14 +1,17 @@
-// UI glue: setup screen, drag-and-drop hand (D-028), bot turns, hotseat hand-over, results.
+// UI glue: setup screen, hand with piles (D-037), drag-to-play with a glowing cursor FX (D-028, D-036), bot turns,
+// hotseat hand-over, results.
 window.HB = window.HB || {};
 (function () {
   const R = HB.rules, hex = HB.hex, CFG = HB.CONFIG, CARDS = HB.cards.CARDS, POIS = HB.cards.POIS, PRESETS = HB.cards.PRESETS;
   const $ = sel => document.querySelector(sel);
   const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
-  const KIND_CLASS = { move: 'k-move', charge: 'k-combat', sidestep: 'k-move', zigzag: 'k-move', blink: 'k-move', reinforce: 'k-reinf', buff_next: 'k-combat', rear_assault: 'k-combat', explosive: 'k-combat', blessing: 'k-combat', formation: 'k-def', overwatch: 'k-def', shields: 'k-def', split: 'k-terr', claim: 'k-terr', scout: 'k-util' };
+  const KIND_CLASS = { move: 'k-move', charge: 'k-combat', blink: 'k-move', reinforce: 'k-reinf', buff_next: 'k-combat', explosive: 'k-combat', blessing: 'k-combat', formation: 'k-def', overwatch: 'k-def', shields: 'k-def', counter: 'k-def', split: 'k-terr', claim: 'k-terr', scout: 'k-util' };
   const cardHTML = (defId, poi) => { const d = CARDS[defId]; return `<div class="card-icon">${HB.icons.svg(defId)}</div><div class="card-name">${d.ru}</div>${poi ? '<div class="card-poi">POI</div>' : ''}`; };
+  const cardClass = (defId, poi) => 'card ' + (KIND_CLASS[CARDS[defId].kind] || '') + (poi ? ' poi' : '');
+  const rectOf = e => e.getBoundingClientRect();
 
   const UI = {
-    state: null, renderer: null, busy: false, opts: null, drag: null, lastActor: null, handoverPending: false,
+    state: null, renderer: null, busy: false, opts: null, drag: null, lastActor: null, handoverPending: false, lastEvents: [],
     setup: { mode: 'bot', rounds: CFG.ROUND_LIMIT, seed: '', p: { 1: null, 2: null }, botPreset: 'balanced' },
 
     // ------------------------------------------------------------ setup screen
@@ -32,12 +35,11 @@ window.HB = window.HB || {};
       let skip = false; try { skip = localStorage.getItem('hexband.introSeen') === '1'; } catch (e) {}
       if (!skip) this.showIntro(false);
     },
-    // Onboarding shown when the game is opened (D-033): the five things a new player must know.
     showIntro(manual) {
       const ic = id => `<span class="intro-ic">${HB.icons.svg(id)}</span>`;
       const ov = this.overlay(`<div class="intro">
         <h2>HEXBand — как это работает</h2>
-        <div class="intro-item">${ic('hook')}<div><b>Ходите картами.</b> Перетащите карту на поле: карта задаёт форму маршрута, а куда идти — решаете вы, отпустив её в нужной стороне. Отряд идёт сразу. За ход можно сыграть сколько угодно карт, минимум одну; затем «Завершить ход».</div></div>
+        <div class="intro-item">${ic('hook')}<div><b>Ходите картами.</b> Перетащите карту на поле: карта задаёт форму маршрута, а куда идти — решаете вы, отпустив её в нужной стороне. Отряд идёт сразу. За ход можно сыграть сколько угодно карт, минимум одну; затем «Закончить ход».</div></div>
         <div class="intro-item">${ic('ring')}<div><b>Захватывайте территорию.</b> Каждый пройденный гекс становится вашим. Замкните область своими гексами — всё внутри тоже станет вашим. Очки = ваши гексы.</div></div>
         <div class="intro-item">${ic('recruitment')}<div><b>Берите форпосты.</b> Пройдите через форпост или обведите его контуром. Карта, парящая над ним, ляжет в вашу колоду и придёт в руку с добором на следующем ходу. Потеряете форпост — потеряете и карту.</div></div>
         <div class="intro-item">${ic('battle_cry')}<div><b>Бой.</b> Если после вашей карты противник стоит на соседнем гексе — ваш отряд атакует (не больше одного удара за ход). Чем больше миньонов, тем сильнее удар; карты боя усиливают его или защищают вас.</div></div>
@@ -111,16 +113,15 @@ window.HB = window.HB || {};
     // ------------------------------------------------------------ game
     startGame(opts) {
       this.state = R.createGame(opts);
-      this.lastActor = null; this.handoverPending = false; this.busy = false;
+      this.lastActor = null; this.handoverPending = false; this.busy = false; this.lastEvents = [];
       $('#setup').hidden = true; $('#game').hidden = false; $('#overlay').hidden = true;
       if (!this.renderer) {
         this.renderer = new HB.Renderer($('#board'));
         $('#board').addEventListener('click', e => this.onCanvasClick(e));
         window.addEventListener('resize', () => this.layout());
         if (window.ResizeObserver) new ResizeObserver(() => this.layout()).observe($('#board-wrap'));
-        $('#btn-end').addEventListener('click', () => this.endTurn());
-        $('#btn-pass').addEventListener('click', () => this.showPassPicker());
         $('#btn-quit').addEventListener('click', () => this.toSetup());
+        $('#btn-pass').addEventListener('click', () => this.showPassPicker());
         this.bindDrag();
       }
       this.renderer.setState(this.state);
@@ -136,7 +137,7 @@ window.HB = window.HB || {};
     positions() { const s = this.state; return { 1: { col: s.players[1].warband.col, row: s.players[1].warband.row }, 2: { col: s.players[2].warband.col, row: s.players[2].warband.row } }; },
     layout() {
       const wrap = $('#board-wrap'); if (!this.renderer || !this.state) return;
-      const r = wrap.getBoundingClientRect();
+      const r = rectOf(wrap);
       this.renderer.resize(Math.floor(r.width), Math.floor(r.height));
     },
     current() { return this.state.players[this.state.current]; },
@@ -146,8 +147,11 @@ window.HB = window.HB || {};
       if (s.phase === 'over') { this.showGameOver(); return; }
       const p = this.current();
       this.refresh();
-      if (p.bot) { this.busy = true; this.refresh(); setTimeout(() => this.botMove(), CFG.BOT_DELAY_MS); }
-      else if (this.opts.players[2].bot === false && this.lastActor && this.lastActor !== p.id) this.showHandover(p);
+      if (p.bot) { this.busy = true; this.refresh(); setTimeout(() => this.botMove(), CFG.BOT_DELAY_MS); return; }
+      if (this.opts.players[2].bot === false && this.lastActor && this.lastActor !== p.id) this.showHandover(p);
+      const drawEv = this.lastEvents.find(e => e.type === 'draw' && e.player === p.id);
+      this.lastEvents = [];
+      if (drawEv) this.animateDraw(drawEv);
     },
     botMove() {
       const s = this.state; if (!s || s.phase !== 'play') { this.nextTurn(); return; }
@@ -161,6 +165,7 @@ window.HB = window.HB || {};
     },
     afterAction() {
       const s = this.state, events = R.takeEvents(s);
+      this.lastEvents = events;
       this.appendLog(events.filter(e => e.type === 'log').map(e => e.text));
       const dur = this.renderer.applyEvents(events);
       this.renderer.highlights = []; this.renderer.pathFrom = null;
@@ -168,7 +173,7 @@ window.HB = window.HB || {};
       setTimeout(() => { this.busy = false; this.refresh(); this.nextTurn(); }, Math.min(dur, 2500) + 150);
     },
 
-    // ------------------------------------------------------------ HUD & hand
+    // ------------------------------------------------------------ HUD & hand (D-037)
     refresh() {
       const s = this.state; if (!s) return;
       const total = R.totalCells(s), sc = R.scoreboard(s);
@@ -176,38 +181,40 @@ window.HB = window.HB || {};
         const p = s.players[pid];
         $(`#hud-${pid} .hud-name`).textContent = p.name;
         $(`#hud-${pid} .hud-terr`).textContent = sc[pid].territory;
-        $(`#hud-${pid} .hud-pct`).textContent = Math.round(sc[pid].cells / total * 100) + '%';
+        $(`#hud-${pid} .hud-pct`).textContent = '(' + Math.round(sc[pid].cells / total * 100) + '%)';
         $(`#hud-${pid} .hud-min`).textContent = p.warband.minions;
         $(`#hud-${pid} .hud-poi`).textContent = sc[pid].pois;
         $(`#hud-${pid}`).classList.toggle('active', s.current === pid && s.phase === 'play');
       }
       $('#hud-round').textContent = `Раунд ${R.round(s)} / ${s.roundLimit}`;
       const p = this.current();
-      const hand = $('#hand'); hand.innerHTML = '';
-      const hideHand = p.bot || this.handoverPending;
-      for (const card of p.hand) {
-        const d = CARDS[card.def], play = R.getPlay(s, card);
-        const c = el('div', 'card ' + (KIND_CLASS[d.kind] || '') + (play.ok ? '' : ' disabled') + (card.poi >= 0 ? ' poi' : ''), cardHTML(card.def, card.poi >= 0));
-        c.dataset.uid = card.uid;
-        if (hideHand) c.classList.add('hidden-card');
-        hand.appendChild(c);
-      }
-      for (let i = p.hand.length; i < CFG.HAND_SIZE; i++) hand.appendChild(el('div', 'card empty', ''));
-      $('#hand-title').textContent = `${p.name} · колода ${p.deck.length} · сброс ${p.discard.length}`;
-      $('#status-line').textContent = this.statusText(p);
       const busy = this.busy || p.bot || s.phase !== 'play' || this.handoverPending;
-      $('#btn-end').hidden = busy; $('#btn-end').disabled = s.playedThisTurn < 1;
-      $('#btn-end').classList.toggle('primary', s.playedThisTurn >= 1);
-      $('#btn-pass').hidden = busy || s.playedThisTurn > 0;
-      if (!this.drag) $('#prompt').textContent = this.promptText(p, busy);
-    },
-    promptText(p, busy) {
-      const s = this.state;
-      if (s.phase !== 'play') return 'Матч окончен.';
-      if (p.bot) return `${p.name} думают…`;
-      if (busy) return '…';
-      const n = s.playedThisTurn;
-      return n ? `Сыграно карт: ${n}. Перетащите ещё карту на поле или завершите ход.` : 'Перетащите карту на поле, чтобы сыграть её.';
+      const hideHand = p.bot || this.handoverPending;
+      const hand = $('#hand'); hand.innerHTML = '';
+      const playable = p.hand.map(card => R.getPlay(s, card).ok);
+      for (let i = 0; i < CFG.HAND_SIZE; i++) {
+        const slot = el('div', 'slot');
+        const card = p.hand[i];
+        if (card) {
+          const c = el('div', cardClass(card.def, card.poi >= 0) + (playable[i] ? '' : ' disabled'), cardHTML(card.def, card.poi >= 0));
+          c.dataset.uid = card.uid;
+          if (hideHand) c.classList.add('hidden-card');
+          slot.appendChild(c);
+        } else if (i === CFG.HAND_SIZE - 1 && s.playedThisTurn >= 1 && !busy) {
+          const b = el('button', 'btn end-turn', 'Закончить<br>ход');
+          b.addEventListener('click', () => this.endTurn());
+          slot.appendChild(b);
+        }
+        hand.appendChild(slot);
+      }
+      $('#deck-count').textContent = p.deck.length;
+      $('#discard-count').textContent = p.discard.length;
+      $('#pile-deck').classList.toggle('empty', p.deck.length === 0);
+      $('#pile-discard').classList.toggle('empty', p.discard.length === 0);
+      const last = p.discard[p.discard.length - 1];
+      $('#pile-discard').innerHTML = last ? `<div class="pile-face">${HB.icons.svg(last.def)}</div>` : '';
+      $('#status-line').textContent = busy ? (p.bot ? `${p.name} думают…` : '') : this.statusText(p);
+      $('#btn-pass').hidden = busy || s.playedThisTurn > 0 || playable.some(x => x);
     },
     statusText(p) {
       const s = this.state, st = p.status, out = [];
@@ -222,8 +229,41 @@ window.HB = window.HB || {};
       if (st.claimSteps) out.push(`Знамя ×${st.claimSteps}`);
       return out.length ? 'Эффекты: ' + out.join(', ') : '';
     },
+    // flying card between two screen rects (played card → discard, deck → slot, discard → deck)
+    fly(fromRect, toRect, html, cls, dur) {
+      const f = el('div', 'fly-card ' + (cls || ''), html);
+      document.body.appendChild(f);
+      const w = 60, h = 80;
+      f.style.width = w + 'px'; f.style.height = h + 'px';
+      const x0 = fromRect.left + fromRect.width / 2 - w / 2, y0 = fromRect.top + fromRect.height / 2 - h / 2;
+      const x1 = toRect.left + toRect.width / 2 - w / 2, y1 = toRect.top + toRect.height / 2 - h / 2;
+      const s0 = Math.min(1, fromRect.width / w), s1 = Math.min(1, toRect.width / w);
+      const anim = f.animate([{ transform: `translate(${x0}px,${y0}px) scale(${s0})`, opacity: 1 }, { transform: `translate(${x1}px,${y1}px) scale(${s1})`, opacity: 0.9 }], { duration: dur || 380, easing: 'cubic-bezier(.2,.7,.3,1)' });
+      return new Promise(res => {
+        let done = false;
+        const finish = () => { if (done) return; done = true; f.remove(); res(); };
+        anim.onfinish = finish;
+        setTimeout(finish, (dur || 380) + 200); // background tabs may never fire onfinish
+      });
+    },
+    async animateDraw(ev) {
+      const slots = [...document.querySelectorAll('#hand .slot')];
+      const cards = ev.uids.map(uid => document.querySelector(`#hand .card[data-uid="${uid}"]`)).filter(Boolean);
+      cards.forEach(c => c.classList.add('incoming'));
+      if (ev.reshuffled) {
+        await this.fly(rectOf($('#pile-discard')), rectOf($('#pile-deck')), '<div class="pile-face back"></div>', 'stack', 420);
+        $('#pile-deck').classList.add('shuffle'); setTimeout(() => $('#pile-deck').classList.remove('shuffle'), 500);
+        await new Promise(r => setTimeout(r, 200));
+      }
+      const deckRect = rectOf($('#pile-deck'));
+      const flights = cards.map((c, i) => new Promise(res => setTimeout(async () => {
+        await this.fly(deckRect, rectOf(c), c.innerHTML, c.className.replace('card', '').replace('incoming', ''), 360);
+        c.classList.remove('incoming'); res();
+      }, i * 110)));
+      await Promise.all(flights);
+    },
 
-    // ------------------------------------------------------------ drag & drop (D-028)
+    // ------------------------------------------------------------ drag & drop (D-028, D-036)
     bindDrag() {
       const hand = $('#hand');
       hand.addEventListener('pointerdown', e => {
@@ -235,32 +275,33 @@ window.HB = window.HB || {};
       window.addEventListener('pointerup', e => { if (this.drag && e.pointerId === this.drag.pointerId) this.endDrag(e, true); });
       window.addEventListener('pointercancel', e => { if (this.drag && e.pointerId === this.drag.pointerId) this.endDrag(e, false); });
     },
+    showDesc(d) { $('#card-desc').innerHTML = `<b>${d.ru}</b><span>${d.text}</span>`; $('#card-desc').hidden = false; },
     startDrag(e, uid, cardEl) {
       const s = this.state, p = this.current();
       if (!s || this.busy || p.bot || s.phase !== 'play' || this.handoverPending) return;
       const card = p.hand.find(c => c.uid === uid); if (!card) return;
       const play = R.getPlay(s, card), d = CARDS[card.def];
-      $('#prompt').textContent = `${d.ru}: ${d.text}`;
-      if (!play.ok) { cardEl.classList.add('shake'); setTimeout(() => cardEl.classList.remove('shake'), 400); return; }
+      this.showDesc(d);
+      if (!play.ok) { cardEl.classList.add('shake'); setTimeout(() => { cardEl.classList.remove('shake'); $('#card-desc').hidden = true; }, 700); return; }
       if (d.kind === 'scout') play.options = R.scoutOptions(s, p);
-      const ghost = cardEl.cloneNode(true); ghost.classList.add('ghost'); ghost.classList.remove('hidden-card');
-      document.body.appendChild(ghost);
+      const fx = $('#drag-fx'); fx.hidden = false; fx.className = 'p' + p.id;
       cardEl.classList.add('lifted');
-      this.drag = { uid, card, def: d, play, ghost, cardEl, pointerId: e.pointerId, choice: null, over: false, offX: cardEl.offsetWidth / 2, offY: cardEl.offsetHeight * 0.7 };
+      this.drag = { uid, card, def: d, play, cardEl, pointerId: e.pointerId, choice: null, over: false, x: e.clientX, y: e.clientY };
       this.renderer.dragging = true;
       this.renderer.pathFrom = { col: p.warband.col, row: p.warband.row };
       this.moveDrag(e);
     },
     moveDrag(e) {
       const dg = this.drag, s = this.state, p = this.current(), rd = this.renderer;
-      dg.ghost.style.left = (e.clientX - dg.offX) + 'px'; dg.ghost.style.top = (e.clientY - dg.offY) + 'px';
-      const br = $('#board').getBoundingClientRect();
+      dg.x = e.clientX; dg.y = e.clientY;
+      const fx = $('#drag-fx'); fx.style.left = e.clientX + 'px'; fx.style.top = e.clientY + 'px';
+      const br = rectOf($('#board'));
       dg.over = e.clientX >= br.left && e.clientX <= br.right && e.clientY >= br.top && e.clientY <= br.bottom;
       const hl = [], play = dg.play, kind = dg.def.kind;
       dg.choice = null; dg.valid = false;
       if (play.options && play.options[0] && play.options[0].end) {
         // D-030: pick the pattern variant whose end cell is closest to the pointer; the first cell breaks ties
-        const cr = $('#board').getBoundingClientRect(), px = e.clientX - cr.left, py = e.clientY - cr.top;
+        const px = e.clientX - br.left, py = e.clientY - br.top;
         const dist = c => { const q = rd.cellXY(c.col, c.row); return Math.hypot(q.x - px, q.y - py); };
         let opt = play.options[0], best = Infinity;
         for (const o of play.options) { const sc = dist(o.end) + 0.35 * dist(o.path[0]); if (sc < best) { best = sc; opt = o; } }
@@ -272,7 +313,7 @@ window.HB = window.HB || {};
         const wx = rd.warbandScreenX(p.id), side = e.clientX < wx ? -1 : 1;
         const opt = play.options.find(o => o.side === side) || play.options[0];
         dg.choice = opt; dg.valid = true;
-        $('#prompt').textContent = `${dg.def.ru}: ${opt.label}`;
+        $('#card-desc').innerHTML = `<b>${dg.def.ru}: ${opt.label}</b><span>${dg.def.text}</span>`;
       } else if (kind === 'explosive') {
         const cell = dg.over ? rd.cellFromPointer(e.clientX, e.clientY) : null;
         const opt = cell && play.options.find(o => o.cell.col === cell.col && o.cell.row === cell.row);
@@ -285,28 +326,34 @@ window.HB = window.HB || {};
         if (play.path) play.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: i + 1, strong: dg.over }));
       }
       rd.highlights = hl;
-      dg.ghost.classList.toggle('drop-ok', dg.over && dg.valid);
+      fx.classList.toggle('ok', dg.over && dg.valid);
       $('#hand-area').classList.toggle('drop-cancel', !dg.over);
     },
     endDrag(e, drop) {
       const dg = this.drag; if (!dg) return;
+      if (drop && e.clientX != null) this.moveDrag(e); // decide by where the pointer was released, not the last move
       this.drag = null;
-      dg.ghost.remove(); dg.cardEl.classList.remove('lifted');
+      $('#drag-fx').hidden = true; $('#card-desc').hidden = true;
+      dg.cardEl.classList.remove('lifted');
       $('#hand-area').classList.remove('drop-cancel');
       this.renderer.highlights = []; this.renderer.pathFrom = null; this.renderer.dragging = false;
       if (drop && dg.over && dg.valid) {
         if (dg.def.kind === 'scout') { this.showScoutPicker(dg); return; }
-        this.commit(dg.uid, dg.choice);
+        this.commit(dg.uid, dg.choice, { x: e.clientX, y: e.clientY, cardEl: dg.cardEl });
         return;
       }
       this.refresh();
     },
-    commit(uid, choice) {
-      const s = this.state;
+    commit(uid, choice, from) {
+      const s = this.state, p = this.current(), card = p.hand.find(c => c.uid === uid);
       this.renderer.prevPos = this.positions();
       this.lastActor = s.current;
       const ok = R.playCard(s, uid, choice);
       if (!ok) { this.refresh(); return; }
+      if (from && card) { // the played card flies from the finger into the discard pile (D-037)
+        const start = { left: from.x - 20, top: from.y - 28, width: 40, height: 56 };
+        this.fly(start, rectOf($('#pile-discard')), cardHTML(card.def, card.poi >= 0), cardClass(card.def, card.poi >= 0), 420);
+      }
       this.afterAction();
     },
     endTurn() {
@@ -325,7 +372,7 @@ window.HB = window.HB || {};
       if (c.poi >= 0) { const poi = s.pois[c.poi], d = POIS[poi.type]; txt += ` · ${d.ru} → «${CARDS[d.card].ru}»`; }
       const occ = R.occupant(s, cell);
       if (occ) { const w = s.players[occ].warband; txt += ` · отряд ${s.players[occ].name}, ${w.minions} миньонов`; }
-      $('#prompt').textContent = txt;
+      $('#status-line').textContent = txt;
     },
 
     // ------------------------------------------------------------ overlays
@@ -334,19 +381,19 @@ window.HB = window.HB || {};
       const ov = this.overlay(`<h2>Разведка</h2><p>Выберите карту, которая ляжет наверх колоды.</p><div class="pick-row" id="scout-row"></div><button class="btn ghost" id="scout-cancel">Отмена</button>`);
       const row = $('#scout-row');
       for (const o of dg.play.options) {
-        const uid = o.uid, defId = this.current().deck.find(c => c.uid === uid).def;
-        const c = el('div', 'card ' + (KIND_CLASS[CARDS[defId].kind] || ''), cardHTML(defId, CARDS[defId].poi));
-        c.addEventListener('click', () => { ov.hidden = true; this.commit(dg.uid, o); });
+        const uid = o.uid, c0 = this.current().deck.find(c => c.uid === uid);
+        const c = el('div', cardClass(c0.def, c0.poi >= 0), cardHTML(c0.def, c0.poi >= 0));
+        c.addEventListener('click', () => { ov.hidden = true; this.commit(dg.uid, o, null); });
         row.appendChild(c);
       }
       $('#scout-cancel').addEventListener('click', () => { ov.hidden = true; this.refresh(); });
     },
     showPassPicker() {
       const s = this.state, p = this.current(); if (s.playedThisTurn > 0 || this.busy) return;
-      const ov = this.overlay(`<h2>Пропустить ход</h2><p>Выберите карту, которая уйдёт в сброс.</p><div class="pick-row" id="pass-row"></div><button class="btn ghost" id="pass-cancel">Отмена</button>`);
+      const ov = this.overlay(`<h2>Нет доступных ходов</h2><p>Выберите карту, которая уйдёт в сброс — ход перейдёт сопернику.</p><div class="pick-row" id="pass-row"></div><button class="btn ghost" id="pass-cancel">Отмена</button>`);
       const row = $('#pass-row');
       for (const card of p.hand) {
-        const c = el('div', 'card ' + (KIND_CLASS[CARDS[card.def].kind] || ''), cardHTML(card.def, card.poi >= 0));
+        const c = el('div', cardClass(card.def, card.poi >= 0), cardHTML(card.def, card.poi >= 0));
         c.addEventListener('click', () => { ov.hidden = true; this.renderer.prevPos = this.positions(); this.lastActor = s.current; R.passTurn(s, card.uid); this.afterAction(); });
         row.appendChild(c);
       }
@@ -372,11 +419,11 @@ window.HB = window.HB || {};
     },
     showHelp() {
       const ov = this.overlay(`<div class="help"><h2>Как играть</h2>
-        <p><b>Ход.</b> В начале хода рука добирается до 4 карт. Чтобы сыграть карту, перетащите её на поле: маршрут показывается заранее, отряд выполняет действие сразу после того, как вы отпустите карту. Отпустите карту над рукой — она вернётся на место. За ход можно сыграть сколько угодно карт, минимум одну; затем «Завершить ход».</p>
+        <p><b>Ход.</b> В начале хода рука добирается до 4 карт из колоды (если колода пуста, сброс перемешивается в колоду). Чтобы сыграть карту, перетащите её на поле: маршрут показывается заранее, отряд выполняет действие сразу после того, как вы отпустите карту, и она уходит в сброс. Отпустите над рукой — карта вернётся на место. За ход можно сыграть сколько угодно карт, минимум одну; после первой карты в правом слоте появляется «Закончить ход».</p>
         <p><b>Направления.</b> Карта движения задаёт только форму и длину маршрута (прямая, крюк, зигзаг, полукольцо, кольцо). Куда идти — решаете вы: пока тянете карту, на поле подсвечены все возможные концы маршрута, а выбирается тот, что ближе к точке, где вы отпустите карту. Для «Широкого марша» сторона — слева или справа от отряда.</p>
         <p><b>Территория.</b> Пройденные гексы окрашиваются в ваш цвет. Если ваши гексы замыкают область, всё внутри становится вашим. <b>Форпосты</b> захватываются проходом через гекс или замыканием контура; карта, парящая над форпостом, ложится наверх вашей колоды и приходит в руку с добором на следующем ходу. Потеря форпоста забирает карту.</p>
         <p><b>Бой.</b> После вашей карты бой начинается автоматически, если противник стоит на соседнем гексе — не больше одного удара за ход. Урон зависит от размера вашего отряда (примерно 0.15 за миньона) и карт: «Боевой клич», «Натиск», «Благословение» усиливают удар, «Плотный строй» и «Крепкие щиты» ослабляют входящий, «Ответный удар» отвечает на атаку половинным уроном, «Дозор» бьёт вошедшего на соседний гекс.</p>
-        <p><b>Победа</b>: уничтожить отряд противника или иметь больше очков территории после лимита раундов.</p>
+        <p><b>Победа</b>: уничтожить отряд противника или иметь больше очков территории после лимита раундов. Тай-брейк: точки → миньоны → захват в последнем раунде.</p>
         <p class="muted">Пиктограммы: стрелки — движение (шевроны = число шагов), фигурки — миньоны, меч — атака, щит — защита, глаз — дозор, флаг — очки территории.</p>
         <button class="btn primary" id="btn-help-close">Понятно</button></div>`);
       $('#btn-help-close').addEventListener('click', () => { ov.hidden = true; });

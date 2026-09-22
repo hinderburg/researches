@@ -36,13 +36,14 @@ window.HB = window.HB || {};
     }
     resize(w, h) {
       const s = this.s; if (!s) return;
-      const size = Math.floor(Math.min(w / (1.5 * (s.cols - 1) + 2), h / (hex.SQRT3 * s.rows + 1.2)));
+      // D-035: the board takes the whole width; only a small top margin is kept for the banner of a warband on row 0
+      const size = Math.floor(Math.min(w / (1.5 * (s.cols - 1) + 2), h / (hex.SQRT3 * s.rows + 0.7)));
       this.size = Math.max(10, size);
       const b = hex.boardSize(s.cols, s.rows, this.size);
       this.dpr = window.devicePixelRatio || 1;
       this.canvas.width = Math.round(w * this.dpr); this.canvas.height = Math.round(h * this.dpr);
       this.canvas.style.width = w + 'px'; this.canvas.style.height = h + 'px';
-      this.offset = { x: (w - b.w) / 2, y: (h - b.h) / 2 + this.size * 0.5 };
+      this.offset = { x: (w - b.w) / 2, y: (h - b.h) / 2 + this.size * 0.35 };
       this.cssSize = { w, h };
     }
     cellXY(col, row) { const p = hex.pixel(col, row, this.size); return { x: p.x + this.offset.x, y: p.y + this.offset.y }; }
@@ -239,58 +240,30 @@ window.HB = window.HB || {};
       ctx.fillStyle = fg; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x, y + 1);
     }
     drawOutpost(ctx, poi, now) {
-      const S = this.size, p = this.cellXY(poi.col, poi.row), def = POIS[poi.type], x = p.x, y = p.y + S * 0.12;
-      const owner = poi.owner, teamCol = owner ? COL[owner] : '#c9b98a';
-      // fence
-      ctx.strokeStyle = '#6b4a25'; ctx.lineWidth = 2;
-      for (let i = -2; i <= 2; i++) { const fx = x + i * S * 0.19, fy = y + S * 0.42 - Math.abs(i) * S * 0.03; ctx.beginPath(); ctx.moveTo(fx, fy - S * 0.12); ctx.lineTo(fx, fy + S * 0.05); ctx.stroke(); }
-      ctx.beginPath(); ctx.moveTo(x - S * 0.42, y + S * 0.36); ctx.lineTo(x + S * 0.42, y + S * 0.36); ctx.stroke();
-      // building
-      const b = def.build;
-      ctx.lineWidth = 1.5; ctx.strokeStyle = '#3b2a14';
-      if (b === 'house') {
-        ctx.fillStyle = '#c99a5b'; ctx.fillRect(x - S * 0.28, y - S * 0.05, S * 0.56, S * 0.32); ctx.strokeRect(x - S * 0.28, y - S * 0.05, S * 0.56, S * 0.32);
-        ctx.fillStyle = '#e0b04a'; ctx.beginPath(); ctx.moveTo(x - S * 0.36, y - S * 0.05); ctx.lineTo(x, y - S * 0.36); ctx.lineTo(x + S * 0.36, y - S * 0.05); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = '#5b3a1e'; ctx.fillRect(x - S * 0.06, y + S * 0.1, S * 0.12, S * 0.17);
-      } else if (b === 'tower') {
-        ctx.fillStyle = '#8d8f96'; ctx.fillRect(x - S * 0.17, y - S * 0.36, S * 0.34, S * 0.66); ctx.strokeRect(x - S * 0.17, y - S * 0.36, S * 0.34, S * 0.66);
-        ctx.fillStyle = '#6f7178'; for (let i = 0; i < 3; i++) ctx.fillRect(x - S * 0.17 + i * S * 0.13, y - S * 0.44, S * 0.08, S * 0.09);
-        ctx.fillStyle = '#2b2b30'; ctx.fillRect(x - S * 0.04, y - S * 0.2, S * 0.08, S * 0.1);
-      } else if (b === 'mine') {
-        ctx.fillStyle = '#7a6a55'; ctx.beginPath(); ctx.ellipse(x, y + S * 0.1, S * 0.36, S * 0.28, 0, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = '#2a1e12'; ctx.beginPath(); ctx.ellipse(x, y + S * 0.12, S * 0.16, S * 0.16, 0, Math.PI, 0); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = '#ffd84a'; ctx.fillRect(x - S * 0.3, y + S * 0.18, S * 0.07, S * 0.07); ctx.fillRect(x + S * 0.22, y + S * 0.2, S * 0.07, S * 0.07);
-      } else if (b === 'shrine') {
-        ctx.fillStyle = '#d9d3c4'; ctx.fillRect(x - S * 0.1, y - S * 0.25, S * 0.2, S * 0.5); ctx.strokeRect(x - S * 0.1, y - S * 0.25, S * 0.2, S * 0.5);
-        ctx.fillStyle = '#ffe27a'; ctx.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? S * 0.07 : S * 0.16; ctx.lineTo(x + r * Math.cos(a), y - S * 0.36 + r * Math.sin(a)); } ctx.closePath(); ctx.fill(); ctx.stroke();
-      } else if (b === 'workshop') {
-        ctx.fillStyle = '#b07a4a'; ctx.fillRect(x - S * 0.3, y - S * 0.1, S * 0.6, S * 0.36); ctx.strokeRect(x - S * 0.3, y - S * 0.1, S * 0.6, S * 0.36);
-        ctx.fillStyle = '#6e4a2a'; ctx.fillRect(x - S * 0.34, y - S * 0.2, S * 0.68, S * 0.12); ctx.strokeRect(x - S * 0.34, y - S * 0.2, S * 0.68, S * 0.12);
-        ctx.strokeStyle = '#3b2a14'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(x, y - S * 0.32, S * 0.11, 0, Math.PI * 2); ctx.stroke(); ctx.lineWidth = 1.5;
-      } else if (b === 'camp') {
-        ctx.fillStyle = '#c9b06a'; ctx.beginPath(); ctx.moveTo(x - S * 0.34, y + S * 0.26); ctx.lineTo(x, y - S * 0.3); ctx.lineTo(x + S * 0.34, y + S * 0.26); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = '#5b3a1e'; ctx.beginPath(); ctx.moveTo(x - S * 0.1, y + S * 0.26); ctx.lineTo(x, y + S * 0.02); ctx.lineTo(x + S * 0.1, y + S * 0.26); ctx.closePath(); ctx.fill();
-      } else if (b === 'banner') {
-        ctx.strokeStyle = '#3b2a14'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x, y + S * 0.3); ctx.lineTo(x, y - S * 0.42); ctx.stroke(); ctx.lineWidth = 1.5;
-        ctx.fillStyle = teamCol; ctx.beginPath(); ctx.moveTo(x, y - S * 0.42); ctx.lineTo(x + S * 0.4, y - S * 0.32); ctx.lineTo(x, y - S * 0.14); ctx.closePath(); ctx.fill(); ctx.stroke();
-      } else if (b === 'portal') {
-        ctx.strokeStyle = '#6b4ac2'; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(x, y - S * 0.05, S * 0.26, S * 0.34, 0, 0, Math.PI * 2); ctx.stroke();
-        ctx.fillStyle = 'rgba(160,120,255,0.5)'; ctx.fill(); ctx.lineWidth = 1.5;
-      }
-      // owner flag on the outpost
-      if (owner) { ctx.strokeStyle = '#3b2a14'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + S * 0.4, y + S * 0.3); ctx.lineTo(x + S * 0.4, y - S * 0.2); ctx.stroke(); ctx.fillStyle = teamCol; ctx.beginPath(); ctx.moveTo(x + S * 0.4, y - S * 0.2); ctx.lineTo(x + S * 0.62, y - S * 0.12); ctx.lineTo(x + S * 0.4, y - S * 0.02); ctx.closePath(); ctx.fill(); }
-      // name pill
-      this.pill(ctx, x, y + S * 0.62, def.ru, S * 0.26, '#f3e6c4', '#2a1e12');
-      // floating reward card
-      const bob = Math.sin(now / 520 + poi.id) * S * 0.05, cw = S * 0.8, ch = S * 1.0, cx = x - cw / 2, cy = y - S * 1.3 - ch / 2 + bob;
-      if (owner) { ctx.shadowColor = COL[owner + 'Light']; ctx.shadowBlur = S * 0.35; }
-      ctx.fillStyle = '#f7ead0'; ctx.strokeStyle = owner ? teamCol : '#8a6b3a'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.roundRect(cx, cy, cw, ch, S * 0.08); ctx.fill(); ctx.stroke();
+      const S = this.size, p = this.cellXY(poi.col, poi.row), def = POIS[poi.type], x = p.x, y = p.y;
+      const owner = poi.owner, teamCol = owner ? COL[owner] : '#8a6b3a';
+      // fence: the landmark at the bottom of the hex (D-036)
+      ctx.strokeStyle = '#7a4f22'; ctx.lineWidth = Math.max(2, S * 0.06); ctx.lineCap = 'round';
+      const fy = y + S * 0.72;
+      ctx.beginPath(); ctx.moveTo(x - S * 0.62, fy); ctx.lineTo(x + S * 0.62, fy); ctx.stroke();
+      for (let i = -3; i <= 3; i++) { const fx = x + i * S * 0.2; ctx.beginPath(); ctx.moveTo(fx, fy - S * 0.16); ctx.lineTo(fx, fy + S * 0.06); ctx.stroke(); }
+      ctx.lineCap = 'butt';
+      // floating reward card, about a hex wide (D-036)
+      const bob = Math.sin(now / 520 + poi.id) * S * 0.04, cw = S * 1.5, ch = S * 1.85, cx = x - cw / 2, cy = y - S * 1.25 + bob;
+      if (owner) { ctx.shadowColor = COL[owner + 'Light']; ctx.shadowBlur = S * 0.4; }
+      ctx.fillStyle = '#f7ead0'; ctx.strokeStyle = teamCol; ctx.lineWidth = owner ? 3 : 2;
+      ctx.beginPath(); ctx.roundRect(cx, cy, cw, ch, S * 0.12); ctx.fill(); ctx.stroke();
       ctx.shadowBlur = 0;
-      const img = HB.icons.image(def.card, '#3a2a12');
-      if (img.complete && img.naturalWidth) ctx.drawImage(img, cx + cw * 0.12, cy + ch * 0.08, cw * 0.76, cw * 0.76);
-      ctx.fillStyle = '#3a2a12'; ctx.font = `bold ${Math.round(S * 0.2)}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(CARDS[def.card].ru, x, cy + ch * 0.86, cw * 0.95);
+      // header with the outpost name
+      ctx.fillStyle = owner ? teamCol : '#8a6b3a';
+      ctx.beginPath(); ctx.roundRect(cx, cy, cw, ch * 0.2, [S * 0.12, S * 0.12, 0, 0]); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.round(S * 0.22)}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(def.ru, x, cy + ch * 0.1 + 1, cw * 0.92);
+      // reward icon + name
+      const img = HB.icons.image(def.card, '#3a2a12'), isz = cw * 0.66;
+      if (img.complete && img.naturalWidth) ctx.drawImage(img, x - isz / 2, cy + ch * 0.24, isz, isz);
+      ctx.fillStyle = '#3a2a12'; ctx.font = `bold ${Math.round(S * 0.2)}px system-ui, sans-serif`;
+      ctx.fillText(CARDS[def.card].ru, x, cy + ch * 0.88, cw * 0.92);
     }
     warbandPos(p, now) {
       const sl = this.slide[p.id], end = this.cellXY(p.warband.col, p.warband.row);

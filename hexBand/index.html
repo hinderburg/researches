@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>HEXBand — прототип</title>
-<meta name="description" content="HEXBand: пошаговая PvP-тактика на гексах — захват территории, колода манёвров, позиционный бой.">
+<meta name="description" content="HEXBand: пошаговая PvP-тактика на гексах — захват территории, колода манёвров, бой при соседстве.">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -14,7 +14,7 @@
     <header class="setup-head">
       <div>
         <h1>HEXBand <span id="setup-version" class="muted"></span></h1>
-        <p class="muted">Захват территории × колода манёвров × позиционный бой.</p>
+        <p class="muted">Захват территории × колода манёвров × бой при соседстве.</p>
       </div>
       <div class="row"><button class="btn ghost" id="btn-intro">Основы</button><button class="btn ghost" id="btn-help">Правила</button></div>
     </header>
@@ -62,35 +62,35 @@
   <section id="game" hidden>
     <header class="hud">
       <div class="hud-side p1" id="hud-1">
-        <div class="hud-name">Синие</div>
-        <div class="hud-stats"><b class="hud-terr">0</b> очк. · <span class="hud-pct">0%</span> · <b class="hud-min">24</b> ⚔ · <span class="hud-poi">0</span> ⚑</div>
+        <span class="hud-name">Синие</span>
+        <span class="hud-stats"><b class="hud-terr">0</b> <span class="hud-pct">(0%)</span> · <b class="hud-min">24</b>⚔ · <span class="hud-poi">0</span>⚑</span>
       </div>
       <div class="hud-center">
-        <div id="hud-round">Раунд 1</div>
-        <div class="hud-btns"><button class="btn tiny ghost" id="btn-help-game">?</button><button class="btn tiny ghost" id="btn-quit">Меню</button></div>
+        <span id="hud-round">Раунд 1</span>
+        <button class="btn tiny ghost" id="btn-help-game">?</button><button class="btn tiny ghost" id="btn-quit">≡</button>
       </div>
       <div class="hud-side p2" id="hud-2">
-        <div class="hud-name">Красные</div>
-        <div class="hud-stats"><span class="hud-poi">0</span> ⚑ · <b class="hud-min">24</b> ⚔ · <span class="hud-pct">0%</span> · <b class="hud-terr">0</b> очк.</div>
+        <span class="hud-stats"><span class="hud-poi">0</span>⚑ · <b class="hud-min">24</b>⚔ · <span class="hud-pct">(0%)</span> <b class="hud-terr">0</b></span>
+        <span class="hud-name">Красные</span>
       </div>
     </header>
 
     <div id="board-wrap"><canvas id="board"></canvas></div>
 
     <div id="hand-area">
-      <div id="prompt">Перетащите карту на поле.</div>
-      <div id="hand"></div>
-      <div id="hand-title" class="muted"></div>
-      <div id="status-line" class="muted"></div>
-      <div id="actions">
-        <button class="btn" id="btn-end">Завершить ход</button>
-        <button class="btn ghost" id="btn-pass">Пропустить ход</button>
+      <div id="card-desc" hidden></div>
+      <div id="hand-row">
+        <div class="pile-col"><div class="pile-count" id="discard-count">0</div><div class="pile discard" id="pile-discard"></div><div class="pile-label">сброс</div></div>
+        <div id="hand-frame"><div id="hand"></div></div>
+        <div class="pile-col"><div class="pile-count" id="deck-count">0</div><div class="pile deck" id="pile-deck"></div><div class="pile-label">колода</div></div>
       </div>
+      <div id="status-row"><span id="status-line" class="muted"></span><button class="btn tiny ghost" id="btn-pass" hidden>Нет ходов — сбросить карту</button></div>
     </div>
 
     <details id="log"><summary>Журнал матча</summary><div id="log-lines"></div></details>
   </section>
 
+  <div id="drag-fx" hidden></div>
   <div id="overlay" hidden></div>
 </div>
 

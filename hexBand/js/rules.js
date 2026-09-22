@@ -88,15 +88,19 @@ window.HB = window.HB || {};
 
   // ---------------------------------------------------------------- deck
   function draw(s, p, n) {
+    const drawn = [];
+    let reshuffled = false;
     for (let i = 0; i < n; i++) {
-      if (p.hand.length >= CFG.HAND_SIZE) return;
+      if (p.hand.length >= CFG.HAND_SIZE) break;
       if (p.deck.length === 0) {
-        if (p.discard.length === 0) return;
+        if (p.discard.length === 0) break;
         p.deck = shuffle(s, p.discard); p.discard = [];
+        reshuffled = true;
         s.events.push({ type: 'reshuffle', player: p.id });
       }
-      p.hand.push(p.deck.shift());
+      const c = p.deck.shift(); p.hand.push(c); drawn.push(c.uid);
     }
+    if (drawn.length) s.events.push({ type: 'draw', player: p.id, uids: drawn, reshuffled });
   }
   function removePoiCard(s, p, poiId) {
     const pick = arr => { const i = arr.findIndex(c => c.poi === poiId); return i >= 0 ? arr.splice(i, 1)[0] : null; };
