@@ -34,9 +34,14 @@ window.HB = window.HB || {};
     return { uid: s.nextUid++, def: defId, poi: poiId == null ? -1 : poiId };
   }
   function newStatus() {
-    return { nextAttackMult: 1, rearAssault: false, blessingUntil: -1, formationUntil: -1, forcedUntil: -1,
-      overwatchUntil: -1, shieldsOnce: false, reversalOnce: false, splitSteps: 0, splitSide: 1, claimSteps: 0 };
+    return { nextAttackMult: 1, chargeMult: 1, rearAssault: false, blessingUntil: -1, formationUntil: -1, forcedUntil: -1,
+      overwatchUntil: -1, shieldsOnce: false, splitSteps: 0, splitSide: 1, claimSteps: 0 };
   }
+  // D-025: card directions are absolute for the board as the player sees it (forward = toward the enemy).
+  // Blue plays bottom-up; for red the vertical axis is mirrored so "left" stays screen-left.
+  const MIRROR = [3, 2, 1, 0, 5, 4];
+  const absDir = (p, r) => p.id === 1 ? r : MIRROR[r];
+  const absDirs = (p, rel) => rel.map(r => absDir(p, r));
 
   // ---------------------------------------------------------------- setup
   function createGame(opts) {
@@ -44,8 +49,8 @@ window.HB = window.HB || {};
     const s = {
       version: CFG.VERSION, seed, rng: seed, nextUid: 1,
       cols: CFG.COLS, rows: CFG.ROWS, roundLimit: opts.roundLimit || CFG.ROUND_LIMIT,
-      diagonalTurns: !!opts.diagonalTurns,
       turnIndex: 0, current: 1, playedThisTurn: 0, phase: 'play', winner: 0, endReason: '', scores: null,
+      decorSeed: seed,
       cells: {}, pois: [], players: [null, null, null], blocked: {}, paintBuf: [], events: [], log: [],
     };
     for (let c = 0; c < s.cols; c++) for (let r = 0; r < hex.rowsInCol(c, s.rows); r++) {
@@ -200,7 +205,7 @@ window.HB = window.HB || {};
       enterCell(s, p, n, d);
       if (w.minions <= 0) break;
     }
-    if (path.length) s.events.push({ type: 'move', player: p.id, path });
+    if (path.length) { w.facing = lastDir; s.events.push({ type: 'move', player: p.id, path }); } // D-024: the crowd faces where it last walked
     return { path, lastDir };
   }
   function previewPath(s, p, dirs) {
@@ -208,18 +213,16 @@ window.HB = window.HB || {};
     for (const d of dirs) { const n = hex.neighbor(cur.col, cur.row, d); if (!canEnter(s, n)) break; path.push(n); cur = n; }
     return path;
   }
-  const absDirs = (p, rel) => rel.map(r => hex.turn(p.warband.facing, r));
-  const facingLocked = (s, p) => active(s, p.status.formationUntil);
 
   // ---------------------------------------------------------------- combat
   function attack(s, a, d, opts) {
     opts = opts || {};
     const aw = a.warband, dw = d.warband, st = a.status, ds = d.status, notes = [];
     let zone = hex.relZone(dw.facing, hex.dirBetween(dw, aw));
-    if (zone === 'side' && ds.reversalOnce) { zone = 'front'; ds.reversalOnce = false; notes.push('Tactical Reversal'); }
     let mult = CFG.FACING_MOD[zone], amod = 1, dmod = 1;
     if (!opts.overwatch) {
       if (st.rearAssault) { st.rearAssault = false; if (zone === 'back') mult = 1.9; else amod *= 1.1; notes.push('Rear Assault'); }
+      if (st.chargeMult !== 1) { amod *= st.chargeMult; st.chargeMult = 1; notes.push('Charge'); }
       if (st.nextAttackMult !== 1) { amod *= st.nextAttackMult; st.nextAttackMult = 1; notes.push('Battle Cry'); }
       if (active(s, st.blessingUntil)) { amod *= 1.15; notes.push('War Blessing'); }
     }
@@ -249,25 +252,22 @@ window.HB = window.HB || {};
   // ---------------------------------------------------------------- card play
   // Returns { ok, options?, path? }. options: array of { key, label, cell?, facing?, side?, uid?, path? }.
   function getPlay(s, card) {
-    const p = s.players[s.current], def = CARDS[card.def], w = p.warband, f = w.facing;
+    const p = s.players[s.current], def = CARDS[card.def], w = p.warband;
+    const sideOpts = dirsFor => {
+      const opts = [];
+      for (const side of [-1, 1]) {
+        const path = previewPath(s, p, absDirs(p, dirsFor(side)));
+        if (path.length) opts.push({ key: side < 0 ? 'L' : 'R', side, label: side < 0 ? '← влево' : 'вправо →', path });
+      }
+      return { ok: opts.length > 0, options: opts };
+    };
     switch (def.kind) {
-      case 'move': { const path = previewPath(s, p, absDirs(p, def.dirs)); return { ok: path.length > 0, path }; }
-      case 'pivot': {
-        if (facingLocked(s, p)) return { ok: false, reason: 'facing locked' };
-        return { ok: true, options: [1, 2, -2, -1].map(d => ({ key: 'f' + hex.turn(f, d), facing: hex.turn(f, d), label: (d > 0 ? '+' : '') + d * 60 + '°' })) };
-      }
-      case 'hook': {
-        if (facingLocked(s, p)) return { ok: false };
-        const opts = [];
-        for (const side of [-1, 1]) {
-          const path = previewPath(s, p, [hex.turn(f, side), hex.turn(f, 2 * side)]);
-          if (path.length) opts.push({ key: side < 0 ? 'L' : 'R', side, label: side < 0 ? '← влево' : 'вправо →', path });
-        }
-        return { ok: opts.length > 0, options: opts };
-      }
+      case 'move': case 'charge': { const path = previewPath(s, p, absDirs(p, def.dirs)); return { ok: path.length > 0, path }; }
+      case 'sidestep': return sideOpts(side => [side < 0 ? 4 : 2]);          // back-left / back-right
+      case 'zigzag': return sideOpts(side => side < 0 ? [5, 1] : [1, 5]);    // forward-left then forward-right, or the reverse
       case 'split': return { ok: true, options: [{ key: 'L', side: -1, label: '← левый бок' }, { key: 'R', side: 1, label: 'правый бок →' }] };
       case 'blink': {
-        const mid = hex.neighbor(w.col, w.row, f), tgt = hex.neighbor(mid.col, mid.row, f);
+        const f = absDir(p, 0), mid = hex.neighbor(w.col, w.row, f), tgt = hex.neighbor(mid.col, mid.row, f);
         return { ok: canEnter(s, tgt), path: [tgt] };
       }
       case 'explosive': {
@@ -276,7 +276,6 @@ window.HB = window.HB || {};
         return { ok: true, options: opts };
       }
       case 'scout': return { ok: p.deck.length + p.discard.length > 0, optionsFrom: 'deck' };
-      case 'reversal': if (facingLocked(s, p)) return { ok: false }; return { ok: true, path: previewPath(s, p, [hex.turn(f, 3)]) };
       default: return { ok: true };
     }
   }
@@ -285,20 +284,16 @@ window.HB = window.HB || {};
   }
 
   function resolve(s, p, card, def, choice) {
-    const st = p.status, w = p.warband, f = w.facing, T = s.turnIndex;
+    const st = p.status, w = p.warband, T = s.turnIndex;
     switch (def.kind) {
       case 'move': {
-        const r = moveAlong(s, p, absDirs(p, def.dirs));
+        moveAlong(s, p, absDirs(p, def.dirs));
         if (def.forcedMarch && hex.distance(w, enemyOf(s, p.id).warband) === 1) st.forcedUntil = T + 2;
-        if (s.diagonalTurns && def.diagonal && r.lastDir >= 0) w.facing = r.lastDir;
         enclosure(s, p); break;
       }
-      case 'pivot': w.facing = choice.facing; break;
-      case 'hook': {
-        const r = moveAlong(s, p, [hex.turn(f, choice.side), hex.turn(f, 2 * choice.side)]);
-        if (r.lastDir >= 0) w.facing = r.lastDir;
-        enclosure(s, p); break;
-      }
+      case 'charge': { st.chargeMult = CFG.CHARGE_MULT; moveAlong(s, p, absDirs(p, def.dirs)); enclosure(s, p); break; }
+      case 'sidestep': { moveAlong(s, p, absDirs(p, [choice.side < 0 ? 4 : 2])); enclosure(s, p); break; }
+      case 'zigzag': { moveAlong(s, p, absDirs(p, choice.side < 0 ? [5, 1] : [1, 5])); enclosure(s, p); break; }
       case 'reinforce': {
         let amt = def.amount;
         if (def.poiBonus && poiCount(s, p.id) >= 2) amt += def.poiBonus;
@@ -310,7 +305,6 @@ window.HB = window.HB || {};
       case 'formation': st.formationUntil = T + 2; break;
       case 'rear_assault': st.rearAssault = true; break;
       case 'split': st.splitSteps = 2; st.splitSide = choice.side; break;
-      case 'reversal': { moveAlong(s, p, [hex.turn(f, 3)]); w.facing = hex.turn(f, 3); st.reversalOnce = true; enclosure(s, p); break; }
       case 'overwatch': st.overwatchUntil = T + 2; break;
       case 'explosive': {
         const c = choice.cell, victim = occupant(s, c);
@@ -337,9 +331,9 @@ window.HB = window.HB || {};
       }
       case 'claim': st.claimSteps = 3; break;
       case 'blink': {
-        const mid = hex.neighbor(w.col, w.row, f), tgt = hex.neighbor(mid.col, mid.row, f);
+        const f = absDir(p, 0), mid = hex.neighbor(w.col, w.row, f), tgt = hex.neighbor(mid.col, mid.row, f);
         if (canEnter(s, tgt)) {
-          w.col = tgt.col; w.row = tgt.row;
+          w.col = tgt.col; w.row = tgt.row; w.facing = f;
           s.events.push({ type: 'move', player: p.id, path: [tgt], blink: true });
           enterCell(s, p, tgt, -1);
           enclosure(s, p);
@@ -370,6 +364,7 @@ window.HB = window.HB || {};
     resolve(s, p, card, def, choice);
     flushPaint(s, p);
     combatCheck(s, p);
+    p.status.chargeMult = 1; // Charge only boosts the attack that follows it immediately
     // D-022: effects apply at once and the card goes to the discard; the turn continues until endTurn().
     if (p.inPlay) { p.discard.push(p.inPlay); p.inPlay = null; }
     s.playedThisTurn++;
