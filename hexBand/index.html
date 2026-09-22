@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>HEXBand — прототип</title>
+<meta name="description" content="HEXBand: пошаговая PvP-тактика на гексах — захват территории, колода манёвров, позиционный бой.">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <section id="setup">
+    <header class="setup-head">
+      <div>
+        <h1>HEXBand <span id="setup-version" class="muted"></span></h1>
+        <p class="muted">Paper.io-захват территории × колода манёвров × позиционный бой с направлением взгляда.</p>
+      </div>
+      <button class="btn ghost" id="btn-help">Правила</button>
+    </header>
+
+    <div class="setup-grid">
+      <div class="setup-col">
+        <h3>Режим</h3>
+        <label class="radio"><input type="radio" name="mode" value="bot" checked> Против бота</label>
+        <label class="radio"><input type="radio" name="mode" value="hotseat"> Два игрока на одном устройстве</label>
+        <div id="bot-preset-row" class="field">
+          <label for="sel-bot-preset">Колода бота</label>
+          <select id="sel-bot-preset">
+            <option value="balanced">Balanced Starter</option>
+            <option value="expansion">Expansion</option>
+            <option value="duel">Duel</option>
+            <option value="swarm">Swarm</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="sel-rounds">Лимит раундов</label>
+          <select id="sel-rounds"><option>8</option><option>10</option><option>12</option><option>16</option></select>
+        </div>
+        <label class="radio"><input type="checkbox" id="chk-diagonal"> Диагональный шаг (Forward Left/Right) поворачивает отряд</label>
+        <div class="field">
+          <label for="inp-seed">Seed (пусто — случайный)</label>
+          <input id="inp-seed" type="text" inputmode="numeric" placeholder="например 42">
+        </div>
+      </div>
+      <div class="setup-col builders">
+        <div id="builder-1" class="builder"></div>
+        <div id="builder-2" class="builder" hidden></div>
+      </div>
+    </div>
+
+    <footer class="setup-foot">
+      <span id="setup-hint" class="muted"></span>
+      <button class="btn primary" id="btn-start">Начать матч</button>
+    </footer>
+    <p class="muted docs-link">Документация: <a href="docs/index.html">GDD, журнал решений, история изменений</a> · <a href="sim.html">симуляция баланса</a></p>
+  </section>
+
+  <section id="game" hidden>
+    <header class="hud">
+      <div class="hud-side p1" id="hud-1">
+        <div class="hud-name">Синие</div>
+        <div class="hud-stats"><span class="hud-terr">0%</span> · <span class="hud-min">24</span> ⚔ · POI <span class="hud-poi">0</span></div>
+      </div>
+      <div class="hud-center">
+        <div id="hud-round">Раунд 1</div>
+        <div class="hud-btns"><button class="btn tiny ghost" id="btn-help-game">?</button><button class="btn tiny ghost" id="btn-quit">Меню</button></div>
+      </div>
+      <div class="hud-side p2" id="hud-2">
+        <div class="hud-name">Красные</div>
+        <div class="hud-stats"><span class="hud-terr">0%</span> · <span class="hud-min">24</span> ⚔ · POI <span class="hud-poi">0</span></div>
+      </div>
+    </header>
+
+    <div id="board-wrap"><canvas id="board"></canvas></div>
+    <div id="legend"></div>
+
+    <div id="hand-area">
+      <div id="prompt">Выберите карту.</div>
+      <div id="hand-title" class="muted"></div>
+      <div id="hand"></div>
+      <div id="status-line" class="muted"></div>
+      <div id="choice-row"></div>
+      <div id="actions">
+        <button class="btn primary" id="btn-play">Сыграть</button>
+        <button class="btn ghost" id="btn-cancel">Отмена</button>
+        <button class="btn ghost" id="btn-pass">Пропустить ход (сбросить карту)</button>
+      </div>
+    </div>
+
+    <details id="log"><summary>Журнал матча</summary><div id="log-lines"></div></details>
+  </section>
+
+  <div id="overlay" hidden></div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/hex.js"></script>
+<script src="js/cards.js"></script>
+<script src="js/rules.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/render.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
