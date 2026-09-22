@@ -67,8 +67,9 @@ select, input[type=text] { background: var(--panel2); color: var(--text); border
 
 #hand-area { display: flex; flex-direction: column; gap: 4px; background: linear-gradient(#2b2418, #1f1a10); border: 2px solid var(--line); border-radius: 14px; padding: 6px 6px 8px; transition: box-shadow .15s; }
 #hand-area.drop-cancel { box-shadow: inset 0 0 0 2px rgba(255,199,66,.6); }
-#prompt { font-size: 13px; min-height: 18px; text-align: center; }
-#hand-title { text-align: center; font-size: 11px; }
+/* fixed heights so the board never resizes while a card is dragged or resolved */
+#prompt { font-size: 13px; line-height: 17px; height: 34px; overflow: hidden; text-align: center; }
+#hand-title { text-align: center; font-size: 11px; height: 15px; line-height: 15px; overflow: hidden; }
 #hand { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; touch-action: none; }
 .card { position: relative; min-width: 0; height: 108px; border-radius: 10px; border: 2px solid var(--paper-edge); background: linear-gradient(var(--paper), var(--paper2)); color: var(--ink); box-shadow: 0 3px 0 #5a4222, 0 4px 8px rgba(0,0,0,.35); cursor: grab; user-select: none; -webkit-user-select: none; display: flex; flex-direction: column; align-items: center; overflow: hidden; transition: transform .12s; }
 .card:active { cursor: grabbing; }
@@ -91,8 +92,8 @@ select, input[type=text] { background: var(--panel2); color: var(--text); border
 @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 .card.ghost { position: fixed; z-index: 50; width: 96px; pointer-events: none; transform: scale(1.1) rotate(-3deg); box-shadow: 0 12px 24px rgba(0,0,0,.5); opacity: .95; }
 .card.ghost.drop-ok { transform: scale(1.15) rotate(0deg); box-shadow: 0 0 0 3px #fff, 0 12px 24px rgba(0,0,0,.5); }
-#status-line { text-align: center; min-height: 14px; font-size: 11px; }
-#actions { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+#status-line { text-align: center; height: 14px; line-height: 14px; overflow: hidden; font-size: 11px; }
+#actions { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; min-height: 46px; }
 #log { font-size: 12px; color: var(--muted); }
 #log summary { cursor: pointer; }
 #log-lines { max-height: 120px; overflow: auto; padding: 4px 0; }

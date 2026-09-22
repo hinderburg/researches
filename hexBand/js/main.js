@@ -236,12 +236,21 @@ window.HB = window.HB || {};
       dg.over = e.clientX >= br.left && e.clientX <= br.right && e.clientY >= br.top && e.clientY <= br.bottom;
       const hl = [], play = dg.play, kind = dg.def.kind;
       dg.choice = null; dg.valid = false;
-      if (play.options && (kind === 'sidestep' || kind === 'zigzag' || kind === 'split')) {
+      if (play.options && play.options[0] && play.options[0].abs != null) {
+        // D-029: pick the direction whose angle is closest to pointer-from-warband
+        const cr = $('#board').getBoundingClientRect(), wc = rd.cellXY(p.warband.col, p.warband.row);
+        const ang = Math.atan2(e.clientY - (cr.top + wc.y), e.clientX - (cr.left + wc.x));
+        const diff = (a, b) => { let d = Math.abs(a - b) % (Math.PI * 2); return d > Math.PI ? Math.PI * 2 - d : d; };
+        let opt = play.options[0], best = Infinity;
+        for (const o of play.options) { const d = diff(ang, hex.dirAngle(o.abs)); if (d < best) { best = d; opt = o; } }
+        dg.choice = opt; dg.valid = true;
+        for (const o of play.options) o.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: o === opt ? i + 1 : null, strong: o === opt }));
+      } else if (play.options && play.options[0] && play.options[0].side != null) {
         const wx = rd.warbandScreenX(p.id), side = e.clientX < wx ? -1 : 1;
         const opt = play.options.find(o => o.side === side) || play.options[0];
         dg.choice = opt; dg.valid = true;
         for (const o of play.options) if (o.path) o.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: o === opt ? i + 1 : null, strong: o === opt }));
-        if (kind === 'split') { const w = p.warband; for (const o of play.options) { const n = hex.neighbor(w.col, w.row, o.side < 0 ? (p.id === 1 ? 5 : 4) : (p.id === 1 ? 1 : 2)); hl.push({ col: n.col, row: n.row, kind: 'target', strong: o === opt }); } }
+        if (kind === 'split') { const w = p.warband; for (const o of play.options) { const n = hex.neighbor(w.col, w.row, R.absDir(p, o.side < 0 ? 5 : 1)); hl.push({ col: n.col, row: n.row, kind: 'target', strong: o === opt }); } }
       } else if (kind === 'explosive') {
         const cell = dg.over ? rd.cellFromPointer(e.clientX, e.clientY) : null;
         const opt = cell && play.options.find(o => o.cell.col === cell.col && o.cell.row === cell.row);

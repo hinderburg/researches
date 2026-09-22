@@ -256,15 +256,19 @@ window.HB = window.HB || {};
     const sideOpts = dirsFor => {
       const opts = [];
       for (const side of [-1, 1]) {
-        const path = previewPath(s, p, absDirs(p, dirsFor(side)));
-        if (path.length) opts.push({ key: side < 0 ? 'L' : 'R', side, label: side < 0 ? '← влево' : 'вправо →', path });
+        const dirs = dirsFor(side), path = previewPath(s, p, absDirs(p, dirs));
+        if (path.length) opts.push({ key: side < 0 ? 'L' : 'R', side, dirs, label: side < 0 ? '← влево' : 'вправо →', path });
       }
       return { ok: opts.length > 0, options: opts };
     };
     switch (def.kind) {
-      case 'move': case 'charge': { const path = previewPath(s, p, absDirs(p, def.dirs)); return { ok: path.length > 0, path }; }
-      case 'sidestep': return sideOpts(side => [side < 0 ? 4 : 2]);          // back-left / back-right
-      case 'zigzag': return sideOpts(side => side < 0 ? [5, 1] : [1, 5]);    // forward-left then forward-right, or the reverse
+      case 'move': case 'charge': {
+        if (def.pick === 'side') return sideOpts(side => def.sideDirs[side < 0 ? 'L' : 'R']);
+        // D-029: one of three forward (or rear) directions, chosen by where the card is dropped
+        const rels = def.pick === 'rear3' ? [4, 3, 2] : [5, 0, 1];
+        const opts = rels.map(r => { const dirs = new Array(def.steps).fill(r); return { key: 'd' + r, rel: r, abs: absDir(p, r), dirs, label: HB.cards.DIR_RU[r], path: previewPath(s, p, absDirs(p, dirs)) }; }).filter(o => o.path.length);
+        return { ok: opts.length > 0, options: opts };
+      }
       case 'split': return { ok: true, options: [{ key: 'L', side: -1, label: '← левый бок' }, { key: 'R', side: 1, label: 'правый бок →' }] };
       case 'blink': {
         const f = absDir(p, 0), mid = hex.neighbor(w.col, w.row, f), tgt = hex.neighbor(mid.col, mid.row, f);
@@ -287,13 +291,11 @@ window.HB = window.HB || {};
     const st = p.status, w = p.warband, T = s.turnIndex;
     switch (def.kind) {
       case 'move': {
-        moveAlong(s, p, absDirs(p, def.dirs));
+        moveAlong(s, p, absDirs(p, choice.dirs));
         if (def.forcedMarch && hex.distance(w, enemyOf(s, p.id).warband) === 1) st.forcedUntil = T + 2;
         enclosure(s, p); break;
       }
-      case 'charge': { st.chargeMult = CFG.CHARGE_MULT; moveAlong(s, p, absDirs(p, def.dirs)); enclosure(s, p); break; }
-      case 'sidestep': { moveAlong(s, p, absDirs(p, [choice.side < 0 ? 4 : 2])); enclosure(s, p); break; }
-      case 'zigzag': { moveAlong(s, p, absDirs(p, choice.side < 0 ? [5, 1] : [1, 5])); enclosure(s, p); break; }
+      case 'charge': { st.chargeMult = CFG.CHARGE_MULT; moveAlong(s, p, absDirs(p, choice.dirs)); enclosure(s, p); break; }
       case 'reinforce': {
         let amt = def.amount;
         if (def.poiBonus && poiCount(s, p.id) >= 2) amt += def.poiBonus;
@@ -433,6 +435,6 @@ window.HB = window.HB || {};
   function takeEvents(s) { const e = s.events; s.events = []; return e; }
   function clone(s) { const e = s.events, l = s.log; s.events = []; s.log = []; const c = JSON.parse(JSON.stringify(s)); s.events = e; s.log = l; return c; }
 
-  HB.rules = { createGame, playCard, endTurn, passTurn, getPlay, scoutOptions, takeEvents, clone, territory, cellCount, poiCount, totalCells,
+  HB.rules = { createGame, playCard, endTurn, passTurn, getPlay, absDir, scoutOptions, takeEvents, clone, territory, cellCount, poiCount, totalCells,
     scoreboard, round, occupant, isBlocked, active, rand };
 })();
