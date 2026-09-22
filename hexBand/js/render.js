@@ -37,13 +37,13 @@ window.HB = window.HB || {};
     resize(w, h) {
       const s = this.s; if (!s) return;
       // D-035: the board takes the whole width; only a small top margin is kept for the banner of a warband on row 0
-      const size = Math.floor(Math.min(w / (1.5 * (s.cols - 1) + 2), h / (hex.SQRT3 * s.rows + 0.7)));
+      const size = Math.floor(Math.min(w / (1.5 * (s.cols - 1) + 2), h / (hex.SQRT3 * s.rows + 1.2)));
       this.size = Math.max(10, size);
       const b = hex.boardSize(s.cols, s.rows, this.size);
       this.dpr = window.devicePixelRatio || 1;
       this.canvas.width = Math.round(w * this.dpr); this.canvas.height = Math.round(h * this.dpr);
       this.canvas.style.width = w + 'px'; this.canvas.style.height = h + 'px';
-      this.offset = { x: (w - b.w) / 2, y: (h - b.h) / 2 + this.size * 0.35 };
+      this.offset = { x: (w - b.w) / 2, y: (h - b.h) / 2 + this.size * 0.6 }; // room for the taller banner on row 0
       this.cssSize = { w, h };
     }
     cellXY(col, row) { const p = hex.pixel(col, row, this.size); return { x: p.x + this.offset.x, y: p.y + this.offset.y }; }
@@ -362,22 +362,21 @@ window.HB = window.HB || {};
         ctx.fillStyle = '#ffe14a'; ctx.beginPath(); ctx.arc(mx - r * 0.3, my - r * 0.95, r * 0.17, 0, Math.PI * 2); ctx.arc(mx + r * 0.3, my - r * 0.95, r * 0.17, 0, Math.PI * 2); ctx.fill(); // eyes
         if (m.i % 3 === 1) { ctx.fillStyle = dark; ctx.beginPath(); ctx.arc(mx - r * 0.9, my + r * 0.1, r * 0.55, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = light; ctx.lineWidth = 1; ctx.stroke(); } // shield
       }
-      // banner
-      const px = x + S * 0.05, top = y - S * 1.55;
-      ctx.strokeStyle = '#3b2a14'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px, y - S * 0.2); ctx.lineTo(px, top); ctx.stroke();
-      const txt = String(w.minions), fs = Math.round(S * 0.42);
-      ctx.font = `900 ${fs}px system-ui, sans-serif`;
-      const fw = Math.max(S * 0.7, ctx.measureText(txt).width + S * 0.45), fh = S * 0.5;
-      ctx.fillStyle = color; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px + fw, top + fh * 0.1); ctx.lineTo(px + fw - S * 0.12, top + fh * 0.55); ctx.lineTo(px + fw, top + fh); ctx.lineTo(px, top + fh + fh * 0.1); ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, px + fw / 2 - S * 0.04, top + fh * 0.55);
-      // strike badge (D-043): current damage of the warband, with a pending Battle Cry bonus highlighted
+      // banner: two lines — minion count and the current strike (D-043); a pending Battle Cry bonus shows in yellow
       const strike = R.strikeOf(this.s, p), boosted = p.status.attackBonus > 0;
-      const bs = Math.round(S * 0.3), bt = '⚔' + strike, bw = S * 0.78, bh = S * 0.36, bx = px - bw - S * 0.06, by = top + fh * 0.1;
-      ctx.font = `900 ${bs}px system-ui, sans-serif`;
-      ctx.fillStyle = boosted ? '#ffb020' : '#2a1a10'; ctx.strokeStyle = boosted ? '#fff' : '#ffd766'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, bh / 2); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = boosted ? '#2a1a10' : '#ffd766'; ctx.fillText(bt, bx + bw / 2, by + bh / 2 + 1);
+      const px = x + S * 0.05, top = y - S * 1.85;
+      ctx.strokeStyle = '#3b2a14'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px, y - S * 0.2); ctx.lineTo(px, top); ctx.stroke();
+      const txt = String(w.minions), sub = 'удар ' + strike, fs = Math.round(S * 0.4), fs2 = Math.round(S * 0.23);
+      ctx.font = `900 ${fs}px system-ui, sans-serif`; const w1 = ctx.measureText(txt).width;
+      ctx.font = `700 ${fs2}px system-ui, sans-serif`; const w2 = ctx.measureText(sub).width;
+      const fw = Math.max(S * 1.15, Math.max(w1, w2) + S * 0.5), fh = S * 0.82;
+      ctx.fillStyle = color; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px + fw, top + fh * 0.06); ctx.lineTo(px + fw - S * 0.14, top + fh * 0.53); ctx.lineTo(px + fw, top + fh); ctx.lineTo(px, top + fh + fh * 0.06); ctx.closePath(); ctx.fill(); ctx.stroke();
+      const cx = px + fw / 2 - S * 0.05;
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = `900 ${fs}px system-ui, sans-serif`; ctx.fillText(txt, cx, top + fh * 0.33);
+      ctx.fillStyle = boosted ? '#ffe14a' : 'rgba(255,255,255,0.9)';
+      ctx.font = `700 ${fs2}px system-ui, sans-serif`; ctx.fillText(sub, cx, top + fh * 0.75);
       if (p.id === this.s.current && this.s.phase === 'play') {
         ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 2; ctx.setLineDash([5, 5]);
         ctx.beginPath(); ctx.ellipse(x, y + S * 0.05, S * 0.78, S * 0.62, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);

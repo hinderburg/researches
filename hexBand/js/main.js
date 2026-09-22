@@ -302,13 +302,17 @@ window.HB = window.HB || {};
       window.addEventListener('pointerup', e => { if (this.drag && e.pointerId === this.drag.pointerId) this.endDrag(e, true); });
       window.addEventListener('pointercancel', e => { if (this.drag && e.pointerId === this.drag.pointerId) this.endDrag(e, false); });
     },
-    showDesc(d) { $('#card-desc').innerHTML = `<b>${d.ru}</b><span>${d.text}</span>`; $('#card-desc').hidden = false; },
+    // description of the dragged card over the hand zone; the footer explains that dropping it here cancels the play
+    showDesc(title, text) {
+      $('#card-desc').innerHTML = `<div class="desc-body"><b>${title}</b><span>${text}</span></div><div class="desc-cancel"><span class="desc-cancel-ic">↩</span><span>Передумали? Отпустите карту здесь — она вернётся в руку</span></div>`;
+      $('#card-desc').hidden = false;
+    },
     startDrag(e, uid, cardEl) {
       const s = this.state, p = this.handPlayer();
       if (!s || this.busy || s.current !== p.id || s.phase !== 'play' || this.handoverPending) return;
       const card = p.hand.find(c => c.uid === uid); if (!card) return;
       const play = R.getPlay(s, card), d = CARDS[card.def];
-      this.showDesc(d);
+      this.showDesc(d.ru, d.text);
       if (!play.ok) { cardEl.classList.add('shake'); setTimeout(() => { cardEl.classList.remove('shake'); $('#card-desc').hidden = true; }, 700); return; }
       if (d.kind === 'scout') play.options = R.scoutOptions(s, p);
       const fx = $('#drag-fx'); fx.hidden = false; fx.className = 'p' + p.id;
@@ -349,7 +353,7 @@ window.HB = window.HB || {};
         const wx = rd.warbandScreenX(p.id), side = e.clientX < wx ? -1 : 1;
         const opt = play.options.find(o => o.side === side) || play.options[0];
         dg.choice = opt; dg.valid = true;
-        $('#card-desc').innerHTML = `<b>${dg.def.ru}: ${opt.label}</b><span>${dg.def.text}</span>`;
+        this.showDesc(`${dg.def.ru}: ${opt.label}`, dg.def.text);
       } else if (kind === 'explosive') {
         const cell = dg.over ? rd.cellFromPointer(e.clientX, e.clientY) : null;
         const opt = cell && play.options.find(o => o.cell.col === cell.col && o.cell.row === cell.row);

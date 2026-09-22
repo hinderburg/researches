@@ -115,7 +115,13 @@ select, input[type=text] { background: var(--panel2); color: var(--text); border
 #status-line { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* description of the dragged card: a translucent panel over the hand zone itself (the card is under the finger anyway) */
 #card-desc { position: absolute; left: 6px; right: 6px; top: 4px; bottom: 24px; z-index: 5; display: flex; flex-direction: column; justify-content: center; background: rgba(20,16,10,.82); border: 2px solid var(--paper-edge); border-radius: 12px; padding: 8px 14px; font-size: 14px; line-height: 1.35; pointer-events: none; backdrop-filter: blur(2px); }
+#card-desc { padding: 6px 12px 4px; justify-content: space-between; }
+#card-desc .desc-body { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; }
 #card-desc b { display: block; color: var(--accent); margin-bottom: 2px; }
+#card-desc .desc-cancel { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 4px; padding-top: 4px; border-top: 1px dashed rgba(255,199,66,.45); font-size: 12px; color: var(--muted); transition: color .15s; }
+#card-desc .desc-cancel-ic { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; border: 1px solid currentColor; font-size: 13px; }
+#hand-area.drop-cancel #card-desc { border-color: var(--accent); }
+#hand-area.drop-cancel #card-desc .desc-cancel { color: var(--accent); }
 /* glowing cursor FX while a card is dragged (D-036) */
 #drag-fx { position: fixed; left: 0; top: 0; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; pointer-events: none; z-index: 50; background: radial-gradient(circle, rgba(255,255,255,.95) 0%, rgba(255,215,102,.75) 30%, rgba(255,215,102,0) 70%); box-shadow: 0 0 24px 8px rgba(255,215,102,.55); animation: fxpulse .9s ease-in-out infinite; }
 #drag-fx.p1 { background: radial-gradient(circle, rgba(255,255,255,.95) 0%, rgba(140,196,255,.8) 30%, rgba(140,196,255,0) 70%); box-shadow: 0 0 24px 8px rgba(140,196,255,.55); }
