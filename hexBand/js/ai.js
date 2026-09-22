@@ -13,9 +13,9 @@ window.HB = window.HB || {};
       + W.minions * (p.warband.minions - e.warband.minions)
       + W.poi * (R.poiCount(s, me) - R.poiCount(s, en));
     if (hex.distance(p.warband, e.warband) === 1) {
-      // D-034: no facing — adjacency means the enemy hits me on its turn and I can hit it on mine
-      score -= W.threat * CFG.DMG_PER_MINION * e.warband.minions;
-      score += W.opportunity * CFG.DMG_PER_MINION * p.warband.minions;
+      // D-039: adjacency means a mutual clash on the enemy's turn; the bigger warband holds the ground
+      score -= W.threat * R.baseDamage(e.warband.minions);
+      score += W.opportunity * R.baseDamage(p.warband.minions);
     }
     let nearest = 99;
     for (const poi of s.pois) if (poi.owner !== me) nearest = Math.min(nearest, hex.distance(p.warband, poi));

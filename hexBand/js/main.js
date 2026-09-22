@@ -5,7 +5,7 @@ window.HB = window.HB || {};
   const R = HB.rules, hex = HB.hex, CFG = HB.CONFIG, CARDS = HB.cards.CARDS, POIS = HB.cards.POIS, PRESETS = HB.cards.PRESETS;
   const $ = sel => document.querySelector(sel);
   const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
-  const KIND_CLASS = { move: 'k-move', charge: 'k-combat', blink: 'k-move', reinforce: 'k-reinf', buff_next: 'k-combat', explosive: 'k-combat', blessing: 'k-combat', formation: 'k-def', overwatch: 'k-def', shields: 'k-def', counter: 'k-def', split: 'k-terr', claim: 'k-terr', scout: 'k-util' };
+  const KIND_CLASS = { move: 'k-move', blink: 'k-move', reinforce: 'k-reinf', buff_next: 'k-combat', explosive: 'k-combat', volley: 'k-combat', catapult: 'k-combat', formation: 'k-def', flank_claim: 'k-terr', cordon: 'k-terr', banner: 'k-terr', prayer: 'k-util', scout_draw: 'k-util' };
   const cardHTML = (defId, poi) => { const d = CARDS[defId]; return `<div class="card-icon">${HB.icons.svg(defId)}</div><div class="card-name">${d.ru}</div>${poi ? '<div class="card-poi">POI</div>' : ''}`; };
   const cardClass = (defId, poi) => 'card ' + (KIND_CLASS[CARDS[defId].kind] || '') + (poi ? ' poi' : '');
   const rectOf = e => e.getBoundingClientRect();
@@ -41,8 +41,8 @@ window.HB = window.HB || {};
         <h2>HEXBand — как это работает</h2>
         <div class="intro-item">${ic('hook')}<div><b>Ходите картами.</b> Перетащите карту на поле: карта задаёт форму маршрута, а куда идти — решаете вы, отпустив её в нужной стороне. Отряд идёт сразу. За ход можно сыграть сколько угодно карт, минимум одну; затем «Закончить ход».</div></div>
         <div class="intro-item">${ic('ring')}<div><b>Захватывайте территорию.</b> Каждый пройденный гекс становится вашим. Замкните область своими гексами — всё внутри тоже станет вашим. Очки = ваши гексы.</div></div>
-        <div class="intro-item">${ic('recruitment')}<div><b>Берите форпосты.</b> Пройдите через форпост или обведите его контуром. Карта, парящая над ним, ляжет в вашу колоду и придёт в руку с добором на следующем ходу. Потеряете форпост — потеряете и карту.</div></div>
-        <div class="intro-item">${ic('battle_cry')}<div><b>Бой.</b> Если после вашей карты противник стоит на соседнем гексе — ваш отряд атакует (не больше одного удара за ход). Чем больше миньонов, тем сильнее удар; карты боя усиливают его или защищают вас.</div></div>
+        <div class="intro-item">${ic('recruitment')}<div><b>Берите форпосты.</b> Пройдите через форпост или обведите его контуром. Карта, парящая над ним, сразу прилетает вам в руку — её эффект срабатывает мгновенно. Потеряете форпост — потеряете и карту.</div></div>
+        <div class="intro-item">${ic('battle_cry')}<div><b>Бой.</b> Если после вашей карты противник стоит на соседнем гексе — ваш отряд набегает на него (не больше раза за ход). Оба бьют одновременно: урон = log₂ от числа миньонов (24 → 4, 8 → 3). Кто остался меньше — отступает на гекс, больший стоит на месте.</div></div>
         <div class="intro-item">${ic('claim')}<div><b>Победа.</b> Уничтожили отряд противника — победа сразу. Иначе после ${this.setup.rounds} раундов побеждает тот, у кого больше очков территории.</div></div>
         <label class="radio intro-skip"><input type="checkbox" id="intro-skip"> Больше не показывать</label>
         <button class="btn primary" id="btn-intro-close">${manual ? 'Понятно' : 'К настройке матча'}</button></div>`);
@@ -122,6 +122,7 @@ window.HB = window.HB || {};
         if (window.ResizeObserver) new ResizeObserver(() => this.layout()).observe($('#board-wrap'));
         $('#btn-quit').addEventListener('click', () => this.toSetup());
         $('#btn-pass').addEventListener('click', () => this.showPassPicker());
+        $('#btn-end-fb').addEventListener('click', () => this.endTurn());
         this.bindDrag();
       }
       this.renderer.setState(this.state);
@@ -149,9 +150,9 @@ window.HB = window.HB || {};
       this.refresh();
       if (p.bot) { this.busy = true; this.refresh(); setTimeout(() => this.botMove(), CFG.BOT_DELAY_MS); return; }
       if (this.opts.players[2].bot === false && this.lastActor && this.lastActor !== p.id) this.showHandover(p);
-      const drawEv = this.lastEvents.find(e => e.type === 'draw' && e.player === p.id);
+      const incoming = this.lastEvents.filter(e => e.player === p.id && (e.type === 'draw' || e.type === 'poiCard' || e.type === 'cardToHand'));
       this.lastEvents = [];
-      if (drawEv) this.animateDraw(drawEv);
+      if (incoming.length) this.animateIncoming(incoming);
     },
     botMove() {
       const s = this.state; if (!s || s.phase !== 'play') { this.nextTurn(); return; }
@@ -215,6 +216,8 @@ window.HB = window.HB || {};
       $('#pile-discard').innerHTML = last ? `<div class="pile-face">${HB.icons.svg(last.def)}</div>` : '';
       $('#status-line').textContent = busy ? (p.bot ? `${p.name} думают…` : '') : this.statusText(p);
       $('#btn-pass').hidden = busy || s.playedThisTurn > 0 || playable.some(x => x);
+      // a full hand (outpost card arrived) leaves no slot for the end-turn button — show a fallback under the hand
+      $('#btn-end-fb').hidden = busy || s.playedThisTurn < 1 || p.hand.length < CFG.HAND_SIZE;
     },
     statusText(p) {
       const s = this.state, st = p.status, out = [];
@@ -246,19 +249,31 @@ window.HB = window.HB || {};
         setTimeout(finish, (dur || 380) + 200); // background tabs may never fire onfinish
       });
     },
-    async animateDraw(ev) {
-      const slots = [...document.querySelectorAll('#hand .slot')];
-      const cards = ev.uids.map(uid => document.querySelector(`#hand .card[data-uid="${uid}"]`)).filter(Boolean);
-      cards.forEach(c => c.classList.add('incoming'));
-      if (ev.reshuffled) {
+    // Cards arriving in the hand fly in from their source: the deck (draw), the outpost on the board (poiCard, D-040)
+    // or the discard pile (prayer). The hand is already rendered; incoming cards stay hidden until their flight ends.
+    async animateIncoming(events) {
+      const items = [];
+      for (const ev of events) {
+        if (ev.type === 'draw') ev.uids.forEach(uid => items.push({ uid, from: 'deck', reshuffled: ev.reshuffled }));
+        else if (ev.type === 'poiCard') items.push({ uid: ev.uid, from: 'cell', col: ev.col, row: ev.row });
+        else items.push({ uid: ev.uid, from: 'discard' });
+      }
+      const cards = items.map(it => ({ it, el: document.querySelector(`#hand .card[data-uid="${it.uid}"]`) })).filter(x => x.el);
+      cards.forEach(x => x.el.classList.add('incoming'));
+      if (items.some(it => it.reshuffled)) {
         await this.fly(rectOf($('#pile-discard')), rectOf($('#pile-deck')), '<div class="pile-face back"></div>', 'stack', 420);
         $('#pile-deck').classList.add('shuffle'); setTimeout(() => $('#pile-deck').classList.remove('shuffle'), 500);
         await new Promise(r => setTimeout(r, 200));
       }
-      const deckRect = rectOf($('#pile-deck'));
-      const flights = cards.map((c, i) => new Promise(res => setTimeout(async () => {
-        await this.fly(deckRect, rectOf(c), c.innerHTML, c.className.replace('card', '').replace('incoming', ''), 360);
-        c.classList.remove('incoming'); res();
+      const srcRect = it => {
+        if (it.from === 'deck') return rectOf($('#pile-deck'));
+        if (it.from === 'discard') return rectOf($('#pile-discard'));
+        const br = rectOf($('#board')), c = this.renderer.cellXY(it.col, it.row), S = this.renderer.size;
+        return { left: br.left + c.x - S * 0.75, top: br.top + c.y - S * 2.1, width: S * 1.5, height: S * 1.85 };
+      };
+      const flights = cards.map((x, i) => new Promise(res => setTimeout(async () => {
+        await this.fly(srcRect(x.it), rectOf(x.el), x.el.innerHTML, x.el.className.replace('card', '').replace('incoming', ''), x.it.from === 'cell' ? 520 : 360);
+        x.el.classList.remove('incoming'); res();
       }, i * 110)));
       await Promise.all(flights);
     },
@@ -309,6 +324,15 @@ window.HB = window.HB || {};
         const ends = new Set(play.options.map(o => hex.key(o.end.col, o.end.row)));
         for (const k of ends) { const [c, r] = k.split(',').map(Number); hl.push({ col: c, row: r, kind: 'target', strong: false }); }
         opt.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: i + 1, strong: true }));
+      } else if (play.options && play.options[0] && play.options[0].axis != null) {
+        // Flank Claim: pick the axis whose direction is closest to pointer-from-warband
+        const wc = rd.cellXY(p.warband.col, p.warband.row);
+        const ang = Math.atan2(e.clientY - (br.top + wc.y), e.clientX - (br.left + wc.x));
+        const diff = (a, b) => { let d = Math.abs(a - b) % (Math.PI * 2); return d > Math.PI ? Math.PI * 2 - d : d; };
+        let opt = play.options[0], best = Infinity;
+        for (const o of play.options) { const d = Math.min(diff(ang, hex.dirAngle(o.axis)), diff(ang, hex.dirAngle(o.axis + 3))); if (d < best) { best = d; opt = o; } }
+        dg.choice = opt; dg.valid = true;
+        for (const o of play.options) for (const c of o.cells) hl.push({ col: c.col, row: c.row, kind: 'target', strong: o === opt });
       } else if (play.options && play.options[0] && play.options[0].side != null) {
         const wx = rd.warbandScreenX(p.id), side = e.clientX < wx ? -1 : 1;
         const opt = play.options.find(o => o.side === side) || play.options[0];
@@ -338,7 +362,6 @@ window.HB = window.HB || {};
       $('#hand-area').classList.remove('drop-cancel');
       this.renderer.highlights = []; this.renderer.pathFrom = null; this.renderer.dragging = false;
       if (drop && dg.over && dg.valid) {
-        if (dg.def.kind === 'scout') { this.showScoutPicker(dg); return; }
         this.commit(dg.uid, dg.choice, { x: e.clientX, y: e.clientY, cardEl: dg.cardEl });
         return;
       }
@@ -377,17 +400,6 @@ window.HB = window.HB || {};
 
     // ------------------------------------------------------------ overlays
     overlay(html) { const ov = $('#overlay'); ov.hidden = false; ov.innerHTML = `<div class="panel">${html}</div>`; return ov; },
-    showScoutPicker(dg) {
-      const ov = this.overlay(`<h2>Разведка</h2><p>Выберите карту, которая ляжет наверх колоды.</p><div class="pick-row" id="scout-row"></div><button class="btn ghost" id="scout-cancel">Отмена</button>`);
-      const row = $('#scout-row');
-      for (const o of dg.play.options) {
-        const uid = o.uid, c0 = this.current().deck.find(c => c.uid === uid);
-        const c = el('div', cardClass(c0.def, c0.poi >= 0), cardHTML(c0.def, c0.poi >= 0));
-        c.addEventListener('click', () => { ov.hidden = true; this.commit(dg.uid, o, null); });
-        row.appendChild(c);
-      }
-      $('#scout-cancel').addEventListener('click', () => { ov.hidden = true; this.refresh(); });
-    },
     showPassPicker() {
       const s = this.state, p = this.current(); if (s.playedThisTurn > 0 || this.busy) return;
       const ov = this.overlay(`<h2>Нет доступных ходов</h2><p>Выберите карту, которая уйдёт в сброс — ход перейдёт сопернику.</p><div class="pick-row" id="pass-row"></div><button class="btn ghost" id="pass-cancel">Отмена</button>`);
@@ -421,8 +433,8 @@ window.HB = window.HB || {};
       const ov = this.overlay(`<div class="help"><h2>Как играть</h2>
         <p><b>Ход.</b> В начале хода рука добирается до 4 карт из колоды (если колода пуста, сброс перемешивается в колоду). Чтобы сыграть карту, перетащите её на поле: маршрут показывается заранее, отряд выполняет действие сразу после того, как вы отпустите карту, и она уходит в сброс. Отпустите над рукой — карта вернётся на место. За ход можно сыграть сколько угодно карт, минимум одну; после первой карты в правом слоте появляется «Закончить ход».</p>
         <p><b>Направления.</b> Карта движения задаёт только форму и длину маршрута (прямая, крюк, зигзаг, полукольцо, кольцо). Куда идти — решаете вы: пока тянете карту, на поле подсвечены все возможные концы маршрута, а выбирается тот, что ближе к точке, где вы отпустите карту. Для «Широкого марша» сторона — слева или справа от отряда.</p>
-        <p><b>Территория.</b> Пройденные гексы окрашиваются в ваш цвет. Если ваши гексы замыкают область, всё внутри становится вашим. <b>Форпосты</b> захватываются проходом через гекс или замыканием контура; карта, парящая над форпостом, ложится наверх вашей колоды и приходит в руку с добором на следующем ходу. Потеря форпоста забирает карту.</p>
-        <p><b>Бой.</b> После вашей карты бой начинается автоматически, если противник стоит на соседнем гексе — не больше одного удара за ход. Урон зависит от размера вашего отряда (примерно 0.15 за миньона) и карт: «Боевой клич», «Натиск», «Благословение» усиливают удар, «Плотный строй» и «Крепкие щиты» ослабляют входящий, «Ответный удар» отвечает на атаку половинным уроном, «Дозор» бьёт вошедшего на соседний гекс.</p>
+        <p><b>Территория.</b> Пройденные гексы окрашиваются в ваш цвет. Если ваши гексы замыкают область, всё внутри становится вашим. <b>Форпосты</b> захватываются проходом через гекс или замыканием контура; карта, парящая над форпостом, сразу прилетает в руку (если рука полна — ложится наверх колоды). Все карты форпостов срабатывают мгновенно: Вербовка +6, Оцепление красит гексы вокруг отряда, Взрывной заряд бьёт соседний гекс, Молитва возвращает верхнюю карту сброса, Катапульта бьёт на 3 гекса, Разведка добирает руку, Знамя даёт +1 очко вашим гексам вокруг отряда, Прыжок — через гекс. Потеря форпоста забирает карту.</p>
+        <p><b>Бой.</b> После вашей карты бой начинается автоматически, если противник стоит на соседнем гексе — не больше одного раза за ход. Ваш отряд набегает на гекс противника, оба бьют одновременно: урон каждого = ⌊log₂(его миньонов)⌋, не меньше 1 (24 → 4, 16 → 4, 8 → 3, 4 → 2). «Боевой клич» усиливает ваш удар на 25 %, «Плотный строй» ослабляет входящий до ×0.75. После обмена отряд, в котором осталось меньше бойцов, отступает на гекс назад (атакующий — откуда пришёл, защитник — прочь от атакующего, и тогда атакующий занимает его гекс); при равенстве отступает атакующий. «Залп» и «Катапульта» бьют на расстоянии без ответа.</p>
         <p><b>Победа</b>: уничтожить отряд противника или иметь больше очков территории после лимита раундов. Тай-брейк: точки → миньоны → захват в последнем раунде.</p>
         <p class="muted">Пиктограммы: стрелки — движение (шевроны = число шагов), фигурки — миньоны, меч — атака, щит — защита, глаз — дозор, флаг — очки территории.</p>
         <button class="btn primary" id="btn-help-close">Понятно</button></div>`);

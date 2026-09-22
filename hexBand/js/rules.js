@@ -21,6 +21,8 @@ window.HB = window.HB || {};
   const cellAt = (s, c) => s.cells[K(c.col, c.row)];
   const exists = (s, c) => hex.exists(c.col, c.row, s.cols, s.rows);
   const enemyOf = (s, pid) => s.players[3 - pid];
+  // D-039: a warband's strike = floor(log2(minions)), never below 1
+  const baseDamage = n => Math.max(1, Math.floor(Math.log2(Math.max(1, n))));
 
   function occupant(s, c) {
     for (const pid of [1, 2]) { const w = s.players[pid].warband; if (w.col === c.col && w.row === c.row) return pid; }
@@ -33,11 +35,7 @@ window.HB = window.HB || {};
   function makeCard(s, defId, poiId) {
     return { uid: s.nextUid++, def: defId, poi: poiId == null ? -1 : poiId };
   }
-  function newStatus() {
-    return { nextAttackMult: 1, chargeMult: 1, blessingUntil: -1, formationUntil: -1, forcedUntil: -1, counterUntil: -1,
-      overwatchUntil: -1, shieldsOnce: false, splitSteps: 0, splitSide: 1, claimSteps: 0 };
-  }
-  // D-030: movement cards carry no direction; the option chosen at drop time holds absolute directions.
+  function newStatus() { return { nextAttackMult: 1, formationUntil: -1 }; }
 
   // ---------------------------------------------------------------- setup
   function createGame(opts) {
@@ -47,8 +45,7 @@ window.HB = window.HB || {};
       cols: CFG.COLS, rows: CFG.ROWS, roundLimit: opts.roundLimit || CFG.ROUND_LIMIT,
       turnIndex: 0, current: 1, playedThisTurn: 0, attacksThisTurn: 0,
       attackLimit: opts.attackLimit != null ? opts.attackLimit : CFG.ATTACKS_PER_TURN,
-      phase: 'play', winner: 0, endReason: '', scores: null,
-      decorSeed: seed,
+      phase: 'play', winner: 0, endReason: '', scores: null, decorSeed: seed,
       cells: {}, pois: [], players: [null, null, null], blocked: {}, paintBuf: [], events: [], log: [],
     };
     for (let c = 0; c < s.cols; c++) for (let r = 0; r < hex.rowsInCol(c, s.rows); r++) {
@@ -73,7 +70,6 @@ window.HB = window.HB || {};
     for (const pid of [1, 2]) {
       const p = s.players[pid];
       p.deck = shuffle(s, p.deckIds.map(id => makeCard(s, id)));
-      // starting zone: the spawn hex plus its neighbours (GDD §4.2)
       const w = p.warband;
       paint(s, p, w, 'walk');
       for (let d = 0; d < 6; d++) { const n = hex.neighbor(w.col, w.row, d); if (exists(s, n)) paint(s, p, n, 'fill'); }
@@ -109,17 +105,12 @@ window.HB = window.HB || {};
     if (p.inPlay && p.inPlay.poi === poiId) { const x = p.inPlay; p.inPlay = null; return x; }
     return null;
   }
-  // Scout Route needs to show the deck top before the card is confirmed. Reshuffles the discard if the deck is empty.
-  function peekDeck(s, p, n) {
-    if (p.deck.length === 0 && p.discard.length) { p.deck = shuffle(s, p.discard); p.discard = []; }
-    return p.deck.slice(0, n);
-  }
 
   // ---------------------------------------------------------------- territory
   function paint(s, p, c, via) {
     const cell = cellAt(s, c);
     if (!cell) return false;
-    if (via !== 'walk' && occupant(s, c)) return false; // D-018: a hex under a warband is only repainted by walking onto it
+    if (via !== 'walk' && occupant(s, c)) return false; // D-017: a hex under a warband is only repainted by walking onto it
     if (cell.owner === p.id) return false;
     cell.owner = p.id; cell.bonus = 0; cell.paintedAt = s.turnIndex;
     p.gained++;
@@ -162,13 +153,15 @@ window.HB = window.HB || {};
       const prev = s.players[poi.owner];
       removePoiCard(s, prev, poiId);
       s.events.push({ type: 'poiLost', player: prev.id, poiId });
-      log(s, `${prev.name} теряют ${def.name} и карту ${CARDS[def.card].name}.`);
+      log(s, `${prev.name} теряют ${def.ru} и карту «${CARDS[def.card].ru}».`);
     }
     poi.owner = p.id;
-    // D-032: the reward card goes on top of the deck and arrives with the next turn's draw, never straight into the hand
-    p.deck.unshift(makeCard(s, def.card, poiId));
-    s.events.push({ type: 'poi', player: p.id, poiId, cardName: CARDS[def.card].name, col: poi.col, row: poi.row });
-    log(s, `${p.name} захватывают ${def.name}: карта ${CARDS[def.card].name} в колоду.`);
+    const card = makeCard(s, def.card, poiId);
+    // D-040: the reward card goes straight into the hand when there is room, otherwise on top of the deck
+    if (p.hand.length < CFG.HAND_SIZE) { p.hand.push(card); s.events.push({ type: 'poiCard', player: p.id, uid: card.uid, col: poi.col, row: poi.row }); }
+    else p.deck.unshift(card);
+    s.events.push({ type: 'poi', player: p.id, poiId, cardName: CARDS[def.card].ru, col: poi.col, row: poi.row });
+    log(s, `${p.name} захватывают ${def.ru}: карта «${CARDS[def.card].ru}» ${p.hand.includes(card) ? 'в руку' : 'в колоду'}.`);
   }
   const territory = (s, pid) => { let t = 0; for (const k in s.cells) { const c = s.cells[k]; if (c.owner === pid) t += 1 + c.bonus; } return t; };
   const cellCount = (s, pid) => { let t = 0; for (const k in s.cells) if (s.cells[k].owner === pid) t++; return t; };
@@ -176,26 +169,14 @@ window.HB = window.HB || {};
   const totalCells = s => Object.keys(s.cells).length;
 
   // ---------------------------------------------------------------- movement
-  function enterCell(s, p, c, stepDir) {
-    const st = p.status;
+  function enterCell(s, p, c, stepDir, def) {
     paint(s, p, c, 'walk');
-    if (st.claimSteps > 0) { cellAt(s, c).bonus = 1; st.claimSteps--; }
-    if (st.splitSteps > 0 && stepDir >= 0) {
-      st.splitSteps--;
-      const side = hex.neighbor(c.col, c.row, hex.turn(stepDir, st.splitSide));
-      if (exists(s, side)) paint(s, p, side, 'split');
+    if (def && def.wide && stepDir >= 0) { // Wide March: the two cells flanking the step (adjacent to both start and end)
+      for (const t of [2, -2]) { const n = hex.neighbor(c.col, c.row, hex.turn(stepDir, t)); if (exists(s, n)) paint(s, p, n, 'split'); }
     }
-    overwatchCheck(s, p);
-  }
-  function overwatchCheck(s, p) {
-    const e = enemyOf(s, p.id);
-    if (!active(s, e.status.overwatchUntil)) return;
-    if (hex.distance(e.warband, p.warband) !== 1) return;
-    e.status.overwatchUntil = -1;
-    attack(s, e, p, { overwatch: true });
   }
   // Walks along absolute directions, stopping at the first illegal step (D-008).
-  function moveAlong(s, p, dirs) {
+  function moveAlong(s, p, dirs, def) {
     const w = p.warband, path = [];
     let lastDir = -1;
     for (const d of dirs) {
@@ -203,10 +184,13 @@ window.HB = window.HB || {};
       if (!canEnter(s, n)) break;
       w.col = n.col; w.row = n.row; lastDir = d;
       path.push({ col: n.col, row: n.row });
-      enterCell(s, p, n, d);
-      if (w.minions <= 0) break;
+      enterCell(s, p, n, d, def);
     }
     if (path.length) s.events.push({ type: 'move', player: p.id, path });
+    if (def && def.ahead && lastDir >= 0) { // Dash: claim the next cell(s) in the direction of travel without moving
+      let c = { col: w.col, row: w.row };
+      for (let i = 0; i < def.ahead; i++) { c = hex.neighbor(c.col, c.row, lastDir); if (!exists(s, c) || occupant(s, c)) break; paint(s, p, c, 'split'); }
+    }
     return { path, lastDir };
   }
   function previewPath(s, p, dirs) {
@@ -215,53 +199,76 @@ window.HB = window.HB || {};
     return path;
   }
 
-  // ---------------------------------------------------------------- combat
-  function attack(s, a, d, opts) {
-    opts = opts || {};
-    // D-034: no facing — damage depends on the attacker's size and card effects only.
-    // opts.overwatch / opts.counter are automatic reactions: they use no card buffs and do not count toward the turn limit.
-    const aw = a.warband, dw = d.warband, st = a.status, ds = d.status, notes = [];
-    const reaction = opts.overwatch || opts.counter;
-    let amod = 1, dmod = 1;
-    if (!reaction) {
-      if (st.chargeMult !== 1) { amod *= st.chargeMult; st.chargeMult = 1; notes.push('Charge'); }
-      if (st.nextAttackMult !== 1) { amod *= st.nextAttackMult; st.nextAttackMult = 1; notes.push('Battle Cry'); }
-      if (active(s, st.blessingUntil)) { amod *= 1.15; notes.push('War Blessing'); }
-    }
-    if (active(s, ds.formationUntil)) { dmod *= CFG.FORMATION_MULT; notes.push('Reinforced Formation'); }
-    if (active(s, ds.forcedUntil)) { dmod *= 1.15; notes.push('Forced March'); }
-    if (ds.shieldsOnce) { ds.shieldsOnce = false; dmod *= CFG.SHIELDS_MULT; notes.push('Reinforced Shields'); }
-    const rmod = opts.overwatch ? CFG.OVERWATCH_MULT : opts.counter ? CFG.COUNTER_MULT : 1;
-    const dmg = Math.max(1, Math.round(CFG.DMG_PER_MINION * aw.minions * amod * dmod * rmod));
-    const before = dw.minions;
-    dw.minions = Math.max(0, dw.minions - dmg);
-    if (!reaction) s.attacksThisTurn++;
-    const label = opts.overwatch ? 'OVERWATCH' : opts.counter ? 'COUNTER' : '';
-    s.events.push({ type: 'attack', attacker: a.id, defender: d.id, dmg, before, after: dw.minions, label, notes,
-      overwatch: !!opts.overwatch, counter: !!opts.counter, col: dw.col, row: dw.row });
-    const kind = opts.overwatch ? 'Дозор: ' : opts.counter ? 'Ответный удар: ' : '';
-    log(s, `${a.name} ${kind}атакуют: −${dmg} (${before} → ${dw.minions})` + (notes.length ? ` [${notes.join(', ')}]` : ''));
-    if (dw.minions <= 0) { endGame(s, a.id, 'elimination'); return; }
-    // retaliation (Ответный удар): once per incoming attack, never against a reaction
-    if (!reaction && active(s, ds.counterUntil)) attack(s, d, a, { counter: true });
+  // ---------------------------------------------------------------- combat (D-039)
+  // outgoing strike of a warband with its card modifiers, reduced by the target's formation
+  function strikeValue(s, a, d, consume) {
+    let v = baseDamage(a.warband.minions);
+    const notes = [];
+    if (a.status.nextAttackMult !== 1) { v = Math.round(v * a.status.nextAttackMult); if (consume) a.status.nextAttackMult = 1; notes.push('Боевой клич'); }
+    if (active(s, d.status.formationUntil)) { v = Math.round(v * CFG.FORMATION_MULT); notes.push('Плотный строй'); }
+    return { value: Math.max(1, v), notes };
   }
-  // GDD §9.1 + D-006: after any card, the active warband attacks if the enemy stands in its front arc.
+  // one-sided hit (Volley, Catapult): no clash, no retreat
+  function strike(s, a, d, dmg, kind) {
+    const dw = d.warband, before = dw.minions;
+    dw.minions = Math.max(0, dw.minions - dmg);
+    s.attacksThisTurn++;
+    s.events.push({ type: 'attack', attacker: a.id, defender: d.id, dmg, before, after: dw.minions, label: kind, col: dw.col, row: dw.row, from: { col: a.warband.col, row: a.warband.row } });
+    log(s, `${a.name}: ${kind} — −${dmg} (${before} → ${dw.minions}).`);
+    if (dw.minions <= 0) endGame(s, a.id, 'elimination');
+  }
+  // mutual clash: the attacker runs onto the defender's hex, both strike, the smaller warband falls back one hex
+  function clash(s, a, d) {
+    const aw = a.warband, dw = d.warband, from = { col: aw.col, row: aw.row }, at = { col: dw.col, row: dw.row };
+    const sa = strikeValue(s, a, d, true), sd = strikeValue(s, d, a, true);
+    const aBefore = aw.minions, dBefore = dw.minions;
+    dw.minions = Math.max(0, dw.minions - sa.value);
+    aw.minions = Math.max(0, aw.minions - sd.value);
+    s.attacksThisTurn++;
+    let result = 'attackerRetreats', attackerTo = from, defenderTo = at;
+    if (aw.minions <= 0 || dw.minions <= 0) result = 'eliminated';
+    else if (aw.minions > dw.minions) {
+      // the defender falls back away from the attacker; if that hex is taken, to the free neighbour farthest from the attacker
+      const dir = hex.dirBetween(from, at);
+      let tgt = hex.neighbor(at.col, at.row, dir);
+      if (!canEnter(s, tgt)) {
+        tgt = null; let bd = -1;
+        for (let d6 = 0; d6 < 6; d6++) { const n = hex.neighbor(at.col, at.row, d6); if (!canEnter(s, n)) continue; const dist = hex.distance(n, from); if (dist > bd) { bd = dist; tgt = n; } }
+      }
+      if (tgt) {
+        result = 'defenderRetreats'; defenderTo = tgt; attackerTo = at;
+        flushPaint(s, a);
+        dw.col = tgt.col; dw.row = tgt.row; paint(s, d, tgt, 'walk'); flushPaint(s, d);
+        aw.col = at.col; aw.row = at.row; paint(s, a, at, 'walk');
+      } else result = 'hold';
+    }
+    s.events.push({ type: 'clash', attacker: a.id, defender: d.id, from, at, dmgToDef: sa.value, dmgToAtt: sd.value,
+      aBefore, aAfter: aw.minions, dBefore, dAfter: dw.minions, result, attackerTo, defenderTo, notes: sa.notes.concat(sd.notes) });
+    const outcome = { attackerRetreats: `${a.name} отступают`, defenderRetreats: `${d.name} отступают`, hold: 'оба стоят', eliminated: 'отряд уничтожен' }[result];
+    log(s, `Бой: ${a.name} −${sd.value} (${aBefore} → ${aw.minions}), ${d.name} −${sa.value} (${dBefore} → ${dw.minions}) — ${outcome}.`);
+    if (result === 'eliminated') {
+      const winner = aw.minions > 0 ? a.id : dw.minions > 0 ? d.id : 0;
+      endGame(s, winner, winner ? 'elimination' : 'draw');
+      return;
+    }
+    if (result === 'defenderRetreats') { enclosure(s, a); flushPaint(s, a); }
+  }
+  // GDD §9.1 + D-006/D-034: after any card, the active warband attacks if the enemy is adjacent (D-031: limited per turn)
   function combatCheck(s, p) {
     if (s.phase !== 'play') return;
-    if (s.attackLimit && s.attacksThisTurn >= s.attackLimit) return; // D-031: at most N attacks per turn
+    if (s.attackLimit && s.attacksThisTurn >= s.attackLimit) return;
     const e = enemyOf(s, p.id);
-    if (hex.distance(p.warband, e.warband) !== 1) return; // D-034: adjacency is all that matters
-    attack(s, p, e, {});
+    if (hex.distance(p.warband, e.warband) !== 1) return;
+    clash(s, p, e);
   }
 
   // ---------------------------------------------------------------- card play
-  // Returns { ok, options?, path? }. options: array of { key, label, cell?, facing?, side?, uid?, path? }.
+  // Returns { ok, options? }. options: array of { key, label, ... } — one of them is passed back as `choice`.
   function getPlay(s, card) {
-    const p = s.players[s.current], def = CARDS[card.def], w = p.warband;
+    const p = s.players[s.current], def = CARDS[card.def], w = p.warband, e = enemyOf(s, p.id);
     switch (def.kind) {
-      case 'move': case 'charge': {
-        // D-030: every rotation (and mirror image) of the card's pattern is an option; the UI picks the one
-        // whose end cell is closest to where the card is dropped.
+      case 'move': {
+        // D-030: every rotation (and mirror image) of the pattern is an option; the UI picks the one closest to the drop point
         const opts = [], seen = new Set();
         for (let d = 0; d < 6; d++) for (const m of def.mirror ? [1, -1] : [1]) {
           const dirs = def.pattern.map(o => ((d + m * o) % 6 + 6) % 6), key = dirs.join('');
@@ -271,7 +278,6 @@ window.HB = window.HB || {};
         }
         return { ok: opts.length > 0, options: opts };
       }
-      case 'split': return { ok: true, options: [{ key: 'L', side: -1, label: '← левый бок' }, { key: 'R', side: 1, label: 'правый бок →' }] };
       case 'blink': {
         const opts = [];
         for (let d = 0; d < 6; d++) {
@@ -280,73 +286,78 @@ window.HB = window.HB || {};
         }
         return { ok: opts.length > 0, options: opts };
       }
+      case 'flank_claim': {
+        const opts = [];
+        for (let axis = 0; axis < 3; axis++) {
+          const cells = [hex.neighbor(w.col, w.row, axis), hex.neighbor(w.col, w.row, axis + 3)].filter(c => exists(s, c) && !occupant(s, c));
+          if (cells.length) opts.push({ key: 'a' + axis, axis, cells, label: HB.cards.AXIS_RU[axis] });
+        }
+        return { ok: opts.length > 0, options: opts };
+      }
       case 'explosive': {
         const opts = [];
         for (let d = 0; d < 6; d++) { const n = hex.neighbor(w.col, w.row, d); if (exists(s, n)) opts.push({ key: 'c' + K(n.col, n.row), cell: n, label: hex.DIR_NAMES[d] }); }
         return { ok: true, options: opts };
       }
-      case 'scout': return { ok: p.deck.length + p.discard.length > 0, optionsFrom: 'deck' };
+      case 'volley': case 'catapult': return { ok: hex.distance(w, e.warband) <= def.range };
+      case 'prayer': return { ok: p.discard.length > 0 };
+      case 'scout_draw': return { ok: p.deck.length + p.discard.length > 0 };
       default: return { ok: true };
     }
   }
-  function scoutOptions(s, p) {
-    return peekDeck(s, p, 3).map(c => ({ key: 'u' + c.uid, uid: c.uid, label: CARDS[c.def].name }));
-  }
 
   function resolve(s, p, card, def, choice) {
-    const st = p.status, w = p.warband, T = s.turnIndex;
+    const st = p.status, w = p.warband, T = s.turnIndex, e = enemyOf(s, p.id);
     switch (def.kind) {
-      case 'move': {
-        moveAlong(s, p, choice.dirs);
-        if (def.forcedMarch && hex.distance(w, enemyOf(s, p.id).warband) === 1) st.forcedUntil = T + 2;
-        enclosure(s, p); break;
-      }
-      case 'charge': { st.chargeMult = CFG.CHARGE_MULT; moveAlong(s, p, choice.dirs); enclosure(s, p); break; }
-      case 'reinforce': {
-        let amt = def.amount;
-        if (def.poiBonus && poiCount(s, p.id) >= 2) amt += def.poiBonus;
-        const before = w.minions; w.minions += amt;
-        s.events.push({ type: 'reinforce', player: p.id, amount: amt, before, after: w.minions, col: w.col, row: w.row });
-        log(s, `${p.name}: +${amt} миньонов (${before} → ${w.minions}).`); break;
-      }
-      case 'buff_next': st.nextAttackMult *= def.mult; break;
-      case 'formation': st.formationUntil = T + 2; break;
-      case 'counter': st.counterUntil = T + 2; break;
-      case 'split': st.splitSteps = 2; st.splitSide = choice.side; break;
-      case 'overwatch': st.overwatchUntil = T + 2; break;
-      case 'explosive': {
-        const c = choice.cell, victim = occupant(s, c);
-        s.blocked[K(c.col, c.row)] = T + 2;
-        if (victim && victim !== p.id) {
-          const e = s.players[victim], before = e.warband.minions;
-          e.warband.minions = Math.max(0, before - CFG.EXPLOSIVE_DAMAGE);
-          s.events.push({ type: 'explosion', col: c.col, row: c.row, dmg: CFG.EXPLOSIVE_DAMAGE, defender: victim, before, after: e.warband.minions });
-          log(s, `${p.name}: Explosive Charge, −${CFG.EXPLOSIVE_DAMAGE} (${before} → ${e.warband.minions}).`);
-          if (e.warband.minions <= 0) endGame(s, p.id, 'elimination');
-        } else {
-          s.events.push({ type: 'explosion', col: c.col, row: c.row, dmg: 0 });
-          log(s, `${p.name}: Explosive Charge — гекс заблокирован.`);
-        }
-        break;
-      }
-      case 'blessing': st.blessingUntil = T + 5; break; // this turn + the next two own turns (D-013)
-      case 'shields': st.shieldsOnce = true; break;
-      case 'scout': {
-        peekDeck(s, p, 3);
-        const i = p.deck.findIndex(c => c.uid === choice.uid);
-        if (i > 0) { const c = p.deck.splice(i, 1)[0]; p.deck.unshift(c); }
-        log(s, `${p.name}: Scout Route — наверх положена ${CARDS[p.deck[0].def].name}.`); break;
-      }
-      case 'claim': st.claimSteps = 3; break;
+      case 'move': { moveAlong(s, p, choice.dirs, def); enclosure(s, p); break; }
       case 'blink': {
         const f = choice.dir, mid = hex.neighbor(w.col, w.row, f), tgt = hex.neighbor(mid.col, mid.row, f);
         if (canEnter(s, tgt)) {
           w.col = tgt.col; w.row = tgt.row;
           s.events.push({ type: 'move', player: p.id, path: [tgt], blink: true });
-          enterCell(s, p, tgt, -1);
+          enterCell(s, p, tgt, -1, def);
           enclosure(s, p);
         }
         break;
+      }
+      case 'flank_claim': { for (const c of choice.cells) paint(s, p, c, 'split'); enclosure(s, p); break; }
+      case 'cordon': { for (let d = 0; d < 6; d++) { const n = hex.neighbor(w.col, w.row, d); if (exists(s, n)) paint(s, p, n, 'split'); } enclosure(s, p); break; }
+      case 'volley': { const sv = strikeValue(s, p, e, true); strike(s, p, e, sv.value, 'Залп'); break; }
+      case 'catapult': { strike(s, p, e, def.damage, 'Катапульта'); break; }
+      case 'reinforce': {
+        const before = w.minions; w.minions += def.amount;
+        s.events.push({ type: 'reinforce', player: p.id, amount: def.amount, before, after: w.minions, col: w.col, row: w.row });
+        log(s, `${p.name}: +${def.amount} миньонов (${before} → ${w.minions}).`); break;
+      }
+      case 'buff_next': st.nextAttackMult *= def.mult; break;
+      case 'formation': st.formationUntil = T + 2; break;
+      case 'explosive': {
+        const c = choice.cell, victim = occupant(s, c);
+        s.blocked[K(c.col, c.row)] = T + 2;
+        if (victim && victim !== p.id) {
+          const v = s.players[victim], before = v.warband.minions;
+          v.warband.minions = Math.max(0, before - CFG.EXPLOSIVE_DAMAGE);
+          s.events.push({ type: 'explosion', col: c.col, row: c.row, dmg: CFG.EXPLOSIVE_DAMAGE, defender: victim, before, after: v.warband.minions });
+          log(s, `${p.name}: Взрывной заряд, −${CFG.EXPLOSIVE_DAMAGE} (${before} → ${v.warband.minions}).`);
+          if (v.warband.minions <= 0) endGame(s, p.id, 'elimination');
+        } else {
+          s.events.push({ type: 'explosion', col: c.col, row: c.row, dmg: 0 });
+          log(s, `${p.name}: Взрывной заряд — гекс заблокирован.`);
+        }
+        break;
+      }
+      case 'prayer': {
+        const c = p.discard.pop();
+        if (c) { p.hand.push(c); s.events.push({ type: 'cardToHand', player: p.id, uid: c.uid, from: 'discard' }); log(s, `${p.name}: Молитва — «${CARDS[c.def].ru}» возвращается в руку.`); }
+        break;
+      }
+      case 'scout_draw': { const n = p.hand.length; draw(s, p, CFG.HAND_SIZE); log(s, `${p.name}: Разведка — добор ${p.hand.length - n} карт.`); break; }
+      case 'banner': {
+        const cells = [];
+        const mark = c => { const cell = cellAt(s, c); if (cell && cell.owner === p.id && !cell.bonus) { cell.bonus = 1; cells.push({ col: cell.col, row: cell.row }); } };
+        mark(w); for (let d = 0; d < 6; d++) mark(hex.neighbor(w.col, w.row, d));
+        s.events.push({ type: 'bonus', player: p.id, cells });
+        log(s, `${p.name}: Знамя — +${cells.length} очков территории.`); break;
       }
     }
   }
@@ -355,7 +366,7 @@ window.HB = window.HB || {};
     if (!play.options) return true;
     return !!choice && play.options.some(o => o.key === choice.key);
   }
-  // choice: one of the option objects returned by getPlay/scoutOptions (or null for cards without a target).
+  // choice: one of the option objects returned by getPlay (or null for cards without a target).
   function playCard(s, uid, choice) {
     if (s.phase !== 'play') return false;
     const p = s.players[s.current];
@@ -363,16 +374,13 @@ window.HB = window.HB || {};
     if (idx < 0) return false;
     const card = p.hand[idx], def = CARDS[card.def];
     const play = getPlay(s, card);
-    if (!play.ok) return false;
-    if (def.kind === 'scout') { if (!choice || !peekDeck(s, p, 3).some(c => c.uid === choice.uid)) return false; }
-    else if (!validChoice(play, choice)) return false;
+    if (!play.ok || !validChoice(play, choice)) return false;
     p.hand.splice(idx, 1); p.inPlay = card;
-    s.events.push({ type: 'play', player: p.id, card: def.name });
-    log(s, `${p.name} играют ${def.name}${choice && choice.label ? ' (' + choice.label + ')' : ''}.`);
+    s.events.push({ type: 'play', player: p.id, card: def.ru });
+    log(s, `${p.name} играют «${def.ru}»${choice && choice.label ? ' (' + choice.label + ')' : ''}.`);
     resolve(s, p, card, def, choice);
     flushPaint(s, p);
     combatCheck(s, p);
-    p.status.chargeMult = 1; // Charge only boosts the attack that follows it immediately
     // D-022: effects apply at once and the card goes to the discard; the turn continues until endTurn().
     if (p.inPlay) { p.discard.push(p.inPlay); p.inPlay = null; }
     s.playedThisTurn++;
@@ -385,14 +393,13 @@ window.HB = window.HB || {};
     return true;
   }
   // D-009: a pass discards one card so that a hand full of unplayable cards cannot lock the player.
-  // Only allowed when nothing was played this turn (otherwise use endTurn).
   function passTurn(s, uid) {
     if (s.phase !== 'play' || s.playedThisTurn > 0) return false;
     const p = s.players[s.current];
     const idx = p.hand.findIndex(c => c.uid === uid);
     if (idx < 0) return false;
     p.discard.push(p.hand.splice(idx, 1)[0]);
-    log(s, `${p.name} пропускают ход, сбрасывая ${CARDS[p.discard[p.discard.length - 1].def].name}.`);
+    log(s, `${p.name} пропускают ход, сбрасывая «${CARDS[p.discard[p.discard.length - 1].def].ru}».`);
     finishTurn(s);
     return true;
   }
@@ -432,8 +439,8 @@ window.HB = window.HB || {};
     if (s.phase === 'over') return;
     s.phase = 'over'; s.winner = winner; s.endReason = reason; s.scores = scoreboard(s);
     const name = winner ? s.players[winner].name : 'Ничья';
-    const why = { elimination: 'отряд противника уничтожен', territory: 'больше территории', 'tiebreak:pois': 'равная территория, больше POI',
-      'tiebreak:minions': 'равная территория и POI, больше миньонов', 'tiebreak:lastRound': 'равные показатели, больше захвачено в последнем раунде', draw: 'полное равенство' }[reason];
+    const why = { elimination: 'отряд противника уничтожен', territory: 'больше территории', 'tiebreak:pois': 'равная территория, больше точек',
+      'tiebreak:minions': 'равная территория и точки, больше миньонов', 'tiebreak:lastRound': 'равные показатели, больше захвачено в последнем раунде', draw: 'полное равенство' }[reason];
     log(s, winner ? `Победа: ${name} — ${why}.` : `Ничья — ${why}.`);
     s.events.push({ type: 'gameover', winner, reason, scores: s.scores });
   }
@@ -441,6 +448,6 @@ window.HB = window.HB || {};
   function takeEvents(s) { const e = s.events; s.events = []; return e; }
   function clone(s) { const e = s.events, l = s.log; s.events = []; s.log = []; const c = JSON.parse(JSON.stringify(s)); s.events = e; s.log = l; return c; }
 
-  HB.rules = { createGame, playCard, endTurn, passTurn, getPlay, scoutOptions, takeEvents, clone, territory, cellCount, poiCount, totalCells,
-    scoreboard, round, occupant, isBlocked, active, rand };
+  HB.rules = { createGame, playCard, endTurn, passTurn, getPlay, takeEvents, clone, territory, cellCount, poiCount, totalCells,
+    scoreboard, round, occupant, isBlocked, active, rand, baseDamage };
 })();

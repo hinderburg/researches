@@ -13,7 +13,7 @@ window.HB = window.HB || {};
       this.canvas = canvas; this.ctx = canvas.getContext('2d');
       this.s = null; this.size = 30; this.offset = { x: 0, y: 0 }; this.dpr = 1;
       this.highlights = []; this.texts = []; this.flash = {}; this.shake = { 1: 0, 2: 0 }; this.slide = { 1: null, 2: null };
-      this.timeline = []; this.decor = {}; this.dropOK = false; this.dragging = false;
+      this.timeline = []; this.decor = {}; this.dropOK = false; this.dragging = false; this.fx = [];
       requestAnimationFrame(t => this.frame(t));
     }
     setState(s) { this.s = s; this.highlights = []; this.texts = []; this.flash = {}; this.timeline = []; this.slide = { 1: null, 2: null }; this.buildDecor(); }
@@ -58,8 +58,15 @@ window.HB = window.HB || {};
     addText(col, row, text, color, opts) {
       opts = opts || {};
       const p = this.cellXY(col, row);
-      this.texts.push({ x: p.x, y: p.y + (opts.dy || 0), text, color: color || '#fff', t0: performance.now(), dur: opts.dur || 1100, big: !!opts.big });
+      this.texts.push({ x: p.x + (opts.dx || 0), y: p.y + (opts.dy || 0), text, color: color || '#fff', t0: performance.now(), dur: opts.dur || 1100, big: !!opts.big });
     }
+    // battle effects (D-039): smoke puffs and sparks at a hex, or a bolt flying between two hexes
+    spawnFight(x, y) {
+      const now = performance.now(), S = this.size;
+      for (let i = 0; i < 7; i++) this.fx.push({ type: 'smoke', x: x + (Math.random() - 0.5) * S * 0.8, y: y + (Math.random() - 0.5) * S * 0.6, r: S * (0.25 + Math.random() * 0.25), t0: now + i * 60, dur: 900 });
+      for (let i = 0; i < 12; i++) { const a = Math.random() * Math.PI * 2; this.fx.push({ type: 'spark', x, y, a, len: S * (0.5 + Math.random() * 0.7), t0: now + Math.random() * 200, dur: 380 }); }
+    }
+    spawnBolt(from, to, dur) { const a = this.cellXY(from.col, from.row), b = this.cellXY(to.col, to.row); this.fx.push({ type: 'bolt', x0: a.x, y0: a.y, x1: b.x, y1: b.y, t0: performance.now(), dur }); }
     flashCell(col, row, color, dur) { this.flash[hex.key(col, row)] = { t0: performance.now(), dur: dur || 500, color: color || '#fff' }; }
 
     applyEvents(events) {
@@ -91,17 +98,44 @@ window.HB = window.HB || {};
             this.schedule(t, () => { this.flashCell(ev.col, ev.row, '#ffe27a', 800); this.addText(ev.col, ev.row, 'Точка захвачена!', '#ffe27a', { dy: -this.size * 1.9, dur: 1600, big: true }); });
             t += 250;
             break;
-          case 'attack': {
-            const col = ev.col, row = ev.row, def = ev.defender;
-            this.schedule(t, () => {
+          case 'attack': { // one-sided ranged hit: a bolt flies, then the target shakes
+            const col = ev.col, row = ev.row, def = ev.defender, flight = 260;
+            if (ev.from) this.schedule(t, () => this.spawnBolt(ev.from, { col, row }, flight));
+            this.schedule(t + (ev.from ? flight : 0), () => {
               this.shake[def] = performance.now();
-              const label = ev.overwatch ? 'ДОЗОР' : ev.counter ? 'ОТВЕТНЫЙ УДАР' : '';
-              if (label) this.addText(col, row, label, '#ffd45a', { dy: -this.size * 1.9, big: true, dur: 1400 });
+              this.spawnFight(this.cellXY(col, row).x, this.cellXY(col, row).y);
+              if (ev.label) this.addText(col, row, ev.label.toUpperCase(), '#ffd45a', { dy: -this.size * 1.9, big: true, dur: 1400 });
               this.addText(col, row, `−${ev.dmg}`, '#ff6b6b', { dy: -this.size * 0.6, big: true });
             });
-            t += 500;
+            t += 500 + (ev.from ? flight : 0);
             break;
           }
+          case 'clash': { // D-039: attacker runs onto the defender's hex, both strike, the smaller one falls back
+            const A = ev.attacker, D = ev.defender, S = this.size;
+            const fromXY = this.cellXY(ev.from.col, ev.from.row), atXY = this.cellXY(ev.at.col, ev.at.row);
+            const run = 260, fight = 750, back = 260;
+            this.schedule(t, () => { this.slide[A] = { path: [ev.at], t0: performance.now(), per: run, start: fromXY, hold: true }; });
+            t += run;
+            this.schedule(t, () => {
+              this.spawnFight(atXY.x, atXY.y);
+              this.shake[A] = this.shake[D] = performance.now();
+              const side = fromXY.x <= atXY.x ? -1 : 1; // attacker's number on the attacker's side
+              this.addText(ev.at.col, ev.at.row, `−${ev.dmgToAtt}`, COL[A + 'Light'], { dx: side * S * 0.55, dy: -S * 0.5, big: true, dur: 1500 });
+              this.addText(ev.at.col, ev.at.row, `−${ev.dmgToDef}`, COL[D + 'Light'], { dx: -side * S * 0.55, dy: -S * 0.5, big: true, dur: 1500 });
+            });
+            t += fight;
+            this.schedule(t, () => {
+              if (ev.result === 'defenderRetreats') { this.slide[A] = null; this.slide[D] = { path: [ev.defenderTo], t0: performance.now(), per: back, start: atXY }; }
+              else if (ev.result === 'eliminated' && ev.aAfter > 0 && ev.dAfter <= 0) { this.slide[A] = { path: [ev.at], t0: performance.now(), per: 1, start: atXY, hold: true }; }
+              else this.slide[A] = { path: [ev.attackerTo], t0: performance.now(), per: back, start: atXY };
+            });
+            t += back + 100;
+            break;
+          }
+          case 'bonus':
+            ev.cells.forEach((c, i) => this.schedule(t + 50 * i, () => this.flashCell(c.col, c.row, '#ffe27a', 700)));
+            t += 50 * ev.cells.length + 200;
+            break;
           case 'explosion':
             this.schedule(t, () => { this.flashCell(ev.col, ev.row, '#ffb347', 700); if (ev.dmg) { this.shake[ev.defender] = performance.now(); this.addText(ev.col, ev.row, `−${ev.dmg}`, '#ff6b6b', { big: true }); } else this.addText(ev.col, ev.row, 'ЗАБЛОКИРОВАНО', '#ffb347'); });
             t += 400;
@@ -210,6 +244,24 @@ window.HB = window.HB || {};
       // warbands: draw the upper one first so overlapping banners read correctly
       const order = [1, 2].sort((a, b) => s.players[a].warband.row - s.players[b].warband.row);
       for (const pid of order) this.drawWarband(ctx, s.players[pid], now);
+      // battle fx
+      for (let i = this.fx.length - 1; i >= 0; i--) {
+        const f = this.fx[i], k = (now - f.t0) / f.dur;
+        if (k >= 1) { this.fx.splice(i, 1); continue; }
+        if (k < 0) continue;
+        if (f.type === 'smoke') {
+          ctx.globalAlpha = 0.55 * (1 - k); ctx.fillStyle = k < 0.3 ? '#ffd29a' : '#b9b3a8';
+          ctx.beginPath(); ctx.arc(f.x, f.y - k * S * 0.5, f.r * (0.5 + k), 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+        } else if (f.type === 'spark') {
+          const d0 = f.len * k, d1 = f.len * Math.min(1, k + 0.25);
+          ctx.strokeStyle = k < 0.5 ? '#fff4b0' : '#ffb347'; ctx.lineWidth = 2.5; ctx.globalAlpha = 1 - k;
+          ctx.beginPath(); ctx.moveTo(f.x + Math.cos(f.a) * d0, f.y + Math.sin(f.a) * d0); ctx.lineTo(f.x + Math.cos(f.a) * d1, f.y + Math.sin(f.a) * d1); ctx.stroke(); ctx.globalAlpha = 1;
+        } else if (f.type === 'bolt') {
+          const x = f.x0 + (f.x1 - f.x0) * k, y = f.y0 + (f.y1 - f.y0) * k - Math.sin(k * Math.PI) * S * 1.2;
+          ctx.fillStyle = '#3a2a12'; ctx.beginPath(); ctx.arc(x, y, S * 0.14, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = 'rgba(255,220,120,0.8)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - (f.x1 - f.x0) * 0.08, y - (f.y1 - f.y0) * 0.08 + S * 0.1); ctx.stroke();
+        }
+      }
       // floating texts
       for (let i = this.texts.length - 1; i >= 0; i--) {
         const t = this.texts[i], k = (now - t.t0) / t.dur;
@@ -269,7 +321,7 @@ window.HB = window.HB || {};
       const sl = this.slide[p.id], end = this.cellXY(p.warband.col, p.warband.row);
       if (!sl) return end;
       const k = Math.max(0, (now - sl.t0) / (sl.per * sl.path.length));
-      if (k >= 1) { this.slide[p.id] = null; return end; }
+      if (k >= 1) { if (sl.hold) { const c = sl.path[sl.path.length - 1]; return this.cellXY(c.col, c.row); } this.slide[p.id] = null; return end; }
       const pts = sl.path.map(c => this.cellXY(c.col, c.row));
       const start = sl.start || (sl.start = pts.length >= 2 ? { x: pts[0].x - (pts[1].x - pts[0].x), y: pts[0].y - (pts[1].y - pts[0].y) } : { x: pts[0].x, y: pts[0].y + this.size });
       const all = [start].concat(pts);
