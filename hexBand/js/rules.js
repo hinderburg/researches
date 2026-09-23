@@ -50,7 +50,7 @@ window.HB = window.HB || {};
       turnIndex: 0, current: 1, playedThisTurn: 0, attacksThisTurn: 0,
       attackLimit: opts.attackLimit != null ? opts.attackLimit : CFG.ATTACKS_PER_TURN,
       phase: 'play', winner: 0, endReason: '', scores: null, decorSeed: seed,
-      cells: {}, pois: [], players: [null, null, null], blocked: {}, paintBuf: [], events: [], log: [],
+      cells: {}, pois: [], players: [null, null, null], blocked: {}, paintBuf: [], paintedThisCard: null, events: [], log: [],
     };
     for (let c = 0; c < s.cols; c++) for (let r = 0; r < hex.rowsInCol(c, s.rows); r++) {
       s.cells[K(c, r)] = { col: c, row: r, owner: 0, bonus: 0, poi: -1, paintedAt: -1 };
@@ -116,9 +116,11 @@ window.HB = window.HB || {};
     if (!cell) return false;
     if (via !== 'walk' && occupant(s, c)) return false; // D-017: a hex under a warband is only repainted by walking onto it
     if (cell.owner === p.id) return false;
+    const from = cell.owner;
     cell.owner = p.id; cell.bonus = 0; cell.paintedAt = s.turnIndex;
     p.gained++;
-    s.paintBuf.push({ col: cell.col, row: cell.row, via });
+    s.paintBuf.push({ col: cell.col, row: cell.row, via, from });
+    if (s.paintedThisCard) s.paintedThisCard.push(K(cell.col, cell.row));
     if (cell.poi >= 0) capturePoi(s, p, cell.poi);
     return true;
   }
@@ -129,31 +131,39 @@ window.HB = window.HB || {};
     if (filled.length) s.events.push({ type: 'fill', player: p.id, cells: filled, count: filled.length });
     s.paintBuf = [];
   }
-  // D-004 + D-049: every connected region of cells not owned by p is filled when it is bounded only by p's cells
-  // (does not reach the board edge) — or reaches the edge but contains neither enemy cells nor the enemy warband
-  // (bounded only by p's territory and the map edge).
+  // D-004 + D-049 + D-053: every connected region of cells not owned by p is filled unless it is the open field —
+  // the region that reaches the board edge AND contains the enemy warband. Neutral and enemy tiles count alike, so a
+  // line to the map edge captures everything cut off from the enemy warband, enemy tiles included.
   function enclosure(s, p) {
+    // D-049 / D-053: every connected area of hexes not owned by p is filled — neutral and enemy hexes alike — except
+    // the open field. Two edge-touching areas are never filled: the one holding the enemy warband and the largest one
+    // (usually the same). So ringing the enemy in never hands over the rest of the map, and a wall across the board
+    // captures only the smaller side. Areas that do not reach the edge are always filled.
     const own = k => s.cells[k].owner === p.id, enemyId = 3 - p.id;
-    const seen = new Set();
-    let filled = 0;
+    const seen = new Set(), comps = [];
     for (const k0 in s.cells) {
       if (own(k0) || seen.has(k0)) continue;
-      const comp = [], queue = [s.cells[k0]];
-      let touchesEdge = false, hasEnemy = false;
+      const comp = { cells: [], touchesEdge: false, hasEnemyWarband: false }, queue = [s.cells[k0]];
       seen.add(k0);
       while (queue.length) {
         const c = queue.shift();
-        comp.push(c);
-        if (isEdge(s, c)) touchesEdge = true;
-        if (c.owner === enemyId || occupant(s, c) === enemyId) hasEnemy = true;
+        comp.cells.push(c);
+        if (isEdge(s, c)) comp.touchesEdge = true;
+        if (occupant(s, c) === enemyId) comp.hasEnemyWarband = true;
         for (let d = 0; d < 6; d++) {
           const n = hex.neighbor(c.col, c.row, d), nk = K(n.col, n.row);
           if (!exists(s, n) || seen.has(nk) || own(nk)) continue;
           seen.add(nk); queue.push(s.cells[nk]);
         }
       }
-      if (touchesEdge && hasEnemy) continue; // the open field: bounded by the enemy too
-      for (const c of comp) if (paint(s, p, c, 'fill')) filled++;
+      comps.push(comp);
+    }
+    let largest = null;
+    for (const c of comps) if (c.touchesEdge && (!largest || c.cells.length > largest.cells.length)) largest = c;
+    let filled = 0;
+    for (const comp of comps) {
+      if (comp === largest || (comp.touchesEdge && comp.hasEnemyWarband)) continue;
+      for (const c of comp.cells) if (paint(s, p, c, 'fill')) filled++;
     }
     if (filled) log(s, `${p.name}: enclosure closed, +${filled} hexes.`);
     return filled;
@@ -409,8 +419,11 @@ window.HB = window.HB || {};
     p.hand.splice(idx, 1); p.inPlay = card;
     s.events.push({ type: 'play', player: p.id, card: def.ru });
     log(s, `${p.name} play ${def.title}${choice && choice.label ? ' (' + choice.label + ')' : ''}.`);
+    s.paintedThisCard = [];
     resolve(s, p, card, def, choice);
     flushPaint(s, p);
+    siegeCheck(s, p);
+    s.paintedThisCard = null;
     checkDomination(s, p);
     // D-022: effects apply at once and the card goes to the discard; the turn continues until endTurn().
     if (p.inPlay) { p.discard.push(p.inPlay); p.inPlay = null; }
@@ -455,6 +468,25 @@ window.HB = window.HB || {};
     const out = {};
     for (const pid of [1, 2]) out[pid] = { territory: territory(s, pid), cells: cellCount(s, pid), pois: poiCount(s, pid), minions: s.players[pid].warband.minions, gained: s.players[pid].gained };
     return out;
+  }
+  // D-054: siege — when every existing neighbour of the enemy warband is p's after this card, the enemy loses one minion
+  // per neighbour that turned p's colour during this card (closing the last gap of a full ring deals 1).
+  function siegeCheck(s, p) {
+    if (s.phase !== 'play' || !s.paintedThisCard || !s.paintedThisCard.length) return;
+    const e = enemyOf(s, p.id), w = e.warband, painted = new Set(s.paintedThisCard);
+    let fresh = 0;
+    for (let d = 0; d < 6; d++) {
+      const n = hex.neighbor(w.col, w.row, d), nk = K(n.col, n.row);
+      if (!exists(s, n)) continue;
+      if (s.cells[nk].owner !== p.id) return; // a gap in the ring
+      if (painted.has(nk)) fresh++;
+    }
+    if (!fresh) return;
+    const before = w.minions;
+    w.minions = Math.max(0, w.minions - fresh);
+    s.events.push({ type: 'siege', attacker: p.id, defender: e.id, dmg: fresh, before, after: w.minions, col: w.col, row: w.row });
+    log(s, `${p.name} surround ${e.name}: −${fresh} (${before} → ${w.minions}).`);
+    if (w.minions <= 0) endGame(s, p.id, 'elimination');
   }
   // D-050: owning every hex except the one under the enemy warband wins at once
   function checkDomination(s, p) {

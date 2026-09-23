@@ -7,6 +7,10 @@ window.HB = window.HB || {};
   const hash = (a, b, c) => { let h = (Math.imul(a, 374761393) + Math.imul(b, 668265263) + Math.imul(c, 1597334677)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
   // flat-top hex: the edge that faces neighbour direction d runs between these two corners (corner i at 60·i degrees)
   const EDGE = [[4, 5], [5, 0], [0, 1], [1, 2], [2, 3], [3, 4]];
+  // easing for the capture animation (D-055): a block shoots up with overshoot, hangs, then settles back down
+  const easeOutBack = u => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(u - 1, 3) + c1 * Math.pow(u - 1, 2); };
+  const liftCurve = k => k < 0.28 ? easeOutBack(k / 0.28) : k < 0.5 ? 1 : (u => 1 - (u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2))((k - 0.5) / 0.5);
+  const mix = (a, b, t) => { const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16), ch = sh => Math.round(((pa >> sh) & 255) * (1 - t) + ((pb >> sh) & 255) * t); return `rgb(${ch(16)},${ch(8)},${ch(0)})`; };
 
   class Renderer {
     constructor(canvas) {
@@ -14,25 +18,45 @@ window.HB = window.HB || {};
       this.s = null; this.size = 30; this.offset = { x: 0, y: 0 }; this.dpr = 1;
       this.highlights = []; this.texts = []; this.flash = {}; this.shake = { 1: 0, 2: 0 }; this.slide = { 1: null, 2: null };
       this.timeline = []; this.decor = {}; this.dropOK = false; this.dragging = false; this.fx = []; this.forecast = null;
+      // D-055: capture animation state — cells whose new owner is not revealed yet, cells popping up, settlements being built
+      this.reveal = {}; this.pop = {}; this.build = {}; this.settle = {};
       requestAnimationFrame(t => this.frame(t));
     }
-    setState(s) { this.s = s; this.highlights = []; this.texts = []; this.flash = {}; this.timeline = []; this.slide = { 1: null, 2: null }; this.buildDecor(); }
+    setState(s) { this.s = s; this.highlights = []; this.texts = []; this.flash = {}; this.timeline = []; this.slide = { 1: null, 2: null }; this.reveal = {}; this.pop = {}; this.build = {}; this.fx = []; this.buildDecor(); }
     buildDecor() {
-      const s = this.s; this.decor = {};
+      const s = this.s; this.decor = {}; this.settle = {};
       const reserved = new Set();
       for (const pid of [1, 2]) { const st = CFG.START[pid]; reserved.add(hex.key(st.col, st.row)); for (let d = 0; d < 6; d++) { const n = hex.neighbor(st.col, st.row, d); reserved.add(hex.key(n.col, n.row)); } }
       for (const k in s.cells) {
         const c = s.cells[k];
-        if (c.poi >= 0 || reserved.has(k)) continue;
+        if (c.poi >= 0) continue;
         const r = hash(s.decorSeed, c.col * 7 + 1, c.row * 13 + 3);
-        if (r < 0.17) {
+        if (!reserved.has(k) && r < 0.17) {
           const n = 1 + Math.floor(hash(s.decorSeed, c.col, c.row + 50) * 3), items = [];
           for (let i = 0; i < n; i++) items.push({ dx: (hash(s.decorSeed, c.col + 100 * i, c.row) - 0.5) * 0.7, dy: (hash(s.decorSeed, c.col, c.row + 100 * i + 7) - 0.5) * 0.5, sc: 0.75 + hash(s.decorSeed, c.col + 3, c.row + 9 + i) * 0.5 });
           this.decor[k] = { type: 'trees', items };
-        } else if (r < 0.25) {
+        } else if (!reserved.has(k) && r < 0.25) {
           this.decor[k] = { type: 'rock', dx: (hash(s.decorSeed, c.col + 5, c.row) - 0.5) * 0.5, dy: (hash(s.decorSeed, c.col, c.row + 5) - 0.5) * 0.4, sc: 0.7 + hash(s.decorSeed, c.col + 9, c.row + 9) * 0.6 };
+        } else if (r > 0.6) {
+          // settlement slot: a hut or a camp appears here in the owner's colour once the hex is captured (D-055)
+          this.settle[k] = { dx: (hash(s.decorSeed, c.col + 11, c.row) - 0.5) * 0.45, dy: (hash(s.decorSeed, c.col, c.row + 11) - 0.5) * 0.35 + 0.1, sc: 0.85 + hash(s.decorSeed, c.col + 13, c.row + 13) * 0.3, flip: hash(s.decorSeed, c.col + 17, c.row) < 0.5 };
         }
       }
+    }
+    // owner as currently shown: a captured hex keeps its previous colour until its pop-up animation starts
+    shownOwner(k) { const r = this.reveal[k]; return r !== undefined ? r : this.s.cells[k].owner; }
+    // D-055: a captured hex jumps up as a coloured block, sheds chips and settles; a settlement is built shortly after
+    popCell(col, row, owner) {
+      const k = hex.key(col, row), now = performance.now(), S = this.size, p = this.cellXY(col, row);
+      delete this.reveal[k];
+      this.pop[k] = { t0: now, dur: 620, owner };
+      const light = COL[owner + 'Light'];
+      for (let i = 0; i < 6; i++) {
+        const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2, v = S * (1.6 + Math.random() * 1.4);
+        this.fx.push({ type: 'chip', x: p.x + (Math.random() - 0.5) * S * 0.6, y: p.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, r: S * (0.08 + Math.random() * 0.08), color: Math.random() < 0.5 ? light : '#ffffff', t0: now + Math.random() * 60, dur: 520 + Math.random() * 200 });
+      }
+      this.fx.push({ type: 'ring', x: p.x, y: p.y, color: light, t0: now, dur: 420 });
+      if (this.settle[k]) this.build[k] = now + 260;
     }
     resize(w, h) {
       const s = this.s; if (!s) return;
@@ -76,6 +100,8 @@ window.HB = window.HB || {};
         const w = this.s.players[pid].warband, pp = this.prevPos[pid];
         if (pp && (pp.col !== w.col || pp.row !== w.row)) this.slide[pid] = { path: [{ col: pp.col, row: pp.row }], t0: performance.now(), per: 1, start: this.cellXY(pp.col, pp.row), hold: true };
       }
+      // D-055: captured hexes keep their old colour until their own pop-up in the animation
+      for (const ev of events) if (ev.type === 'paint' || ev.type === 'fill') for (const c of ev.cells) this.reveal[hex.key(c.col, c.row)] = c.from || 0;
       for (const ev of events) {
         const light = ev.player ? COL[ev.player + 'Light'] : '#fff';
         switch (ev.type) {
@@ -88,15 +114,33 @@ window.HB = window.HB || {};
             t += per * path.length;
             break;
           }
-          case 'paint':
-            ev.cells.forEach((c, i) => this.schedule(Math.max(0, t - 190 * (ev.cells.length - i)), () => this.flashCell(c.col, c.row, '#ffffff', 450)));
+          case 'paint': // walked hexes pop up under the warband as it arrives on each of them
+            ev.cells.forEach((c, i) => this.schedule(Math.max(0, t - 190 * (ev.cells.length - i) + 60), () => this.popCell(c.col, c.row, ev.player)));
             break;
-          case 'fill': {
-            const cells = ev.cells;
-            cells.forEach((c, i) => this.schedule(t + 40 * i, () => this.flashCell(c.col, c.row, '#ffffff', 600)));
-            const mid = cells[Math.floor(cells.length / 2)];
-            this.schedule(t + 40 * cells.length, () => this.addText(mid.col, mid.row, `+${ev.count} territory`, light, { big: true, dur: 1500 }));
-            t += 40 * cells.length + 200;
+          case 'fill': { // enclosure: a wave of pop-ups spreading out from the warband (D-055)
+            const w = this.s.players[ev.player].warband, origin = { col: w.col, row: w.row };
+            const cells = ev.cells.map(c => ({ c, d: hex.distance(c, origin) })).sort((a, b) => a.d - b.d);
+            const d0 = cells.length ? cells[0].d : 0, ring = 70, step = 12;
+            let last = 0;
+            cells.forEach(({ c, d }, i) => { const at = t + (d - d0) * ring + (i % 5) * step; last = Math.max(last, at); this.schedule(at, () => this.popCell(c.col, c.row, ev.player)); });
+            const mid = cells[Math.floor(cells.length / 2)].c;
+            this.schedule(last + 150, () => this.addText(mid.col, mid.row, `+${ev.count} territory`, light, { big: true, dur: 1500 }));
+            t = last + 350;
+            break;
+          }
+          case 'siege': { // D-054: the enemy warband is fully surrounded — the ring flashes, it takes damage
+            const S = this.size, xy = this.cellXY(ev.col, ev.row), aLight = COL[ev.attacker + 'Light'];
+            this.schedule(t + 200, () => {
+              for (let d = 0; d < 6; d++) { const n = hex.neighbor(ev.col, ev.row, d); this.flashCell(n.col, n.row, aLight, 800); }
+              this.fx.push({ type: 'ring', x: xy.x, y: xy.y, color: aLight, t0: performance.now(), dur: 700, big: true });
+            });
+            this.schedule(t + 450, () => {
+              this.shake[ev.defender] = performance.now();
+              this.spawnFight(xy.x, xy.y);
+              this.addText(ev.col, ev.row, 'SURROUNDED!', aLight, { dy: -S * 1.9, big: true, dur: 1500 });
+              this.addText(ev.col, ev.row, `−${ev.dmg}`, '#ff6b6b', { dy: -S * 0.6, big: true, dur: 1400 });
+            });
+            t += 1000;
             break;
           }
           case 'poi':
@@ -174,6 +218,8 @@ window.HB = window.HB || {};
       const ctx = this.ctx, s = this.s, S = this.size;
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      // finished pop-ups become flat territory before anything is drawn (no one-frame gap between block and tile)
+      for (const k in this.pop) if (now - this.pop[k].t0 >= this.pop[k].dur) delete this.pop[k];
       // grass
       for (const k in s.cells) {
         const c = s.cells[k], p = this.cellXY(c.col, c.row);
@@ -184,34 +230,52 @@ window.HB = window.HB || {};
         ctx.strokeStyle = 'rgba(40,90,20,0.35)'; ctx.lineWidth = 1.5;
         for (let i = 0; i < 3; i++) { const tx = p.x + (hash(c.col, c.row, i + 20) - 0.5) * S * 1.1, ty = p.y + (hash(c.col, c.row, i + 40) - 0.5) * S * 1.2; ctx.beginPath(); ctx.moveTo(tx - 2, ty + 3); ctx.lineTo(tx, ty - 2); ctx.lineTo(tx + 2, ty + 3); ctx.stroke(); }
       }
-      // territory
+      // territory (flat tiles; a hex that is popping up is drawn later as a raised block)
       for (const k in s.cells) {
-        const c = s.cells[k]; if (!c.owner) continue;
+        const c = s.cells[k], owner = this.shownOwner(k); if (!owner || this.pop[k]) continue;
         const p = this.cellXY(c.col, c.row);
-        this.hexPath(ctx, p.x, p.y, 0); ctx.fillStyle = COL[c.owner]; ctx.globalAlpha = 0.92; ctx.fill(); ctx.globalAlpha = 1;
-        ctx.strokeStyle = COL[c.owner + 'Dark']; ctx.lineWidth = 1.5; ctx.stroke();
+        this.hexPath(ctx, p.x, p.y, 0); ctx.fillStyle = COL[owner]; ctx.globalAlpha = 0.92; ctx.fill(); ctx.globalAlpha = 1;
+        ctx.strokeStyle = COL[owner + 'Dark']; ctx.lineWidth = 1.5; ctx.stroke();
       }
       // territory outline: edges between own cells and anything else
       for (const k in s.cells) {
-        const c = s.cells[k]; if (!c.owner) continue;
+        const c = s.cells[k], owner = this.shownOwner(k); if (!owner || this.pop[k]) continue;
         const p = this.cellXY(c.col, c.row), corners = hex.corners(p.x, p.y, S, 1.5);
-        ctx.strokeStyle = COL[c.owner + 'Light']; ctx.lineWidth = 3; ctx.setLineDash([S * 0.22, S * 0.14]);
+        ctx.strokeStyle = COL[owner + 'Light']; ctx.lineWidth = 3; ctx.setLineDash([S * 0.22, S * 0.14]);
         for (let d = 0; d < 6; d++) {
-          const n = hex.neighbor(c.col, c.row, d), nc = s.cells[hex.key(n.col, n.row)];
-          if (nc && nc.owner === c.owner) continue;
+          const n = hex.neighbor(c.col, c.row, d), nk = hex.key(n.col, n.row), nc = s.cells[nk];
+          if (nc && this.shownOwner(nk) === owner && !this.pop[nk]) continue;
           const [a, b] = EDGE[d];
           ctx.beginPath(); ctx.moveTo(corners[a].x, corners[a].y); ctx.lineTo(corners[b].x, corners[b].y); ctx.stroke();
         }
         ctx.setLineDash([]);
         if (c.bonus) { ctx.strokeStyle = 'rgba(255,226,122,0.95)'; ctx.lineWidth = 2; this.hexPath(ctx, p.x, p.y, 5); ctx.stroke(); }
       }
-      // flashes, blocked, decorations
+      // pop-up blocks (D-055): captured hexes rise as coloured blocks, top to bottom so lower blocks overlap upper ones
+      const lifts = {};
+      const pops = Object.keys(this.pop).map(k => ({ k, c: s.cells[k], p: this.pop[k] })).sort((a, b) => a.c.row - b.c.row || a.c.col - b.c.col);
+      for (const { k, c, p: pp } of pops) {
+        const kk = (now - pp.t0) / pp.dur;
+        const lift = S * 0.6 * liftCurve(kk), pt = this.cellXY(c.col, c.row);
+        lifts[k] = lift;
+        const top = hex.corners(pt.x, pt.y - lift, S, 0), base = hex.corners(pt.x, pt.y, S, 0);
+        // side faces: the lower silhouette (corners 0..3) extruded down to the ground
+        ctx.fillStyle = COL[pp.owner + 'Dark']; ctx.beginPath();
+        ctx.moveTo(top[0].x, top[0].y); for (let i = 1; i <= 3; i++) ctx.lineTo(top[i].x, top[i].y);
+        for (let i = 3; i >= 0; i--) ctx.lineTo(base[i].x, base[i].y); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1; for (let i = 1; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(top[i].x, top[i].y); ctx.lineTo(base[i].x, base[i].y); ctx.stroke(); }
+        // top face: bright at first, settling into the owner's colour
+        const glow = Math.max(0, 1 - kk / 0.55);
+        ctx.fillStyle = mix(COL[pp.owner], '#ffffff', 0.15 + 0.55 * glow); this.hexPath(ctx, pt.x, pt.y - lift, 0); ctx.fill();
+        ctx.strokeStyle = COL[pp.owner + 'Light']; ctx.lineWidth = 2.5; this.hexPath(ctx, pt.x, pt.y - lift, 1.5); ctx.stroke();
+      }
+      // flashes, blocked, decorations, settlements
       for (const k in s.cells) {
-        const c = s.cells[k], p = this.cellXY(c.col, c.row);
+        const c = s.cells[k], p = this.cellXY(c.col, c.row), lift = lifts[k] || 0;
         const f = this.flash[k];
         if (f) {
           const a = 1 - (now - f.t0) / f.dur;
-          if (a <= 0) delete this.flash[k]; else { ctx.fillStyle = f.color; ctx.globalAlpha = 0.65 * a; this.hexPath(ctx, p.x, p.y, 0); ctx.fill(); ctx.globalAlpha = 1; }
+          if (a <= 0) delete this.flash[k]; else { ctx.fillStyle = f.color; ctx.globalAlpha = 0.65 * a; this.hexPath(ctx, p.x, p.y - lift, 0); ctx.fill(); ctx.globalAlpha = 1; }
         }
         if (R.isBlocked(s, c)) {
           ctx.fillStyle = 'rgba(30,20,10,0.35)'; this.hexPath(ctx, p.x, p.y, 2); ctx.fill();
@@ -220,8 +284,15 @@ window.HB = window.HB || {};
         }
         const dec = this.decor[k];
         if (dec) {
-          if (dec.type === 'rock') this.drawRock(ctx, p.x + dec.dx * S, p.y + dec.dy * S, S * 0.3 * dec.sc);
-          else for (const t of dec.items) this.drawTree(ctx, p.x + t.dx * S, p.y + t.dy * S, S * 0.36 * t.sc);
+          if (dec.type === 'rock') this.drawRock(ctx, p.x + dec.dx * S, p.y + dec.dy * S - lift, S * 0.3 * dec.sc);
+          else for (const t of dec.items) this.drawTree(ctx, p.x + t.dx * S, p.y + t.dy * S - lift, S * 0.36 * t.sc);
+        }
+        const st = this.settle[k], owner = this.shownOwner(k);
+        if (st && owner) {
+          let sc = 1;
+          const b = this.build[k];
+          if (b !== undefined) { if (now < b) continue; const u = (now - b) / 380; if (u >= 1) delete this.build[k]; else sc = easeOutBack(u); }
+          this.drawSettlement(ctx, p.x + st.dx * S, p.y + st.dy * S - lift, S * 0.5 * st.sc * sc, owner, st.flip);
         }
       }
       // highlights
@@ -268,6 +339,15 @@ window.HB = window.HB || {};
           const x = f.x0 + (f.x1 - f.x0) * k, y = f.y0 + (f.y1 - f.y0) * k - Math.sin(k * Math.PI) * S * 1.2;
           ctx.fillStyle = '#3a2a12'; ctx.beginPath(); ctx.arc(x, y, S * 0.14, 0, Math.PI * 2); ctx.fill();
           ctx.strokeStyle = 'rgba(255,220,120,0.8)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - (f.x1 - f.x0) * 0.08, y - (f.y1 - f.y0) * 0.08 + S * 0.1); ctx.stroke();
+        } else if (f.type === 'chip') { // D-055: a bit of ground thrown up by a popping hex, falls back under gravity
+          const tt = k * f.dur / 1000, x = f.x + f.vx * tt, y = f.y + f.vy * tt + 0.5 * S * 14 * tt * tt;
+          ctx.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3; ctx.fillStyle = f.color;
+          ctx.save(); ctx.translate(x, y); ctx.rotate(tt * 9); ctx.fillRect(-f.r, -f.r, f.r * 2, f.r * 2); ctx.restore(); ctx.globalAlpha = 1;
+        } else if (f.type === 'ring') { // expanding hex ring around a popping hex or a surrounded warband
+          const sc = f.big ? 1 + k * 1.4 : 0.7 + k * 0.9;
+          ctx.save(); ctx.translate(f.x, f.y); ctx.scale(sc, sc); ctx.translate(-f.x, -f.y);
+          ctx.strokeStyle = f.color; ctx.lineWidth = (f.big ? 4 : 3) / sc; ctx.globalAlpha = 1 - k; this.hexPath(ctx, f.x, f.y, 0); ctx.stroke();
+          ctx.restore(); ctx.globalAlpha = 1;
         }
       }
       // floating texts
@@ -286,6 +366,32 @@ window.HB = window.HB || {};
       ctx.fillStyle = '#5b3a1e'; ctx.fillRect(x - h * 0.08, y, h * 0.16, h * 0.35);
       const tri = (dy, w, hh, color) => { ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(x, y - hh + dy); ctx.lineTo(x - w, y + dy); ctx.lineTo(x + w, y + dy); ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#1f4d18'; ctx.lineWidth = 1; ctx.stroke(); };
       tri(0.05 * h, h * 0.5, h * 0.7, '#2f7a34'); tri(-0.35 * h, h * 0.4, h * 0.65, '#3a9440'); tri(-0.7 * h, h * 0.28, h * 0.55, '#49ad4c');
+    }
+    // D-055: settlements in the owner's colour — Blue builds huts, Red pitches tents
+    drawSettlement(ctx, x, y, h, owner, flip) {
+      const color = COL[owner], light = COL[owner + 'Light'], dark = COL[owner + 'Dark'];
+      ctx.save(); ctx.translate(x, y); if (flip) ctx.scale(-1, 1);
+      ctx.lineJoin = 'round';
+      if (owner === 1) { // hut: cream walls, blue roof, dark door
+        const w = h * 0.9, bh = h * 0.55;
+        ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(0, h * 0.08, w * 0.62, h * 0.16, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#f1e4c8'; ctx.strokeStyle = '#5a4324'; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.rect(-w / 2, -bh, w, bh); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = color; ctx.strokeStyle = dark;
+        ctx.beginPath(); ctx.moveTo(-w * 0.62, -bh); ctx.lineTo(0, -bh - h * 0.55); ctx.lineTo(w * 0.62, -bh); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle = light; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-w * 0.3, -bh - h * 0.27); ctx.lineTo(w * 0.3, -bh - h * 0.27); ctx.stroke();
+        ctx.fillStyle = '#5a4324'; ctx.beginPath(); ctx.roundRect(-w * 0.12, -bh * 0.6, w * 0.24, bh * 0.6, [w * 0.12, w * 0.12, 0, 0]); ctx.fill();
+      } else { // tent: red canvas with a light flap and a pennant
+        const w = h * 1.05;
+        ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(0, h * 0.08, w * 0.62, h * 0.16, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = color; ctx.strokeStyle = dark; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(-w / 2, 0); ctx.lineTo(0, -h * 1.05); ctx.lineTo(w / 2, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = light; ctx.beginPath(); ctx.moveTo(0, -h * 0.55); ctx.lineTo(-w * 0.16, 0); ctx.lineTo(w * 0.16, 0); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = dark; ctx.beginPath(); ctx.moveTo(0, -h * 0.4); ctx.lineTo(-w * 0.09, 0); ctx.lineTo(w * 0.09, 0); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#4a3218'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, -h * 1.05); ctx.lineTo(0, -h * 1.4); ctx.stroke();
+        ctx.fillStyle = light; ctx.beginPath(); ctx.moveTo(0, -h * 1.4); ctx.lineTo(w * 0.3, -h * 1.3); ctx.lineTo(0, -h * 1.2); ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
     }
     drawRock(ctx, x, y, r) {
       ctx.fillStyle = '#8f9199'; ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
