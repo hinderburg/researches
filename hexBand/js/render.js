@@ -19,10 +19,10 @@ window.HB = window.HB || {};
       this.highlights = []; this.texts = []; this.flash = {}; this.shake = { 1: 0, 2: 0 }; this.slide = { 1: null, 2: null };
       this.timeline = []; this.decor = {}; this.dropOK = false; this.dragging = false; this.fx = []; this.forecast = null;
       // D-055: capture animation state — cells whose new owner is not revealed yet, cells popping up, settlements being built
-      this.reveal = {}; this.pop = {}; this.build = {}; this.settle = {};
+      this.reveal = {}; this.pop = {}; this.flip = {}; this.build = {}; this.settle = {}; this.bump = { 1: 0, 2: 0 }; this.badgePop = {};
       requestAnimationFrame(t => this.frame(t));
     }
-    setState(s) { this.s = s; this.highlights = []; this.texts = []; this.flash = {}; this.timeline = []; this.slide = { 1: null, 2: null }; this.reveal = {}; this.pop = {}; this.build = {}; this.fx = []; this.buildDecor(); }
+    setState(s) { this.s = s; this.highlights = []; this.texts = []; this.flash = {}; this.timeline = []; this.slide = { 1: null, 2: null }; this.reveal = {}; this.pop = {}; this.flip = {}; this.build = {}; this.fx = []; this.bump = { 1: 0, 2: 0 }; this.badgePop = {}; this.buildDecor(); }
     buildDecor() {
       const s = this.s; this.decor = {}; this.settle = {};
       const reserved = new Set();
@@ -58,6 +58,26 @@ window.HB = window.HB || {};
       this.fx.push({ type: 'ring', x: p.x, y: p.y, color: light, t0: now, dur: 420 });
       if (this.settle[k]) this.build[k] = now + 260;
     }
+    // D-057: a hex captured by enclosure jumps, flips over to its new colour and lands; chips fly on landing
+    flipCell(col, row, from, to) {
+      const k = hex.key(col, row), now = performance.now(), S = this.size, p = this.cellXY(col, row), dur = 640;
+      delete this.reveal[k];
+      this.flip[k] = { t0: now, dur, from, to };
+      const light = COL[to + 'Light'];
+      this.schedule(dur - 60, () => {
+        this.fx.push({ type: 'ring', x: p.x, y: p.y, color: light, t0: performance.now(), dur: 380 });
+        for (let i = 0; i < 4; i++) { const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.6, v = S * (1.2 + Math.random() * 1.2); this.fx.push({ type: 'chip', x: p.x + (Math.random() - 0.5) * S * 0.8, y: p.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, r: S * (0.07 + Math.random() * 0.07), color: Math.random() < 0.5 ? light : '#ffffff', t0: performance.now(), dur: 450 + Math.random() * 150 }); }
+      });
+      if (this.settle[k]) this.build[k] = now + dur;
+    }
+    // D-057: recruits run in from the surroundings and join the crowd; the banner bumps when they arrive
+    spawnRecruits(pid, col, row, amount) {
+      const now = performance.now(), S = this.size, p = this.cellXY(col, row), n = Math.min(8, Math.max(3, amount));
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2, d = S * (2 + Math.random() * 1.2);
+        this.fx.push({ type: 'recruit', pid, x0: p.x + Math.cos(a) * d, y0: p.y + Math.sin(a) * d * 0.8, x1: p.x + (Math.random() - 0.5) * S * 0.6, y1: p.y + (Math.random() - 0.3) * S * 0.4, t0: now + i * 45, dur: 520, seed: i });
+      }
+    }
     resize(w, h) {
       const s = this.s; if (!s) return;
       // D-035: the board takes the whole width; only a small top margin is kept for the banner of a warband on row 0
@@ -82,7 +102,7 @@ window.HB = window.HB || {};
     addText(col, row, text, color, opts) {
       opts = opts || {};
       const p = this.cellXY(col, row);
-      this.texts.push({ x: p.x + (opts.dx || 0), y: p.y + (opts.dy || 0), text, color: color || '#fff', t0: performance.now(), dur: opts.dur || 1100, big: !!opts.big });
+      this.texts.push({ x: p.x + (opts.dx || 0), y: p.y + (opts.dy || 0), text, color: color || '#fff', t0: performance.now(), dur: opts.dur || 1100, big: !!opts.big, pop: !!opts.pop });
     }
     // battle effects (D-039): smoke puffs and sparks at a hex, or a bolt flying between two hexes
     spawnFight(x, y) {
@@ -122,10 +142,20 @@ window.HB = window.HB || {};
             const cells = ev.cells.map(c => ({ c, d: hex.distance(c, origin) })).sort((a, b) => a.d - b.d);
             const d0 = cells.length ? cells[0].d : 0, ring = 70, step = 12;
             let last = 0;
-            cells.forEach(({ c, d }, i) => { const at = t + (d - d0) * ring + (i % 5) * step; last = Math.max(last, at); this.schedule(at, () => this.popCell(c.col, c.row, ev.player)); });
+            cells.forEach(({ c, d }, i) => { const at = t + (d - d0) * ring + (i % 5) * step; last = Math.max(last, at); this.schedule(at, () => this.flipCell(c.col, c.row, c.from || 0, ev.player)); });
             const mid = cells[Math.floor(cells.length / 2)].c;
-            this.schedule(last + 150, () => this.addText(mid.col, mid.row, `+${ev.count} territory`, light, { big: true, dur: 1500 }));
-            t = last + 350;
+            this.schedule(last + 400, () => this.addText(mid.col, mid.row, `+${ev.count} territory`, light, { big: true, dur: 1500 }));
+            t = last + 640;
+            break;
+          }
+          case 'buff': { // D-057: Battle Cry / Formation — a burst around the warband, the badge pops in
+            const xy = this.cellXY(ev.col, ev.row), atk = ev.kind === 'attack', colr = atk ? '#ffb347' : '#9fd0ff';
+            this.schedule(t, () => {
+              this.badgePop[ev.player + ev.kind] = performance.now();
+              this.fx.push({ type: 'ring', x: xy.x, y: xy.y, color: colr, t0: performance.now(), dur: 600, big: true });
+              this.addText(ev.col, ev.row, atk ? `BATTLE CRY +${ev.value}` : `FORMATION −${ev.value}`, colr, { dy: -this.size * 1.9, big: true, dur: 1400 });
+            });
+            t += 450;
             break;
           }
           case 'siege': { // D-054: the enemy warband is fully surrounded — the ring flashes, it takes damage
@@ -189,10 +219,18 @@ window.HB = window.HB || {};
             this.schedule(t, () => { this.flashCell(ev.col, ev.row, '#ffb347', 700); if (ev.dmg) { this.shake[ev.defender] = performance.now(); this.addText(ev.col, ev.row, `−${ev.dmg}`, '#ff6b6b', { big: true }); } else this.addText(ev.col, ev.row, 'BLOCKED', '#ffb347'); });
             t += 400;
             break;
-          case 'reinforce':
-            this.schedule(t, () => this.addText(ev.col, ev.row, `+${ev.amount}`, '#9cff8a', { dy: -this.size * 1.7, big: true }));
-            t += 300;
+          case 'reinforce': { // D-057: recruits run in, then a burst, a banner bump and the big number
+            const xy = this.cellXY(ev.col, ev.row);
+            this.schedule(t, () => this.spawnRecruits(ev.player, ev.col, ev.row, ev.amount));
+            this.schedule(t + 560, () => {
+              this.bump[ev.player] = performance.now();
+              this.fx.push({ type: 'ring', x: xy.x, y: xy.y, color: '#9cff8a', t0: performance.now(), dur: 550, big: true });
+              for (let i = 0; i < 10; i++) { const a = Math.random() * Math.PI * 2, v = this.size * (1.5 + Math.random() * 1.5); this.fx.push({ type: 'chip', x: xy.x, y: xy.y - this.size * 0.3, vx: Math.cos(a) * v, vy: Math.sin(a) * v - this.size * 1.5, r: this.size * 0.07, color: i % 2 ? '#9cff8a' : '#ffffff', t0: performance.now(), dur: 500 }); }
+              this.addText(ev.col, ev.row, `+${ev.amount}`, '#9cff8a', { dy: -this.size * 1.9, big: true, dur: 1500, pop: true });
+            });
+            t += 900;
             break;
+          }
           case 'gameover': t += 400; break;
         }
       }
@@ -220,6 +258,7 @@ window.HB = window.HB || {};
       ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       // finished pop-ups become flat territory before anything is drawn (no one-frame gap between block and tile)
       for (const k in this.pop) if (now - this.pop[k].t0 >= this.pop[k].dur) delete this.pop[k];
+      for (const k in this.flip) if (now - this.flip[k].t0 >= this.flip[k].dur) delete this.flip[k];
       // grass
       for (const k in s.cells) {
         const c = s.cells[k], p = this.cellXY(c.col, c.row);
@@ -232,19 +271,19 @@ window.HB = window.HB || {};
       }
       // territory (flat tiles; a hex that is popping up is drawn later as a raised block)
       for (const k in s.cells) {
-        const c = s.cells[k], owner = this.shownOwner(k); if (!owner || this.pop[k]) continue;
+        const c = s.cells[k], owner = this.shownOwner(k); if (!owner || this.pop[k] || this.flip[k]) continue;
         const p = this.cellXY(c.col, c.row);
         this.hexPath(ctx, p.x, p.y, 0); ctx.fillStyle = COL[owner]; ctx.globalAlpha = 0.92; ctx.fill(); ctx.globalAlpha = 1;
         ctx.strokeStyle = COL[owner + 'Dark']; ctx.lineWidth = 1.5; ctx.stroke();
       }
       // territory outline: edges between own cells and anything else
       for (const k in s.cells) {
-        const c = s.cells[k], owner = this.shownOwner(k); if (!owner || this.pop[k]) continue;
+        const c = s.cells[k], owner = this.shownOwner(k); if (!owner || this.pop[k] || this.flip[k]) continue;
         const p = this.cellXY(c.col, c.row), corners = hex.corners(p.x, p.y, S, 1.5);
         ctx.strokeStyle = COL[owner + 'Light']; ctx.lineWidth = 3; ctx.setLineDash([S * 0.22, S * 0.14]);
         for (let d = 0; d < 6; d++) {
           const n = hex.neighbor(c.col, c.row, d), nk = hex.key(n.col, n.row), nc = s.cells[nk];
-          if (nc && this.shownOwner(nk) === owner && !this.pop[nk]) continue;
+          if (nc && this.shownOwner(nk) === owner && !this.pop[nk] && !this.flip[nk]) continue;
           const [a, b] = EDGE[d];
           ctx.beginPath(); ctx.moveTo(corners[a].x, corners[a].y); ctx.lineTo(corners[b].x, corners[b].y); ctx.stroke();
         }
@@ -268,6 +307,26 @@ window.HB = window.HB || {};
         const glow = Math.max(0, 1 - kk / 0.55);
         ctx.fillStyle = mix(COL[pp.owner], '#ffffff', 0.15 + 0.55 * glow); this.hexPath(ctx, pt.x, pt.y - lift, 0); ctx.fill();
         ctx.strokeStyle = COL[pp.owner + 'Light']; ctx.lineWidth = 2.5; this.hexPath(ctx, pt.x, pt.y - lift, 1.5); ctx.stroke();
+      }
+      // flips (D-057): an enclosed hex jumps, turns over to its new colour and lands back in place
+      for (const k in this.flip) {
+        const f = this.flip[k], c = s.cells[k], kk = (now - f.t0) / f.dur, pt = this.cellXY(c.col, c.row);
+        const jump = S * 0.85 * Math.sin(Math.PI * kk), sy = Math.cos(Math.PI * kk); // sy > 0: old face up, sy < 0: new face up
+        lifts[k] = jump;
+        // the hole under the tile and its shadow
+        ctx.fillStyle = '#4a3a22'; this.hexPath(ctx, pt.x, pt.y, 0); ctx.fill();
+        ctx.fillStyle = `rgba(0,0,0,${0.3 - 0.15 * jump / S})`; ctx.beginPath(); ctx.ellipse(pt.x, pt.y + S * 0.15, S * (0.8 - 0.2 * jump / S), S * (0.35 - 0.1 * jump / S) * Math.max(0.15, Math.abs(sy)), 0, 0, Math.PI * 2); ctx.fill();
+        const faceOwner = sy >= 0 ? f.from : f.to, face = faceOwner ? COL[faceOwner] : COL.grass, edge = faceOwner ? COL[faceOwner + 'Dark'] : COL.grassEdge;
+        const sc = Math.max(0.05, Math.abs(sy)), thick = S * 0.16 * Math.sqrt(1 - sc * sc);
+        ctx.save(); ctx.translate(pt.x, pt.y - jump);
+        // rim (tile thickness) shows most when the tile is edge-on
+        ctx.fillStyle = edge; ctx.beginPath(); ctx.ellipse(0, 0, S * 0.98, S * 0.86 * sc + thick, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.scale(1, sc);
+        ctx.fillStyle = face; this.hexPath(ctx, 0, 0, 0); ctx.fill();
+        ctx.strokeStyle = faceOwner ? COL[faceOwner + 'Light'] : COL.grassEdge; ctx.lineWidth = 2.5 / sc; this.hexPath(ctx, 0, 0, 1.5); ctx.stroke();
+        // sheen while the new face swings up
+        if (sy < 0) { ctx.fillStyle = `rgba(255,255,255,${0.45 * (1 - sc)})`; this.hexPath(ctx, 0, 0, 0); ctx.fill(); }
+        ctx.restore();
       }
       // flashes, blocked, decorations, settlements
       for (const k in s.cells) {
@@ -348,6 +407,16 @@ window.HB = window.HB || {};
           ctx.save(); ctx.translate(f.x, f.y); ctx.scale(sc, sc); ctx.translate(-f.x, -f.y);
           ctx.strokeStyle = f.color; ctx.lineWidth = (f.big ? 4 : 3) / sc; ctx.globalAlpha = 1 - k; this.hexPath(ctx, f.x, f.y, 0); ctx.stroke();
           ctx.restore(); ctx.globalAlpha = 1;
+        } else if (f.type === 'recruit') { // D-057: a small figure running into the crowd
+          const e = 1 - Math.pow(1 - k, 2), x = f.x0 + (f.x1 - f.x0) * e, y = f.y0 + (f.y1 - f.y0) * e - Math.abs(Math.sin(k * Math.PI * 4 + f.seed)) * S * 0.12;
+          const r = S * 0.16, color = COL[f.pid], light = COL[f.pid + 'Light'], dark = COL[f.pid + 'Dark'];
+          ctx.globalAlpha = k > 0.9 ? 1 - (k - 0.9) / 0.1 : 1;
+          ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(x, f.y0 + (f.y1 - f.y0) * e + r * 0.6, r * 1.1, r * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = color; ctx.strokeStyle = dark; ctx.lineWidth = 1.2;
+          ctx.beginPath(); ctx.ellipse(x, y, r * 1.05, r * 0.9, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = light; ctx.beginPath(); ctx.arc(x, y - r * 1.1, r * 0.85, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = dark; ctx.beginPath(); ctx.arc(x, y - r * 1.2, r * 0.9, Math.PI, 0); ctx.closePath(); ctx.fill();
+          ctx.globalAlpha = 1;
         }
       }
       // floating texts
@@ -355,7 +424,8 @@ window.HB = window.HB || {};
         const t = this.texts[i], k = (now - t.t0) / t.dur;
         if (k >= 1) { this.texts.splice(i, 1); continue; }
         ctx.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
-        ctx.font = `${t.big ? '900 ' : 'bold '}${Math.round(S * (t.big ? 0.6 : 0.46))}px system-ui, sans-serif`;
+        const popSc = t.pop ? (k < 0.18 ? easeOutBack(k / 0.18) * 1.35 : 1.35 - 0.35 * Math.min(1, (k - 0.18) / 0.3)) : 1;
+        ctx.font = `${t.big ? '900 ' : 'bold '}${Math.round(S * (t.big ? 0.6 : 0.46) * popSc)}px system-ui, sans-serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(30,15,5,0.85)'; ctx.strokeText(t.text, t.x, t.y - k * S * 0.9);
         ctx.fillStyle = t.color; ctx.fillText(t.text, t.x, t.y - k * S * 0.9);
@@ -468,16 +538,47 @@ window.HB = window.HB || {};
         ctx.fillStyle = '#ffe14a'; ctx.beginPath(); ctx.arc(mx - r * 0.3, my - r * 0.95, r * 0.17, 0, Math.PI * 2); ctx.arc(mx + r * 0.3, my - r * 0.95, r * 0.17, 0, Math.PI * 2); ctx.fill(); // eyes
         if (m.i % 3 === 1) { ctx.fillStyle = dark; ctx.beginPath(); ctx.arc(mx - r * 0.9, my + r * 0.1, r * 0.55, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = light; ctx.lineWidth = 1; ctx.stroke(); } // shield
       }
-      // banner: only the minion count (D-047); a pending Battle Cry bonus tints the flag border yellow
-      const boosted = p.status.attackBonus > 0;
+      // D-057: active buffs — an aura around the crowd and badges beside the banner pole
+      const boosted = p.status.attackBonus > 0, formed = R.active(this.s, p.status.formationUntil);
+      if (boosted || formed) {
+        const glow = 0.5 + 0.5 * Math.sin(now / 220);
+        ctx.strokeStyle = boosted ? `rgba(255,179,71,${0.55 + 0.35 * glow})` : `rgba(159,208,255,${0.55 + 0.35 * glow})`; ctx.lineWidth = boosted ? 3 : 4;
+        if (formed && !boosted) ctx.setLineDash([S * 0.16, S * 0.08]);
+        ctx.beginPath(); ctx.ellipse(x, y + S * 0.05, S * 0.72 + glow * S * 0.05, S * 0.56 + glow * S * 0.04, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+      }
+      // banner: only the minion count (D-047); it bumps when reinforcements arrive
+      const bumpK = (now - this.bump[p.id]) / 380, bumpSc = bumpK >= 0 && bumpK < 1 ? 1 + 0.35 * Math.sin(bumpK * Math.PI) : 1;
       const px = x + S * 0.05, top = y - S * 1.6;
       ctx.strokeStyle = '#3b2a14'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px, y - S * 0.2); ctx.lineTo(px, top); ctx.stroke();
       const txt = String(w.minions), fs = Math.round(S * 0.44);
       ctx.font = `900 ${fs}px system-ui, sans-serif`;
       const fw = Math.max(S * 0.9, ctx.measureText(txt).width + S * 0.5), fh = S * 0.56;
-      ctx.fillStyle = color; ctx.strokeStyle = boosted ? '#ffe14a' : '#fff'; ctx.lineWidth = boosted ? 3 : 2;
+      ctx.save(); ctx.translate(px, top + fh * 0.54); ctx.scale(bumpSc, bumpSc); ctx.translate(-px, -(top + fh * 0.54));
+      ctx.fillStyle = color; ctx.strokeStyle = bumpSc > 1 ? '#9cff8a' : '#fff'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px + fw, top + fh * 0.08); ctx.lineTo(px + fw - S * 0.13, top + fh * 0.54); ctx.lineTo(px + fw, top + fh); ctx.lineTo(px, top + fh + fh * 0.08); ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, px + fw / 2 - S * 0.05, top + fh * 0.54);
+      ctx.restore();
+      // badges: sword +N (Battle Cry) and shield −N (Formation) to the left of the pole, popping in when gained
+      let by = top + fh * 0.1;
+      const badge = (kind, text, bg, drawIcon) => {
+        const bk = (now - (this.badgePop[p.id + kind] || -1e9)) / 380, bsc = bk >= 0 && bk < 1 ? easeOutBack(bk) : 1;
+        const bs = Math.round(S * 0.3); ctx.font = `900 ${bs}px system-ui, sans-serif`;
+        const bw = ctx.measureText(text).width + S * 0.62, bh = S * 0.44, bx = px - S * 0.12 - bw, cy = by + bh / 2;
+        ctx.save(); ctx.translate(bx + bw / 2, cy); ctx.scale(bsc, bsc); ctx.translate(-(bx + bw / 2), -cy);
+        ctx.fillStyle = bg; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, bh / 2); ctx.fill(); ctx.stroke();
+        drawIcon(bx + S * 0.25, cy, S * 0.15);
+        ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(text, bx + S * 0.45, cy + 1);
+        ctx.restore();
+        by += bh + S * 0.06;
+      };
+      if (boosted) badge('attack', `+${p.status.attackBonus}`, '#d9541e', (ix, iy, r) => { // sword
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.2; ctx.beginPath(); ctx.moveTo(ix - r, iy + r); ctx.lineTo(ix + r * 0.9, iy - r * 0.9); ctx.stroke();
+        ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(ix - r * 0.9, iy + r * 0.1); ctx.lineTo(ix - r * 0.1, iy + r * 0.9); ctx.stroke();
+      });
+      if (formed) badge('formation', `−${CFG.FORMATION_REDUCE}`, '#3f6fa3', (ix, iy, r) => { // shield
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(ix - r, iy - r * 0.8); ctx.lineTo(ix + r, iy - r * 0.8); ctx.lineTo(ix + r, iy + r * 0.2); ctx.quadraticCurveTo(ix + r, iy + r, ix, iy + r * 1.1); ctx.quadraticCurveTo(ix - r, iy + r, ix - r, iy + r * 0.2); ctx.closePath(); ctx.fill();
+      });
       // battle forecast (D-047): predicted losses of both warbands while an attacking route is being chosen
       const fc = this.forecast;
       if (fc && (fc.a === p.id || fc.d === p.id)) {

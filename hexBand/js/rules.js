@@ -135,10 +135,10 @@ window.HB = window.HB || {};
   // the region that reaches the board edge AND contains the enemy warband. Neutral and enemy tiles count alike, so a
   // line to the map edge captures everything cut off from the enemy warband, enemy tiles included.
   function enclosure(s, p) {
-    // D-049 / D-053: every connected area of hexes not owned by p is filled — neutral and enemy hexes alike — except
-    // the open field. Two edge-touching areas are never filled: the one holding the enemy warband and the largest one
-    // (usually the same). So ringing the enemy in never hands over the rest of the map, and a wall across the board
-    // captures only the smaller side. Areas that do not reach the edge are always filled.
+    // D-049 / D-053 / D-056: every connected area of hexes not owned by p is filled — neutral and enemy hexes alike —
+    // except the open field: the edge-touching area where the enemy warband stands ("holds the line"). Only when the
+    // enemy warband is ringed in (no such area) does the largest edge-touching area stay open instead, so a ring never
+    // hands over the rest of the map. Areas that do not reach the edge are always filled.
     const own = k => s.cells[k].owner === p.id, enemyId = 3 - p.id;
     const seen = new Set(), comps = [];
     for (const k0 in s.cells) {
@@ -158,11 +158,14 @@ window.HB = window.HB || {};
       }
       comps.push(comp);
     }
-    let largest = null;
-    for (const c of comps) if (c.touchesEdge && (!largest || c.cells.length > largest.cells.length)) largest = c;
+    const ew = enemyOf(s, p.id).warband;
+    let ringed = true;
+    for (let d = 0; d < 6; d++) { const n = hex.neighbor(ew.col, ew.row, d); if (exists(s, n) && !own(K(n.col, n.row))) { ringed = false; break; } }
+    let open = ringed ? null : comps.find(c => c.touchesEdge && c.hasEnemyWarband) || null;
+    if (!open) for (const c of comps) if (c.touchesEdge && (!open || c.cells.length > open.cells.length)) open = c;
     let filled = 0;
     for (const comp of comps) {
-      if (comp === largest || (comp.touchesEdge && comp.hasEnemyWarband)) continue;
+      if (comp === open) continue;
       for (const c of comp.cells) if (paint(s, p, c, 'fill')) filled++;
     }
     if (filled) log(s, `${p.name}: enclosure closed, +${filled} hexes.`);
@@ -370,8 +373,8 @@ window.HB = window.HB || {};
         s.events.push({ type: 'reinforce', player: p.id, amount: def.amount, before, after: w.minions, col: w.col, row: w.row });
         log(s, `${p.name}: +${def.amount} minions (${before} → ${w.minions}).`); break;
       }
-      case 'buff_next': st.attackBonus += def.bonus; break;
-      case 'formation': st.formationUntil = T + 2; break;
+      case 'buff_next': st.attackBonus += def.bonus; s.events.push({ type: 'buff', player: p.id, kind: 'attack', value: st.attackBonus, col: w.col, row: w.row }); break;
+      case 'formation': st.formationUntil = T + 2; s.events.push({ type: 'buff', player: p.id, kind: 'formation', value: CFG.FORMATION_REDUCE, col: w.col, row: w.row }); break;
       case 'explosive': {
         const c = choice.cell, victim = occupant(s, c);
         s.blocked[K(c.col, c.row)] = T + 2;
