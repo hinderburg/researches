@@ -64,16 +64,19 @@ window.HB = window.HB || {};
         status: newStatus(), deck: [], hand: [], discard: [], inPlay: null, gained: 0, gainedLastRound: 0,
       };
     }
-    CFG.POI_SLOTS.forEach((slot, i) => {
-      const side = i < 3 ? 1 : 2;
-      const type = s.players[side].poiIds[i % 3];
-      const poi = { id: i, col: slot.col, row: slot.row, type, side, owner: 0 };
+    // D-058: each player's two outposts flank the start zone and begin captured; their cards are shuffled into the deck
+    for (const side of [1, 2]) CFG.POI_SLOTS[side].forEach((slot, i) => {
+      const poi = { id: s.pois.length, col: slot.col, row: slot.row, type: s.players[side].poiIds[i], side, owner: side };
       s.pois.push(poi);
-      s.cells[K(slot.col, slot.row)].poi = i;
+      s.cells[K(slot.col, slot.row)].poi = poi.id;
     });
+    // D-059: the neutral citadel in the middle holds a random stronger card
+    { const c = CFG.CENTER_POI, poi = { id: s.pois.length, col: c.col, row: c.row, type: 'citadel', side: 0, owner: 0, card: rollCitadel(s, null) }; s.pois.push(poi); s.cells[K(c.col, c.row)].poi = poi.id; }
     for (const pid of [1, 2]) {
       const p = s.players[pid];
-      p.deck = shuffle(s, p.deckIds.map(id => makeCard(s, id)));
+      const cards = p.deckIds.map(id => makeCard(s, id));
+      for (const poi of s.pois) if (poi.owner === pid) { s.cells[K(poi.col, poi.row)].owner = pid; cards.push(makeCard(s, poiCardId(poi), poi.id)); }
+      p.deck = shuffle(s, cards);
       const w = p.warband;
       paint(s, p, w, 'walk');
       for (let d = 0; d < 6; d++) { const n = hex.neighbor(w.col, w.row, d); if (exists(s, n)) paint(s, p, n, 'fill'); }
@@ -171,23 +174,29 @@ window.HB = window.HB || {};
     if (filled) log(s, `${p.name}: enclosure closed, +${filled} hexes.`);
     return filled;
   }
+  // the card an outpost currently offers: fixed per outpost type, rolled at random for the citadel (D-059)
+  const poiCardId = poi => poi.card || POIS[poi.type].card;
+  function rollCitadel(s, exclude) {
+    const pool = HB.cards.CITADEL_POOL.filter(id => id !== exclude);
+    return pool[Math.floor(rand(s) * pool.length)];
+  }
   function capturePoi(s, p, poiId) {
     const poi = s.pois[poiId];
     if (poi.owner === p.id) return;
-    const def = POIS[poi.type];
+    const def = POIS[poi.type], cardId = poiCardId(poi);
     if (poi.owner) {
-      const prev = s.players[poi.owner];
-      removePoiCard(s, prev, poiId);
+      const prev = s.players[poi.owner], lost = removePoiCard(s, prev, poiId);
       s.events.push({ type: 'poiLost', player: prev.id, poiId });
-      log(s, `${prev.name} lose ${def.title} and its ${CARDS[def.card].title} card.`);
+      log(s, `${prev.name} lose ${def.title}${lost ? ' and its ' + CARDS[lost.def].title + ' card' : ''}.`);
     }
     poi.owner = p.id;
-    const card = makeCard(s, def.card, poiId);
+    const card = makeCard(s, cardId, poiId);
     // D-040: the reward card goes straight into the hand when there is room, otherwise on top of the deck
     if (p.hand.length < CFG.HAND_SIZE) { p.hand.push(card); s.events.push({ type: 'poiCard', player: p.id, uid: card.uid, col: poi.col, row: poi.row }); }
     else p.deck.unshift(card);
-    s.events.push({ type: 'poi', player: p.id, poiId, cardName: CARDS[def.card].title, col: poi.col, row: poi.row });
-    log(s, `${p.name} capture ${def.title}: ${CARDS[def.card].title} goes ${p.hand.includes(card) ? 'to the hand' : 'to the deck'}.`);
+    s.events.push({ type: 'poi', player: p.id, poiId, cardName: CARDS[cardId].title, col: poi.col, row: poi.row });
+    log(s, `${p.name} capture ${def.title}: ${CARDS[cardId].title} goes ${p.hand.includes(card) ? 'to the hand' : 'to the deck'}.`);
+    if (def.random) { poi.card = rollCitadel(s, cardId); log(s, `${def.title} now holds ${CARDS[poi.card].title}.`); } // D-059: a new card for the next capture
   }
   const territory = (s, pid) => { let t = 0; for (const k in s.cells) { const c = s.cells[k]; if (c.owner === pid) t += 1 + c.bonus; } return t; };
   const cellCount = (s, pid) => { let t = 0; for (const k in s.cells) if (s.cells[k].owner === pid) t++; return t; };
@@ -367,7 +376,7 @@ window.HB = window.HB || {};
       case 'flank_claim': { for (const c of choice.cells) paint(s, p, c, 'split'); enclosure(s, p); break; }
       case 'cordon': { for (let d = 0; d < 6; d++) { const n = hex.neighbor(w.col, w.row, d); if (exists(s, n)) paint(s, p, n, 'split'); } enclosure(s, p); break; }
       case 'volley': { const sv = strikeValue(s, p, e, true); strike(s, p, e, applyDamage(sv.value), 'Volley'); break; }
-      case 'catapult': { strike(s, p, e, def.damage, 'Catapult'); break; }
+      case 'catapult': { strike(s, p, e, def.damage, def.title); break; }
       case 'reinforce': {
         const before = w.minions; w.minions += def.amount;
         s.events.push({ type: 'reinforce', player: p.id, amount: def.amount, before, after: w.minions, col: w.col, row: w.row });
@@ -376,17 +385,17 @@ window.HB = window.HB || {};
       case 'buff_next': st.attackBonus += def.bonus; s.events.push({ type: 'buff', player: p.id, kind: 'attack', value: st.attackBonus, col: w.col, row: w.row }); break;
       case 'formation': st.formationUntil = T + 2; s.events.push({ type: 'buff', player: p.id, kind: 'formation', value: CFG.FORMATION_REDUCE, col: w.col, row: w.row }); break;
       case 'explosive': {
-        const c = choice.cell, victim = occupant(s, c);
+        const c = choice.cell, victim = occupant(s, c), dmg = def.damage || CFG.EXPLOSIVE_DAMAGE;
         s.blocked[K(c.col, c.row)] = T + 2;
         if (victim && victim !== p.id) {
           const v = s.players[victim], before = v.warband.minions;
-          v.warband.minions = Math.max(0, before - CFG.EXPLOSIVE_DAMAGE);
-          s.events.push({ type: 'explosion', col: c.col, row: c.row, dmg: CFG.EXPLOSIVE_DAMAGE, defender: victim, before, after: v.warband.minions });
-          log(s, `${p.name}: Explosive Charge, −${CFG.EXPLOSIVE_DAMAGE} (${before} → ${v.warband.minions}).`);
+          v.warband.minions = Math.max(0, before - dmg);
+          s.events.push({ type: 'explosion', col: c.col, row: c.row, dmg, defender: victim, before, after: v.warband.minions });
+          log(s, `${p.name}: ${def.title}, −${dmg} (${before} → ${v.warband.minions}).`);
           if (v.warband.minions <= 0) endGame(s, p.id, 'elimination');
         } else {
           s.events.push({ type: 'explosion', col: c.col, row: c.row, dmg: 0 });
-          log(s, `${p.name}: Explosive Charge — hex blocked.`);
+          log(s, `${p.name}: ${def.title} — hex blocked.`);
         }
         break;
       }
@@ -399,9 +408,10 @@ window.HB = window.HB || {};
       case 'banner': {
         const cells = [];
         const mark = c => { const cell = cellAt(s, c); if (cell && cell.owner === p.id && !cell.bonus) { cell.bonus = 1; cells.push({ col: cell.col, row: cell.row }); } };
-        mark(w); for (let d = 0; d < 6; d++) mark(hex.neighbor(w.col, w.row, d));
+        const radius = def.radius || 1;
+        for (const k in s.cells) if (hex.distance(s.cells[k], w) <= radius) mark(s.cells[k]);
         s.events.push({ type: 'bonus', player: p.id, cells });
-        log(s, `${p.name}: Banner — +${cells.length} territory points.`); break;
+        log(s, `${p.name}: ${def.title} — +${cells.length} territory points.`); break;
       }
     }
   }
@@ -521,6 +531,6 @@ window.HB = window.HB || {};
   function takeEvents(s) { const e = s.events; s.events = []; return e; }
   function clone(s) { const e = s.events, l = s.log; s.events = []; s.log = []; const c = JSON.parse(JSON.stringify(s)); s.events = e; s.log = l; return c; }
 
-  HB.rules = { createGame, playCard, endTurn, passTurn, getPlay, takeEvents, clone, territory, cellCount, poiCount, totalCells,
+  HB.rules = { createGame, playCard, endTurn, passTurn, getPlay, takeEvents, clone, territory, cellCount, poiCount, totalCells, poiCardId,
     scoreboard, round, occupant, isBlocked, active, rand, baseDamage, forecast };
 })();

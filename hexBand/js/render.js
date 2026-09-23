@@ -476,8 +476,8 @@ window.HB = window.HB || {};
       ctx.fillStyle = fg; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x, y + 1);
     }
     drawOutpost(ctx, poi, now) {
-      const S = this.size, p = this.cellXY(poi.col, poi.row), def = POIS[poi.type], x = p.x, y = p.y;
-      const owner = poi.owner, teamCol = owner ? COL[owner] : '#8a6b3a';
+      const S = this.size, p = this.cellXY(poi.col, poi.row), def = POIS[poi.type], x = p.x, y = p.y, cardId = R.poiCardId(poi);
+      const owner = poi.owner, teamCol = owner ? COL[owner] : def.random ? '#b8891e' : '#8a6b3a'; // D-059: the neutral citadel is gold
       // fence: the landmark at the bottom of the hex (D-036)
       ctx.strokeStyle = '#7a4f22'; ctx.lineWidth = Math.max(2, S * 0.06); ctx.lineCap = 'round';
       const fy = y + S * 0.72;
@@ -491,15 +491,15 @@ window.HB = window.HB || {};
       ctx.beginPath(); ctx.roundRect(cx, cy, cw, ch, S * 0.12); ctx.fill(); ctx.stroke();
       ctx.shadowBlur = 0;
       // header with the outpost name
-      ctx.fillStyle = owner ? teamCol : '#8a6b3a';
+      ctx.fillStyle = teamCol;
       ctx.beginPath(); ctx.roundRect(cx, cy, cw, ch * 0.2, [S * 0.12, S * 0.12, 0, 0]); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.round(S * 0.22)}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(def.title, x, cy + ch * 0.1 + 1, cw * 0.92);
       // reward icon + name
-      const img = HB.icons.image(def.card, '#3a2a12'), isz = cw * 0.66;
+      const img = HB.icons.image(cardId, '#3a2a12'), isz = cw * 0.66;
       if (img.complete && img.naturalWidth) ctx.drawImage(img, x - isz / 2, cy + ch * 0.24, isz, isz);
       ctx.fillStyle = '#3a2a12'; ctx.font = `bold ${Math.round(S * 0.2)}px system-ui, sans-serif`;
-      ctx.fillText(CARDS[def.card].title, x, cy + ch * 0.88, cw * 0.92);
+      ctx.fillText(CARDS[cardId].title, x, cy + ch * 0.88, cw * 0.92);
     }
     warbandPos(p, now) {
       const sl = this.slide[p.id], end = this.cellXY(p.warband.col, p.warband.row);

@@ -30,6 +30,12 @@ window.HB = window.HB || {};
     scout_draw:         { id: 'scout_draw', title: 'Scouting', type: 'Utility', kind: 'scout_draw', poi: true, text: 'Draw cards until your hand is full.' },
     banner:             { id: 'banner', title: 'Banner', type: 'Territory', kind: 'banner', poi: true, text: 'Your hexes around (and under) the warband are worth 2 points instead of 1.' },
     blink:              { id: 'blink', title: 'Blink', type: 'Movement', kind: 'blink', poi: true, text: 'Jump over one hex in any direction. The hex in between is not captured.' },
+    // D-059: citadel cards — stronger versions of the outpost cards, one of them is rolled at random for the citadel
+    muster:             { id: 'muster', title: 'Muster', type: 'Reinforcement', kind: 'reinforce', amount: 9, poi: true, text: '+9 minions.' },
+    heavy_charge:       { id: 'heavy_charge', title: 'Heavy Charge', type: 'Combat', kind: 'explosive', target: 'adjacent', damage: 6, poi: true, text: 'Pick an adjacent hex: an enemy on it takes 6 damage and the hex is blocked for one round.' },
+    trebuchet:          { id: 'trebuchet', title: 'Trebuchet', type: 'Combat', kind: 'catapult', range: 4, damage: 5, poi: true, text: '5 damage to the enemy warband up to 4 hexes away.' },
+    war_horn:           { id: 'war_horn', title: 'War Horn', type: 'Combat', kind: 'buff_next', bonus: 4, poi: true, text: '+4 to your next strike.' },
+    great_banner:       { id: 'great_banner', title: 'Great Banner', type: 'Territory', kind: 'banner', radius: 2, poi: true, text: 'Your hexes within 2 of the warband are worth 2 points instead of 1.' },
   };
   const BASE_POOL = ['advance', 'double_advance', 'hook', 'zigzag', 'around', 'rally', 'battle_cry', 'reinforced_formation'];
   const ADVANCED_POOL = ['forced_march', 'long_hook', 'split_march', 'dash', 'flank_claim', 'volley', 'warband_reinforcements'];
@@ -47,15 +53,18 @@ window.HB = window.HB || {};
     scout_camp: { id: 'scout_camp', title: 'Scout Camp', card: 'scout_draw', text: 'Grants Scouting (draw up to a full hand).' },
     war_banner: { id: 'war_banner', title: 'War Banner', card: 'banner', text: 'Grants Banner (+1 point on hexes around the warband).' },
     portal:     { id: 'portal', title: 'Mystic Gate', card: 'blink', text: 'Grants Blink (jump over a hex).' },
+    // D-059: the neutral citadel in the middle of the map; its card is rolled from CITADEL_POOL and re-rolled after each capture
+    citadel:    { id: 'citadel', title: 'Citadel', card: null, random: true, text: 'Neutral. Holds a random stronger card; a new one appears after each capture.' },
   };
-  const POI_POOL = Object.keys(POIS);
+  const POI_POOL = Object.keys(POIS).filter(id => !POIS[id].random);
+  const CITADEL_POOL = ['muster', 'heavy_charge', 'trebuchet', 'war_horn', 'great_banner'];
 
   const PRESETS = {
-    balanced:  { title: 'Balanced', cards: ['advance', 'double_advance', 'hook', 'zigzag', 'around', 'rally', 'battle_cry', 'reinforced_formation'], pois: ['village', 'watchtower', 'shrine'] },
-    expansion: { title: 'Expansion', cards: ['advance', 'double_advance', 'hook', 'zigzag', 'around', 'split_march', 'forced_march', 'dash'], pois: ['war_banner', 'scout_camp', 'portal'] },
-    duel:      { title: 'Duel', cards: ['advance', 'double_advance', 'hook', 'volley', 'battle_cry', 'reinforced_formation', 'rally', 'warband_reinforcements'], pois: ['shrine', 'mine', 'workshop'] },
-    swarm:     { title: 'Swarm', cards: ['advance', 'double_advance', 'hook', 'around', 'rally', 'warband_reinforcements', 'battle_cry', 'flank_claim'], pois: ['village', 'shrine', 'war_banner'] },
+    balanced:  { title: 'Balanced', cards: ['advance', 'double_advance', 'hook', 'zigzag', 'around', 'rally', 'battle_cry', 'reinforced_formation'], pois: ['village', 'watchtower'] },
+    expansion: { title: 'Expansion', cards: ['advance', 'double_advance', 'hook', 'zigzag', 'around', 'split_march', 'forced_march', 'dash'], pois: ['war_banner', 'portal'] },
+    duel:      { title: 'Duel', cards: ['advance', 'double_advance', 'hook', 'volley', 'battle_cry', 'reinforced_formation', 'rally', 'warband_reinforcements'], pois: ['mine', 'workshop'] },
+    swarm:     { title: 'Swarm', cards: ['advance', 'double_advance', 'hook', 'around', 'rally', 'warband_reinforcements', 'battle_cry', 'flank_claim'], pois: ['village', 'war_banner'] },
   };
 
-  HB.cards = { CARDS, BASE_POOL, ADVANCED_POOL, DECK_POOL, POIS, POI_POOL, PRESETS, DIR_LABEL, AXIS_LABEL };
+  HB.cards = { CARDS, BASE_POOL, ADVANCED_POOL, DECK_POOL, POIS, POI_POOL, CITADEL_POOL, PRESETS, DIR_LABEL, AXIS_LABEL };
 })();

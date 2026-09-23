@@ -1,12 +1,12 @@
 // HEXBand prototype — tunables. See docs/DECISIONS.md for the reasoning behind each value.
 window.HB = window.HB || {};
 HB.CONFIG = {
-  VERSION: '0.14.0',
+  VERSION: '0.15.0',
   COLS: 7,               // flat-top hex columns; odd columns are shifted down and hold one cell less (see D-002)
   ROWS: 11,              // rows in even columns; odd columns have ROWS-1
   HAND_SIZE: 4,
   DECK_SIZE: 8,
-  POI_PICKS: 3,
+  POI_PICKS: 2,          // D-058: two outposts per player, both start captured
   ROUND_LIMIT: 10,       // GDD §23: 10 rounds per player for the first prototype
   START_MINIONS: 24,
   // D-047: a warband's strike = DAMAGE_BASE × (minions / DAMAGE_REF) ^ DAMAGE_EXP, kept fractional until dealt
@@ -17,12 +17,15 @@ HB.CONFIG = {
   EXPLOSIVE_DAMAGE: 4,
   ATTACKS_PER_TURN: 1,   // D-031: how many times a warband may attack per turn (0 = unlimited); Overwatch does not count
   BOT_DELAY_MS: 700,
-  // POI slots (D-026): three per side on a diagonal — the left one close to the player, the middle one mid-half,
-  // the right one near the centre line. The red side is the 180° rotation of the blue side.
-  POI_SLOTS: [
-    { col: 1, row: 8 }, { col: 3, row: 6 }, { col: 4, row: 5 },   // blue: left, middle, right
-    { col: 5, row: 1 }, { col: 3, row: 3 }, { col: 2, row: 5 },   // red: mirrored
-  ],
+  // Outpost slots (D-058): two per player, left and right of the start zone, adjacent to the starting territory,
+  // mirrored top/bottom. Both start captured; their cards are shuffled into the owner's deck.
+  POI_SLOTS: {
+    1: [{ col: 1, row: 8 }, { col: 5, row: 8 }],   // blue: left, right
+    2: [{ col: 1, row: 1 }, { col: 5, row: 1 }],   // red: mirrored
+  },
+  // D-059: the neutral citadel in the middle column. No hex of column 3 is equidistant from both starts (10 rows);
+  // row 4 is one step closer to Red, who moves second.
+  CENTER_POI: { col: 3, row: 4 },
   START: { 1: { col: 3, row: 9 }, 2: { col: 3, row: 0 } },
   COLORS: {
     grass: '#74b64b', grassAlt: '#6dae46', grassEdge: '#4f8a33',

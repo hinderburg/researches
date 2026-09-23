@@ -37,6 +37,12 @@ window.HB = window.HB || {};
     scout_draw: wrap(cards + `<path d="M25 3 L29 7 M29 3 L25 7" stroke-width="2"/>`, '+'),
     banner: wrap(flag, '+1'),
     blink: wrap(`<path d="M16 27 V22 M16 18 V14 M16 10 V7 M10 13 L16 7 L22 13"/>`),
+    // D-059: citadel cards
+    muster: wrap(minions, '+9'),
+    heavy_charge: wrap(star(8), '6'),
+    trebuchet: wrap(`<path d="M6 26 H26 M9 26 L20 8 M14 26 L20 8"/><circle cx="22" cy="6" r="3.5"/><path d="M4 12 C10 6 18 4 26 4" stroke-dasharray="2 2"/>`, '5'),
+    war_horn: wrap(sword, '+4'),
+    great_banner: wrap(flag + `<path d="M24 5 H29 M24 16 H29" stroke-width="2"/>`, '+1'),
   };
   const fallback = wrap('<circle cx="16" cy="16" r="10"/>');
   const imgCache = {};
