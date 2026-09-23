@@ -15,7 +15,7 @@ window.HB = window.HB || {};
     state: null, renderer: null, busy: false, opts: null, drag: null, sel: null, lastActor: null, handoverPending: false, lastEvents: [], pendingIncoming: new Set(),
     // whose hand the bottom panel shows: the human in bot mode, the current player in hotseat (D-044)
     handPlayer() { const s = this.state; return this.opts && this.opts.players[2].bot ? s.players[1] : s.players[s.current]; },
-    setup: { mode: 'bot', rounds: CFG.ROUND_LIMIT, seed: '', p: { 1: null, 2: null }, botPreset: 'balanced', control: 'drag', citadel: CFG.CITADEL_MODE },
+    setup: { mode: 'bot', rounds: CFG.ROUND_LIMIT, seed: '', p: { 1: null, 2: null }, botPreset: 'balanced', botLevel: 'hard', control: 'drag', citadel: CFG.CITADEL_MODE },
     // D-048: input scheme — 'drag' (drag the card onto the board) or 'tap' (tap the card, then tap the target)
     setControl(mode) {
       this.setup.control = mode === 'tap' ? 'tap' : 'drag';
@@ -40,6 +40,10 @@ window.HB = window.HB || {};
       $('#sel-citadel').value = S.citadel;
       $('#sel-citadel').addEventListener('change', e => S.citadel = e.target.value);
       $('#sel-bot-preset').addEventListener('change', e => { S.botPreset = e.target.value; this.renderSetup(); });
+      // D-067: bot difficulty, remembered in the browser like the control scheme
+      try { const lv = localStorage.getItem('hexband.botLevel'); if (lv === 'easy' || lv === 'normal' || lv === 'hard') S.botLevel = lv; } catch (e) {}
+      $('#sel-bot-level').value = S.botLevel;
+      $('#sel-bot-level').addEventListener('change', e => { S.botLevel = e.target.value; try { localStorage.setItem('hexband.botLevel', S.botLevel); } catch (err) {} });
       let ctl = 'drag'; try { ctl = localStorage.getItem('hexband.control') || 'drag'; } catch (e) {}
       this.setControl(ctl);
       $('#sel-control').value = this.setup.control;
@@ -65,7 +69,7 @@ window.HB = window.HB || {};
     },
     renderSetup() {
       const S = this.setup;
-      $('#bot-preset-row').hidden = S.mode !== 'bot';
+      $('#bot-preset-row').hidden = S.mode !== 'bot'; $('#bot-level-row').hidden = S.mode !== 'bot';
       $('#builder-2').hidden = S.mode !== 'hotseat';
       this.renderBuilder(1); if (S.mode === 'hotseat') this.renderBuilder(2);
       this.validateSetup();
@@ -115,7 +119,7 @@ window.HB = window.HB || {};
     },
     startFromSetup() {
       const S = this.setup;
-      const p2 = S.mode === 'bot' ? { deck: PRESETS[S.botPreset].cards.slice(), pois: PRESETS[S.botPreset].pois.slice(), bot: true, name: 'Red (bot)' }
+      const p2 = S.mode === 'bot' ? { deck: PRESETS[S.botPreset].cards.slice(), pois: PRESETS[S.botPreset].pois.slice(), bot: true, botLevel: S.botLevel, name: 'Red (bot)' }
         : { deck: S.p[2].cards, pois: S.p[2].pois, bot: false, name: 'Red' };
       const seed = S.seed.trim() ? (parseInt(S.seed, 10) || hashStr(S.seed)) : (Math.random() * 0xffffffff) >>> 0;
       this.opts = { seed, roundLimit: S.rounds, attackLimit: S.attacks != null ? S.attacks : CFG.ATTACKS_PER_TURN, citadelMode: S.citadel, players: { 1: { deck: S.p[1].cards, pois: S.p[1].pois, bot: false, name: 'Blue' }, 2: p2 } };
@@ -206,7 +210,7 @@ window.HB = window.HB || {};
     },
     botMove() {
       const s = this.state; if (!s || s.phase !== 'play') { this.nextTurn(); return; }
-      const move = HB.ai.choose(s);
+      const move = HB.ai.choose(s, this.opts && this.opts.players[s.current].botLevel);
       this.renderer.prevPos = this.positions();
       this.lastActor = s.current;
       if (move.end) R.endTurn(s);

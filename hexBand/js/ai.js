@@ -78,12 +78,13 @@ window.HB = window.HB || {};
     return worst;
   }
 
-  function plan(s) {
+  function plan(s, cfg) {
+    cfg = cfg || SEARCH;
     const me = s.current, base = R.clone(s);
     const finals = [];
     if (base.playedThisTurn >= 1) finals.push({ state: base, seq: [], bonus: 0, quick: evaluate(base, me) + W.minGain });
     let beams = [{ state: base, seq: [], bonus: 0 }];
-    for (let depth = 0; depth < SEARCH.depth && beams.length; depth++) {
+    for (let depth = 0; depth < cfg.depth && beams.length; depth++) {
       const next = [];
       for (const b of beams) for (const c of candidates(b.state)) {
         const sim = R.clone(b.state);
@@ -92,16 +93,17 @@ window.HB = window.HB || {};
         next.push({ state: sim, seq: b.seq.concat([c]), bonus, quick: evaluate(sim, me) + bonus + (R.rand(sim) - 0.5) * W.noise });
       }
       next.sort((a, b) => b.quick - a.quick);
-      const kept = next.slice(0, SEARCH.beam);
+      const kept = next.slice(0, cfg.beam);
       finals.push(...kept);
       beams = kept.filter(n => n.state.phase === 'play');
     }
     if (!finals.length) return null;
     finals.sort((a, b) => b.quick - a.quick);
+    if (!cfg.finals) return finals[0].seq; // no reply check (Normal level)
     let best = null, bestScore = -Infinity;
-    for (const f of finals.slice(0, SEARCH.finals)) {
+    for (const f of finals.slice(0, cfg.finals)) {
       const sc = f.state.phase === 'over' ? f.quick
-        : (1 - SEARCH.reply) * f.quick + SEARCH.reply * (replyValue(f.state, me) + f.bonus);
+        : (1 - cfg.reply) * f.quick + cfg.reply * (replyValue(f.state, me) + f.bonus);
       if (sc > bestScore) { bestScore = sc; best = f; }
     }
     return best.seq;
@@ -109,18 +111,22 @@ window.HB = window.HB || {};
 
   // Returns { uid, choice } for the next card, { end: true } to end the turn, or { pass: true, uid } when nothing is
   // playable. The turn is planned once; later calls replay the plan while it still matches the hand.
+  // D-067: difficulty levels. easy = the old greedy bot, normal = turn plan without the reply check, hard = full search
+  const LEVELS = { normal: { depth: 4, beam: 4, finals: 0, reply: 0 }, hard: null };
   let cache = null;
-  function choose(s) {
-    const me = s.current, key = s.seed + ':' + s.turnIndex + ':' + me;
+  function choose(s, level) {
+    level = level || 'hard';
+    if (level === 'easy') return chooseGreedy(s);
+    const me = s.current, key = s.seed + ':' + s.turnIndex + ':' + me + ':' + level;
     const fallback = s.playedThisTurn ? { end: true } : { pass: true, uid: s.players[me].hand.length ? s.players[me].hand[0].uid : null };
     if (!cache || cache.key !== key || cache.at !== s.playedThisTurn) {
-      const seq = plan(s);
+      const seq = plan(s, LEVELS[level] || SEARCH);
       if (!seq) return fallback;
       cache = { key, steps: seq, at: s.playedThisTurn };
     }
     const step = cache.steps.shift();
     if (!step) { cache = null; return s.playedThisTurn ? { end: true } : fallback; }
-    if (!s.players[me].hand.some(c => c.uid === step.uid)) { cache = null; return choose(s); }
+    if (!s.players[me].hand.some(c => c.uid === step.uid)) { cache = null; return choose(s, level); }
     cache.at = s.playedThisTurn + 1;
     return { uid: step.uid, choice: step.choice };
   }
@@ -144,5 +150,5 @@ window.HB = window.HB || {};
     return best;
   }
 
-  HB.ai = { choose, chooseGreedy, evaluate, plan, W, SEARCH };
+  HB.ai = { choose, chooseGreedy, evaluate, plan, W, SEARCH, LEVELS };
 })();
