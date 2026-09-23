@@ -53,7 +53,7 @@ window.HB = window.HB || {};
     war_banner: { id: 'war_banner', title: 'War Banner', card: 'banner', text: 'Grants Banner (+1 point on hexes around the warband).' },
     portal:     { id: 'portal', title: 'Mystic Gate', card: 'blink', text: 'Grants Blink (jump over a hex).' },
     // D-059: the neutral citadel in the middle of the map; its card is rolled from CITADEL_POOL and re-rolled after each capture
-    citadel:    { id: 'citadel', title: 'Citadel', card: null, random: true, text: 'Neutral castle in the middle. Holds a stronger card (see Settings: one random card per match, a new one after each capture, or always Muster).' },
+    citadel:    { id: 'citadel', title: 'Citadel', card: null, random: true, text: 'Neutral castle in the middle. Holds a stronger card: Muster by default, or a random one (see Settings).' },
   };
   const POI_POOL = Object.keys(POIS).filter(id => !POIS[id].random);
   const CITADEL_POOL = ['muster', 'heavy_charge', 'trebuchet', 'war_horn'], CITADEL_DEFAULT = 'muster';
