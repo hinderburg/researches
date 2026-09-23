@@ -1,7 +1,7 @@
 // HEXBand prototype — tunables. See docs/DECISIONS.md for the reasoning behind each value.
 window.HB = window.HB || {};
 HB.CONFIG = {
-  VERSION: '0.16.1',
+  VERSION: '0.16.2',
   COLS: 7,               // flat-top hex columns; odd columns are shifted down and hold one cell less (see D-002)
   ROWS: 11,              // rows in even columns; odd columns have ROWS-1
   HAND_SIZE: 4,
@@ -17,7 +17,7 @@ HB.CONFIG = {
   BATTLE_CRY_BONUS: 2,   // Battle Cry: + to the next strike
   FORMATION_REDUCE: 2,   // Formation: − from every incoming strike until the next turn (never below 1)
   EXPLOSIVE_DAMAGE: 4,
-  ATTACKS_PER_TURN: 1,   // D-031: how many times a warband may attack per turn (0 = unlimited); Overwatch does not count
+  ATTACKS_PER_TURN: 0,   // D-031 / D-063: how many times a warband may attack per turn; 0 = unlimited (default since 0.16.2)
   BOT_DELAY_MS: 700,
   // Outpost slots (D-058): two per player, left and right of the start zone, adjacent to the starting territory,
   // mirrored top/bottom. Both start captured; their cards are shuffled into the owner's deck.
