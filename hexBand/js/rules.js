@@ -129,23 +129,32 @@ window.HB = window.HB || {};
     if (filled.length) s.events.push({ type: 'fill', player: p.id, cells: filled, count: filled.length });
     s.paintBuf = [];
   }
-  // D-004: cells not owned by p that cannot reach the board edge through non-p cells are enclosed and get filled.
+  // D-004 + D-049: every connected region of cells not owned by p is filled when it is bounded only by p's cells
+  // (does not reach the board edge) — or reaches the edge but contains neither enemy cells nor the enemy warband
+  // (bounded only by p's territory and the map edge).
   function enclosure(s, p) {
-    const own = k => s.cells[k].owner === p.id;
-    const seen = new Set(), queue = [];
-    for (const k in s.cells) { const c = s.cells[k]; if (!own(k) && isEdge(s, c)) { seen.add(k); queue.push(c); } }
-    while (queue.length) {
-      const c = queue.shift();
-      for (let d = 0; d < 6; d++) {
-        const n = hex.neighbor(c.col, c.row, d), nk = K(n.col, n.row);
-        if (!exists(s, n) || seen.has(nk) || own(nk)) continue;
-        seen.add(nk); queue.push(s.cells[nk]);
-      }
-    }
-    const enclosed = [];
-    for (const k in s.cells) if (!own(k) && !seen.has(k)) enclosed.push(s.cells[k]);
+    const own = k => s.cells[k].owner === p.id, enemyId = 3 - p.id;
+    const seen = new Set();
     let filled = 0;
-    for (const c of enclosed) if (paint(s, p, c, 'fill')) filled++;
+    for (const k0 in s.cells) {
+      if (own(k0) || seen.has(k0)) continue;
+      const comp = [], queue = [s.cells[k0]];
+      let touchesEdge = false, hasEnemy = false;
+      seen.add(k0);
+      while (queue.length) {
+        const c = queue.shift();
+        comp.push(c);
+        if (isEdge(s, c)) touchesEdge = true;
+        if (c.owner === enemyId || occupant(s, c) === enemyId) hasEnemy = true;
+        for (let d = 0; d < 6; d++) {
+          const n = hex.neighbor(c.col, c.row, d), nk = K(n.col, n.row);
+          if (!exists(s, n) || seen.has(nk) || own(nk)) continue;
+          seen.add(nk); queue.push(s.cells[nk]);
+        }
+      }
+      if (touchesEdge && hasEnemy) continue; // the open field: bounded by the enemy too
+      for (const c of comp) if (paint(s, p, c, 'fill')) filled++;
+    }
     if (filled) log(s, `${p.name}: контур замкнут, +${filled} гексов.`);
     return filled;
   }
