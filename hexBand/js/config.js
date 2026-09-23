@@ -1,12 +1,13 @@
 // HEXBand prototype — tunables. See docs/DECISIONS.md for the reasoning behind each value.
 window.HB = window.HB || {};
 HB.CONFIG = {
-  VERSION: '0.15.0',
+  VERSION: '0.15.1',
   COLS: 7,               // flat-top hex columns; odd columns are shifted down and hold one cell less (see D-002)
   ROWS: 11,              // rows in even columns; odd columns have ROWS-1
   HAND_SIZE: 4,
   DECK_SIZE: 8,
   POI_PICKS: 2,          // D-058: two outposts per player, both start captured
+  HOLD_POCKET_MAX: 7,    // D-060: a warband trapped in a pocket this small still holds the field just outside its walls
   ROUND_LIMIT: 10,       // GDD §23: 10 rounds per player for the first prototype
   START_MINIONS: 24,
   // D-047: a warband's strike = DAMAGE_BASE × (minions / DAMAGE_REF) ^ DAMAGE_EXP, kept fractional until dealt

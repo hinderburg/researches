@@ -134,25 +134,16 @@ window.HB = window.HB || {};
     if (filled.length) s.events.push({ type: 'fill', player: p.id, cells: filled, count: filled.length });
     s.paintBuf = [];
   }
-  // D-004 + D-049 + D-053: every connected region of cells not owned by p is filled unless it is the open field —
-  // the region that reaches the board edge AND contains the enemy warband. Neutral and enemy tiles count alike, so a
-  // line to the map edge captures everything cut off from the enemy warband, enemy tiles included.
   function enclosure(s, p) {
-    // D-049 / D-053 / D-056: every connected area of hexes not owned by p is filled — neutral and enemy hexes alike —
-    // except the open field: the edge-touching area where the enemy warband stands ("holds the line"). Only when the
-    // enemy warband is ringed in (no such area) does the largest edge-touching area stay open instead, so a ring never
-    // hands over the rest of the map. Areas that do not reach the edge are always filled.
-    const own = k => s.cells[k].owner === p.id, enemyId = 3 - p.id;
-    const seen = new Set(), comps = [];
+    const own = k => s.cells[k].owner === p.id;
+    const seen = new Set(), comps = [], compOf = {};
     for (const k0 in s.cells) {
       if (own(k0) || seen.has(k0)) continue;
-      const comp = { cells: [], touchesEdge: false, hasEnemyWarband: false }, queue = [s.cells[k0]];
+      const comp = [], queue = [s.cells[k0]];
       seen.add(k0);
       while (queue.length) {
         const c = queue.shift();
-        comp.cells.push(c);
-        if (isEdge(s, c)) comp.touchesEdge = true;
-        if (occupant(s, c) === enemyId) comp.hasEnemyWarband = true;
+        comp.push(c); compOf[K(c.col, c.row)] = comp;
         for (let d = 0; d < 6; d++) {
           const n = hex.neighbor(c.col, c.row, d), nk = K(n.col, n.row);
           if (!exists(s, n) || seen.has(nk) || own(nk)) continue;
@@ -161,15 +152,26 @@ window.HB = window.HB || {};
       }
       comps.push(comp);
     }
-    const ew = enemyOf(s, p.id).warband;
-    let ringed = true;
-    for (let d = 0; d < 6; d++) { const n = hex.neighbor(ew.col, ew.row, d); if (exists(s, n) && !own(K(n.col, n.row))) { ringed = false; break; } }
-    let open = ringed ? null : comps.find(c => c.touchesEdge && c.hasEnemyWarband) || null;
-    if (!open) for (const c of comps) if (c.touchesEdge && (!open || c.cells.length > open.cells.length)) open = c;
+    // D-060: the open field is wherever the enemy warband stands or can step next. If that is a pocket of at most
+    // CFG.HOLD_POCKET_MAX hexes (a tight ring, a corner, a small trap), the areas just beyond its walls stay open too —
+    // so trapping the warband gives siege damage (D-054), not the rest of the map.
+    const ew = enemyOf(s, p.id).warband, open = new Set();
+    const mark = c => { const comp = compOf[K(c.col, c.row)]; if (comp) open.add(comp); };
+    mark(ew);
+    for (let d = 0; d < 6; d++) mark(hex.neighbor(ew.col, ew.row, d));
+    let pocket = 0; for (const comp of open) pocket += comp.length;
+    if (pocket <= CFG.HOLD_POCKET_MAX) {
+      const inner = [ew]; for (const comp of open) for (const c of comp) inner.push(c);
+      for (const c of inner) for (let d = 0; d < 6; d++) {
+        const n = hex.neighbor(c.col, c.row, d);
+        if (!exists(s, n) || !own(K(n.col, n.row))) continue;
+        for (let e = 0; e < 6; e++) mark(hex.neighbor(n.col, n.row, e));
+      }
+    }
     let filled = 0;
     for (const comp of comps) {
-      if (comp === open) continue;
-      for (const c of comp.cells) if (paint(s, p, c, 'fill')) filled++;
+      if (open.has(comp)) continue;
+      for (const c of comp) if (paint(s, p, c, 'fill')) filled++;
     }
     if (filled) log(s, `${p.name}: enclosure closed, +${filled} hexes.`);
     return filled;
