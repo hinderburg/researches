@@ -6,15 +6,16 @@ window.HB = window.HB || {};
   const $ = sel => document.querySelector(sel);
   const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
   const KIND_CLASS = { move: 'k-move', blink: 'k-move', reinforce: 'k-reinf', buff_next: 'k-combat', explosive: 'k-combat', volley: 'k-combat', catapult: 'k-combat', formation: 'k-def', flank_claim: 'k-terr', cordon: 'k-terr', banner: 'k-terr', prayer: 'k-util', scout_draw: 'k-util' };
-  const cardHTML = (defId, poi) => { const d = CARDS[defId]; return `<div class="card-icon">${HB.icons.svg(defId)}</div><div class="card-name">${d.title}</div>${poi ? '<div class="card-poi">POI</div>' : ''}`; };
-  const cardClass = (defId, poi) => 'card ' + (KIND_CLASS[CARDS[defId].kind] || '') + (poi ? ' poi' : '');
+  // D-061: three visual tiers — plain deck cards, outpost cards (bronze frame), the citadel card (gold ornament)
+  const cardHTML = defId => { const d = CARDS[defId], tier = HB.cards.tierOf(defId); return `<div class="card-icon">${HB.icons.svg(defId)}</div><div class="card-name">${d.title}</div>${tier === 'citadel' ? '<div class="card-poi">CITADEL</div>' : ''}`; };
+  const cardClass = defId => { const tier = HB.cards.tierOf(defId); return 'card ' + (KIND_CLASS[CARDS[defId].kind] || '') + (tier ? ' tier-' + tier : ''); };
   const rectOf = e => e.getBoundingClientRect();
 
   const UI = {
     state: null, renderer: null, busy: false, opts: null, drag: null, sel: null, lastActor: null, handoverPending: false, lastEvents: [], pendingIncoming: new Set(),
     // whose hand the bottom panel shows: the human in bot mode, the current player in hotseat (D-044)
     handPlayer() { const s = this.state; return this.opts && this.opts.players[2].bot ? s.players[1] : s.players[s.current]; },
-    setup: { mode: 'bot', rounds: CFG.ROUND_LIMIT, seed: '', p: { 1: null, 2: null }, botPreset: 'balanced', control: 'drag' },
+    setup: { mode: 'bot', rounds: CFG.ROUND_LIMIT, seed: '', p: { 1: null, 2: null }, botPreset: 'balanced', control: 'drag', citadel: CFG.CITADEL_MODE },
     // D-048: input scheme — 'drag' (drag the card onto the board) or 'tap' (tap the card, then tap the target)
     setControl(mode) {
       this.setup.control = mode === 'tap' ? 'tap' : 'drag';
@@ -36,6 +37,8 @@ window.HB = window.HB || {};
       $('#inp-seed').addEventListener('input', e => S.seed = e.target.value);
       $('#sel-attacks').value = String(CFG.ATTACKS_PER_TURN);
       $('#sel-attacks').addEventListener('change', e => S.attacks = +e.target.value);
+      $('#sel-citadel').value = S.citadel;
+      $('#sel-citadel').addEventListener('change', e => S.citadel = e.target.value);
       $('#sel-bot-preset').addEventListener('change', e => { S.botPreset = e.target.value; this.renderSetup(); });
       let ctl = 'drag'; try { ctl = localStorage.getItem('hexband.control') || 'drag'; } catch (e) {}
       this.setControl(ctl);
@@ -54,7 +57,7 @@ window.HB = window.HB || {};
         <h2>HEXBand — how it works</h2>
         <div class="intro-item">${ic('hook')}<div><b>Move with cards.</b> ${tap ? 'Tap a card — every hex it can take your warband to lights up; tap the one you want and the warband moves at once.' : 'Drag a card onto the board and release it where the warband should go; it moves at once.'} The card sets the shape of the route, you choose the direction. Play as many cards per turn as you like, at least one, then press End Turn. The control scheme (drag / tap) can be changed in Settings.</div></div>
         <div class="intro-item">${ic('ring')}<div><b>Claim territory.</b> Every hex you walk through becomes yours. Enclose an area with your hexes (or with your hexes and the map edge) and everything inside becomes yours too, enemy hexes included — unless the enemy warband stands there. Score = your hexes.</div></div>
-        <div class="intro-item">${ic('recruitment')}<div><b>Outposts.</b> Your two outposts flank your start and are yours from the beginning: their cards are shuffled into your deck. Walk through an enemy outpost or enclose it — its card flies straight into your hand and works instantly; lose an outpost and you lose its card. The neutral Citadel in the middle holds a random stronger card and rolls a new one after each capture.</div></div>
+        <div class="intro-item">${ic('recruitment')}<div><b>Outposts.</b> Your two outposts flank your start and are yours from the beginning: their cards are shuffled into your deck. Walk through an enemy outpost or enclose it — its card flies straight into your hand and works instantly; lose an outpost and you lose its card. The neutral Citadel in the middle holds a stronger card.</div></div>
         <div class="intro-item">${ic('battle_cry')}<div><b>Fight.</b> To attack, run a card's route onto the enemy's hex (it turns red) — the game shows a forecast: how much each warband loses and who falls back. More minions hit harder, but cards let a smaller army win the exchange. One attack per turn.</div></div>
         <div class="intro-item">${ic('claim')}<div><b>Win.</b> Destroy the enemy warband or capture the whole map — instant win. Otherwise, after ${this.setup.rounds} rounds the player with more territory wins.</div></div>
         <button class="btn primary" id="btn-intro-close">${manual ? 'Got it' : 'To settings'}</button></div>`);
@@ -115,7 +118,7 @@ window.HB = window.HB || {};
       const p2 = S.mode === 'bot' ? { deck: PRESETS[S.botPreset].cards.slice(), pois: PRESETS[S.botPreset].pois.slice(), bot: true, name: 'Red (bot)' }
         : { deck: S.p[2].cards, pois: S.p[2].pois, bot: false, name: 'Red' };
       const seed = S.seed.trim() ? (parseInt(S.seed, 10) || hashStr(S.seed)) : (Math.random() * 0xffffffff) >>> 0;
-      this.opts = { seed, roundLimit: S.rounds, attackLimit: S.attacks != null ? S.attacks : CFG.ATTACKS_PER_TURN, players: { 1: { deck: S.p[1].cards, pois: S.p[1].pois, bot: false, name: 'Blue' }, 2: p2 } };
+      this.opts = { seed, roundLimit: S.rounds, attackLimit: S.attacks != null ? S.attacks : CFG.ATTACKS_PER_TURN, citadelMode: S.citadel, players: { 1: { deck: S.p[1].cards, pois: S.p[1].pois, bot: false, name: 'Blue' }, 2: p2 } };
       this.startGame(this.opts);
     },
 
@@ -250,7 +253,7 @@ window.HB = window.HB || {};
         const slot = el('div', 'slot');
         const card = p.hand[i];
         if (card) {
-          const c = el('div', cardClass(card.def, card.poi >= 0) + (playable[i] ? '' : ' disabled'), cardHTML(card.def, card.poi >= 0));
+          const c = el('div', cardClass(card.def) + (playable[i] ? '' : ' disabled'), cardHTML(card.def));
           c.dataset.uid = card.uid;
           if (hideHand) c.classList.add('hidden-card');
           if (this.pendingIncoming.has(card.uid)) c.classList.add('incoming');
@@ -515,7 +518,7 @@ window.HB = window.HB || {};
       if (!ok) { this.refresh(); return; }
       if (from && card) { // the played card flies from the finger into the discard pile (D-037)
         const start = { left: from.x - 20, top: from.y - 28, width: 40, height: 56 };
-        this.fly(start, rectOf($('#pile-discard')), cardHTML(card.def, card.poi >= 0), cardClass(card.def, card.poi >= 0), 420);
+        this.fly(start, rectOf($('#pile-discard')), cardHTML(card.def), cardClass(card.def), 420);
       }
       this.afterAction();
     },
@@ -549,7 +552,7 @@ window.HB = window.HB || {};
       const ov = this.overlay(`<h2>No playable cards</h2><p>Pick a card to discard — the turn passes to your opponent.</p><div class="pick-row" id="pass-row"></div><button class="btn ghost" id="pass-cancel">Cancel</button>`);
       const row = $('#pass-row');
       for (const card of p.hand) {
-        const c = el('div', cardClass(card.def, card.poi >= 0), cardHTML(card.def, card.poi >= 0));
+        const c = el('div', cardClass(card.def), cardHTML(card.def));
         c.addEventListener('click', () => { ov.hidden = true; this.renderer.prevPos = this.positions(); this.lastActor = s.current; R.passTurn(s, card.uid); this.afterAction(); });
         row.appendChild(c);
       }
@@ -580,7 +583,7 @@ window.HB = window.HB || {};
           ? 'To play a card, tap it: a description panel appears over the hand and every target lights up on the board. Tap the hex you want — the warband acts at once and the card goes to the discard pile. A card without a target (Rally, Battle Cry…) is played by tapping the board or tapping the card again. Changed your mind — tap the description panel and the card stays in your hand.'
           : 'To play a card, drag it onto the board: the route is previewed, the warband acts as soon as you release the card, and the card goes to the discard pile. Release it over the hand and it returns.'} Play as many cards per turn as you like, at least one; after the first card an End Turn button appears in the rightmost slot. The control scheme can be switched in Settings → Controls.</p>
         <p><b>Directions.</b> A movement card sets only the shape and length of the route (straight, hook, zigzag, half-ring). Where to go is your choice: every possible end of the route is highlighted, and the one closest to where you release or tap is used. For Wide March the side is left or right of the warband.</p>
-        <p><b>Territory.</b> Hexes you walk through take your colour. Any area bounded by your hexes — or by your hexes and the map edge — becomes entirely yours, enemy hexes included, unless the enemy warband stands in it or can step into it: the warband holds the ground around it. Ringing the warband completely deals siege damage instead (one minion per ring hex painted by that card). <b>Outposts</b>: each player picks two; they flank the start zone and are captured from the beginning, their cards shuffled into the deck. An outpost changes hands by walking through its hex or enclosing it; the card floating above it flies straight into the captor's hand (onto the deck if the hand is full), and the previous owner loses that card. Every outpost card works instantly: Recruitment +6, Cordon captures the hexes around the warband, Explosive Charge hits an adjacent hex, Prayer returns the top discard card, Catapult hits at up to 3 hexes, Scouting refills the hand, Banner makes your hexes around the warband worth +1, Blink jumps over a hex. The neutral <b>Citadel</b> in the middle holds a random stronger card (Muster +9, Heavy Charge 6, Trebuchet 5 at 4 hexes, War Horn +4, Great Banner within 2) and rolls a new one after each capture.</p>
+        <p><b>Territory.</b> Hexes you walk through take your colour. Any area bounded by your hexes — or by your hexes and the map edge — becomes entirely yours, enemy hexes included, unless the enemy warband stands in it or can step into it: the warband holds the ground around it. Ringing the warband completely deals siege damage instead (one minion per ring hex painted by that card). <b>Outposts</b>: each player picks two; they flank the start zone and are captured from the beginning, their cards shuffled into the deck. An outpost changes hands by walking through its hex or enclosing it; the card floating above it flies straight into the captor's hand (onto the deck if the hand is full), and the previous owner loses that card. Every outpost card works instantly: Recruitment +6, Cordon captures the hexes around the warband, Explosive Charge hits an adjacent hex, Prayer returns the top discard card, Catapult hits at up to 3 hexes, Scouting refills the hand, Banner makes your hexes around the warband worth +1, Blink jumps over a hex. The neutral <b>Citadel</b> in the middle holds a stronger card (Muster +7, Heavy Charge 5, Trebuchet 4 at 3 hexes, War Horn +3); Settings choose whether it is one random card for the match, a new one after each capture, or always Muster.</p>
         <p><b>Combat.</b> Warbands never fight on their own: to attack, run a movement card's route onto the enemy's hex — that step is highlighted red with a sword and the move ends there. While you aim, both warbands show their predicted losses and this panel says who falls back. Your warband charges the enemy's hex and both strike at once. Strength grows with the number of minions, but slower than the number itself (24 minions — about 5 damage, 12 — about 3, 6 — about 2); Battle Cry adds +2 to your next strike, Formation reduces every incoming strike by 2. After the exchange the warband with fewer minions falls back one hex (the attacker to where it came from; the defender away from the attacker, and then the attacker takes its hex); on equal numbers the attacker falls back. One attack per turn. Volley and Catapult strike from a distance with no retaliation.</p>
         <p><b>Victory</b>: destroy the enemy warband, capture the whole map, or have more territory points when the round limit is reached. Tie-breaks: outposts → minions → captured in the last round.</p>
         <p class="muted">Pictograms: arrows — movement (chevrons = number of steps), figures — minions, sword — attack, shield — defence, flag — territory points.</p>

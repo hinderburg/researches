@@ -71,7 +71,9 @@ window.HB = window.HB || {};
       s.cells[K(slot.col, slot.row)].poi = poi.id;
     });
     // D-059: the neutral citadel in the middle holds a random stronger card
-    { const c = CFG.CENTER_POI, poi = { id: s.pois.length, col: c.col, row: c.row, type: 'citadel', side: 0, owner: 0, card: rollCitadel(s, null) }; s.pois.push(poi); s.cells[K(c.col, c.row)].poi = poi.id; }
+    // D-061: the citadel's card depends on the match setting — one random card for the match, re-rolled per capture, or always Muster
+    s.citadelMode = opts.citadelMode || CFG.CITADEL_MODE;
+    { const c = CFG.CENTER_POI, poi = { id: s.pois.length, col: c.col, row: c.row, type: 'citadel', side: 0, owner: 0, card: s.citadelMode === 'fixed' ? HB.cards.CITADEL_DEFAULT : rollCitadel(s, null) }; s.pois.push(poi); s.cells[K(c.col, c.row)].poi = poi.id; }
     for (const pid of [1, 2]) {
       const p = s.players[pid];
       const cards = p.deckIds.map(id => makeCard(s, id));
@@ -198,7 +200,7 @@ window.HB = window.HB || {};
     else p.deck.unshift(card);
     s.events.push({ type: 'poi', player: p.id, poiId, cardName: CARDS[cardId].title, col: poi.col, row: poi.row });
     log(s, `${p.name} capture ${def.title}: ${CARDS[cardId].title} goes ${p.hand.includes(card) ? 'to the hand' : 'to the deck'}.`);
-    if (def.random) { poi.card = rollCitadel(s, cardId); log(s, `${def.title} now holds ${CARDS[poi.card].title}.`); } // D-059: a new card for the next capture
+    if (def.random && s.citadelMode === 'reroll') { poi.card = rollCitadel(s, cardId); log(s, `${def.title} now holds ${CARDS[poi.card].title}.`); } // D-059 / D-061: a new card for the next capture
   }
   const territory = (s, pid) => { let t = 0; for (const k in s.cells) { const c = s.cells[k]; if (c.owner === pid) t += 1 + c.bonus; } return t; };
   const cellCount = (s, pid) => { let t = 0; for (const k in s.cells) if (s.cells[k].owner === pid) t++; return t; };

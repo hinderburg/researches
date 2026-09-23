@@ -115,8 +115,15 @@ select, input[type=text] { background: var(--panel2); color: var(--text); border
 .card-icon { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; color: var(--ink); width: 100%; }
 .card-icon svg { width: 44px; height: 44px; display: block; }
 .card-name { width: 100%; text-align: center; font-weight: 800; font-size: 10px; line-height: 1.1; color: #fff; padding: 4px 2px; text-shadow: 0 1px 0 rgba(0,0,0,.4); }
-.card-poi { position: absolute; top: 2px; right: 3px; font-size: 8px; font-weight: 800; color: #fff; background: #8a5cff; border-radius: 6px; padding: 1px 4px; }
-.card.poi { box-shadow: 0 0 0 2px #ffd766, 0 3px 0 #5a4222, 0 4px 10px rgba(255,215,102,.35); }
+/* D-061: three tiers. Outpost cards: bronze double frame. Citadel card: gold frame with ornament corners and a badge. */
+.card.tier-outpost { border-color: #b07a3a; box-shadow: inset 0 0 0 2px #f1dcb0, inset 0 0 0 3px #b07a3a, 0 3px 0 #5a4222, 0 4px 8px rgba(0,0,0,.35); }
+.card.tier-outpost .card-name { box-shadow: inset 0 2px 0 rgba(255,255,255,.25); }
+.card.tier-citadel { border-color: #d9a516; background: linear-gradient(#fff6dc, #f3dfae); box-shadow: inset 0 0 0 2px #fff2c2, inset 0 0 0 3px #d9a516, 0 3px 0 #5a4222, 0 4px 12px rgba(255,200,60,.45); }
+.card.tier-citadel::before, .card.tier-citadel::after { content: ''; position: absolute; left: 4px; right: 4px; height: 8px; pointer-events: none;
+  background: radial-gradient(circle at 4px 4px, #d9a516 2px, transparent 2.5px) 0 0 / 8px 8px repeat-x; opacity: .9; }
+.card.tier-citadel::before { top: 5px; } .card.tier-citadel::after { bottom: 21px; }
+.card.tier-citadel .card-name { background: linear-gradient(#e0ab1a, #b8860b) !important; color: #2b1d05; text-shadow: 0 1px 0 rgba(255,255,255,.35); }
+.card-poi { position: absolute; top: 2px; right: 3px; font-size: 7px; font-weight: 800; letter-spacing: .04em; color: #2b1d05; background: linear-gradient(#ffe38a, #d9a516); border-radius: 6px; padding: 1px 4px; border: 1px solid #8a6208; }
 .card.disabled { opacity: .45; cursor: not-allowed; filter: grayscale(.6); }
 .card.hidden-card { visibility: hidden; }
 .card.incoming { visibility: hidden; }

@@ -50,12 +50,7 @@ window.HB = window.HB || {};
       const k = hex.key(col, row), now = performance.now(), S = this.size, p = this.cellXY(col, row);
       delete this.reveal[k];
       this.pop[k] = { t0: now, dur: 620, owner };
-      const light = COL[owner + 'Light'];
-      for (let i = 0; i < 6; i++) {
-        const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2, v = S * (1.6 + Math.random() * 1.4);
-        this.fx.push({ type: 'chip', x: p.x + (Math.random() - 0.5) * S * 0.6, y: p.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, r: S * (0.08 + Math.random() * 0.08), color: Math.random() < 0.5 ? light : '#ffffff', t0: now + Math.random() * 60, dur: 520 + Math.random() * 200 });
-      }
-      this.fx.push({ type: 'ring', x: p.x, y: p.y, color: light, t0: now, dur: 420 });
+      this.schedule(590, () => this.spawnDust(p.x, p.y, 5)); // D-062: dust when the block settles
       if (this.settle[k]) this.build[k] = now + 260;
     }
     // D-057: a hex captured by enclosure jumps, flips over to its new colour and lands; chips fly on landing
@@ -63,12 +58,16 @@ window.HB = window.HB || {};
       const k = hex.key(col, row), now = performance.now(), S = this.size, p = this.cellXY(col, row), dur = 640;
       delete this.reveal[k];
       this.flip[k] = { t0: now, dur, from, to };
-      const light = COL[to + 'Light'];
-      this.schedule(dur - 60, () => {
-        this.fx.push({ type: 'ring', x: p.x, y: p.y, color: light, t0: performance.now(), dur: 380 });
-        for (let i = 0; i < 4; i++) { const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.6, v = S * (1.2 + Math.random() * 1.2); this.fx.push({ type: 'chip', x: p.x + (Math.random() - 0.5) * S * 0.8, y: p.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, r: S * (0.07 + Math.random() * 0.07), color: Math.random() < 0.5 ? light : '#ffffff', t0: performance.now(), dur: 450 + Math.random() * 150 }); }
-      });
+      this.schedule(dur - 40, () => this.spawnDust(p.x, p.y, 7)); // D-062: dust when the tile lands
       if (this.settle[k]) this.build[k] = now + dur;
+    }
+    // D-062: clouds of dust rolling out sideways from a tile that has just landed
+    spawnDust(x, y, n) {
+      const now = performance.now(), S = this.size;
+      for (let i = 0; i < n; i++) {
+        const side = Math.random() < 0.5 ? -1 : 1, spread = 0.3 + Math.random() * 0.7;
+        this.fx.push({ type: 'dust', x: x + side * S * 0.25 * spread, y: y + S * 0.35 + (Math.random() - 0.5) * S * 0.2, vx: side * S * (0.9 + Math.random() * 0.9) * spread, vy: -S * (0.15 + Math.random() * 0.35), r0: S * (0.12 + Math.random() * 0.1), grow: S * (0.28 + Math.random() * 0.18), t0: now + Math.random() * 70, dur: 520 + Math.random() * 220 });
+      }
     }
     // D-057: recruits run in from the surroundings and join the crowd; the banner bumps when they arrive
     spawnRecruits(pid, col, row, amount) {
@@ -407,6 +406,12 @@ window.HB = window.HB || {};
           ctx.save(); ctx.translate(f.x, f.y); ctx.scale(sc, sc); ctx.translate(-f.x, -f.y);
           ctx.strokeStyle = f.color; ctx.lineWidth = (f.big ? 4 : 3) / sc; ctx.globalAlpha = 1 - k; this.hexPath(ctx, f.x, f.y, 0); ctx.stroke();
           ctx.restore(); ctx.globalAlpha = 1;
+        } else if (f.type === 'dust') { // D-062: a soft puff that drifts sideways, grows and fades
+          const e = 1 - Math.pow(1 - k, 2), x = f.x + f.vx * e, y = f.y + f.vy * e, r = f.r0 + f.grow * e;
+          ctx.globalAlpha = 0.55 * (1 - k) * (k < 0.15 ? k / 0.15 : 1);
+          ctx.fillStyle = '#d7c6a3'; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#efe4cc'; ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.55, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = 1;
         } else if (f.type === 'recruit') { // D-057: a small figure running into the crowd
           const e = 1 - Math.pow(1 - k, 2), x = f.x0 + (f.x1 - f.x0) * e, y = f.y0 + (f.y1 - f.y0) * e - Math.abs(Math.sin(k * Math.PI * 4 + f.seed)) * S * 0.12;
           const r = S * 0.16, color = COL[f.pid], light = COL[f.pid + 'Light'], dark = COL[f.pid + 'Dark'];
@@ -475,31 +480,153 @@ window.HB = window.HB || {};
       ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, h / 2); ctx.fill(); ctx.stroke();
       ctx.fillStyle = fg; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x, y + 1);
     }
+    // D-061: every outpost type has its own landmark on the hex; the citadel is a small castle. The reward card floats
+    // above it: full size with title and name while neutral, 25 % smaller with only the icon once captured, so the
+    // landmark stays visible. Outpost cards get a bronze double frame, the citadel card a gold ornamented one.
     drawOutpost(ctx, poi, now) {
       const S = this.size, p = this.cellXY(poi.col, poi.row), def = POIS[poi.type], x = p.x, y = p.y, cardId = R.poiCardId(poi);
-      const owner = poi.owner, teamCol = owner ? COL[owner] : def.random ? '#b8891e' : '#8a6b3a'; // D-059: the neutral citadel is gold
-      // fence: the landmark at the bottom of the hex (D-036)
-      ctx.strokeStyle = '#7a4f22'; ctx.lineWidth = Math.max(2, S * 0.06); ctx.lineCap = 'round';
-      const fy = y + S * 0.72;
-      ctx.beginPath(); ctx.moveTo(x - S * 0.62, fy); ctx.lineTo(x + S * 0.62, fy); ctx.stroke();
-      for (let i = -3; i <= 3; i++) { const fx = x + i * S * 0.2; ctx.beginPath(); ctx.moveTo(fx, fy - S * 0.16); ctx.lineTo(fx, fy + S * 0.06); ctx.stroke(); }
-      ctx.lineCap = 'butt';
-      // floating reward card, about a hex wide (D-036)
-      const bob = Math.sin(now / 520 + poi.id) * S * 0.04, cw = S * 1.5, ch = S * 1.85, cx = x - cw / 2, cy = y - S * 1.25 + bob;
-      if (owner) { ctx.shadowColor = COL[owner + 'Light']; ctx.shadowBlur = S * 0.4; }
-      ctx.fillStyle = '#f7ead0'; ctx.strokeStyle = teamCol; ctx.lineWidth = owner ? 3 : 2;
+      const owner = poi.owner, citadel = !!def.random, teamCol = owner ? COL[owner] : citadel ? '#c9941c' : '#8a6b3a';
+      this.drawLandmark(ctx, poi.type, x, y, S, owner);
+      const bob = Math.sin(now / 520 + poi.id) * S * 0.04;
+      const gold = '#d9a516', goldDark = '#8a6208', bronze = '#b07a3a';
+      if (owner) {
+        // captured: compact card, icon only
+        const cw = S * 1.5 * 0.75, ch = S * 1.85 * 0.75, cx = x - cw / 2, cy = y - S * 1.55 + bob;
+        ctx.shadowColor = COL[owner + 'Light']; ctx.shadowBlur = S * 0.35;
+        ctx.fillStyle = citadel ? '#fff3d0' : '#f7ead0'; ctx.strokeStyle = teamCol; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.roundRect(cx, cy, cw, ch, S * 0.1); ctx.fill(); ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = citadel ? gold : bronze; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(cx + 3, cy + 3, cw - 6, ch - 6, S * 0.07); ctx.stroke();
+        ctx.fillStyle = teamCol; ctx.beginPath(); ctx.roundRect(cx, cy, cw, ch * 0.16, [S * 0.1, S * 0.1, 0, 0]); ctx.fill();
+        if (citadel) this.drawOrnament(ctx, cx, cy + ch * 0.16, cw, gold);
+        const img = HB.icons.image(cardId, '#3a2a12'), isz = cw * 0.72;
+        if (img.complete && img.naturalWidth) ctx.drawImage(img, x - isz / 2, cy + ch * 0.5 - isz / 2 + ch * 0.06, isz, isz);
+        return;
+      }
+      // neutral: full card with the outpost name and the card name, raised so the landmark below stays visible
+      const cw = S * 1.4, ch = S * 1.7, cx = x - cw / 2, cy = y - S * 1.9 + bob;
+      if (citadel) { ctx.shadowColor = 'rgba(255,200,60,0.9)'; ctx.shadowBlur = S * 0.45; }
+      ctx.fillStyle = citadel ? '#fff3d0' : '#f7ead0'; ctx.strokeStyle = citadel ? gold : teamCol; ctx.lineWidth = citadel ? 3 : 2;
       ctx.beginPath(); ctx.roundRect(cx, cy, cw, ch, S * 0.12); ctx.fill(); ctx.stroke();
       ctx.shadowBlur = 0;
-      // header with the outpost name
-      ctx.fillStyle = teamCol;
+      ctx.fillStyle = citadel ? gold : teamCol;
       ctx.beginPath(); ctx.roundRect(cx, cy, cw, ch * 0.2, [S * 0.12, S * 0.12, 0, 0]); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.round(S * 0.22)}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      if (citadel) { ctx.strokeStyle = goldDark; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(cx + 3, cy + 3, cw - 6, ch - 6, S * 0.09); ctx.stroke(); this.drawOrnament(ctx, cx, cy + ch * 0.2, cw, gold); this.drawOrnament(ctx, cx, cy + ch * 0.8, cw, gold); }
+      ctx.fillStyle = citadel ? '#2b1d05' : '#fff'; ctx.font = `bold ${Math.round(S * 0.22)}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(def.title, x, cy + ch * 0.1 + 1, cw * 0.92);
-      // reward icon + name
-      const img = HB.icons.image(cardId, '#3a2a12'), isz = cw * 0.66;
-      if (img.complete && img.naturalWidth) ctx.drawImage(img, x - isz / 2, cy + ch * 0.24, isz, isz);
+      const img = HB.icons.image(cardId, '#3a2a12'), isz = cw * 0.62;
+      if (img.complete && img.naturalWidth) ctx.drawImage(img, x - isz / 2, cy + ch * 0.26, isz, isz);
       ctx.fillStyle = '#3a2a12'; ctx.font = `bold ${Math.round(S * 0.2)}px system-ui, sans-serif`;
-      ctx.fillText(CARDS[cardId].title, x, cy + ch * 0.88, cw * 0.92);
+      ctx.fillText(CARDS[cardId].title, x, cy + ch * 0.9, cw * 0.92);
+    }
+    // a row of small gold diamonds on a hairline — the citadel card's ornament
+    drawOrnament(ctx, cx, y, w, color) {
+      ctx.fillStyle = color;
+      const n = 5, step = w / (n + 1), r = w * 0.03;
+      for (let i = 1; i <= n; i++) { const ox = cx + i * step; ctx.beginPath(); ctx.moveTo(ox, y - r); ctx.lineTo(ox + r, y); ctx.lineTo(ox, y + r); ctx.lineTo(ox - r, y); ctx.closePath(); ctx.fill(); }
+      ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx + step * 0.4, y); ctx.lineTo(cx + w - step * 0.4, y); ctx.stroke();
+    }
+    // D-061: landmarks per outpost type, drawn in the lower half of the hex under the floating card
+    drawLandmark(ctx, type, x, y, S, owner) {
+      const wood = '#7a4f22', stone = '#a9a5a0', stoneDark = '#6c6862', roof = owner ? COL[owner] : '#8a6b3a';
+      const base = y + S * 0.45;
+      ctx.lineJoin = 'round'; ctx.lineWidth = 1.5;
+      const shadow = w => { ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(x, base + S * 0.08, w, S * 0.12, 0, 0, Math.PI * 2); ctx.fill(); };
+      switch (type) {
+        case 'citadel': { // a small castle: wall with battlements, two towers, a keep with a flag
+          shadow(S * 0.75);
+          ctx.fillStyle = stone; ctx.strokeStyle = stoneDark;
+          ctx.beginPath(); ctx.rect(x - S * 0.62, base - S * 0.42, S * 1.24, S * 0.42); ctx.fill(); ctx.stroke();
+          for (let i = -3; i <= 3; i++) { ctx.beginPath(); ctx.rect(x + i * S * 0.19 - S * 0.06, base - S * 0.52, S * 0.12, S * 0.12); ctx.fill(); ctx.stroke(); }
+          for (const tx of [x - S * 0.58, x + S * 0.58]) { ctx.beginPath(); ctx.rect(tx - S * 0.13, base - S * 0.72, S * 0.26, S * 0.72); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#5a3f22'; ctx.beginPath(); ctx.moveTo(tx - S * 0.17, base - S * 0.72); ctx.lineTo(tx, base - S * 0.95); ctx.lineTo(tx + S * 0.17, base - S * 0.72); ctx.closePath(); ctx.fill(); ctx.fillStyle = stone; }
+          ctx.beginPath(); ctx.rect(x - S * 0.2, base - S * 0.78, S * 0.4, S * 0.78); ctx.fill(); ctx.stroke(); // keep
+          for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.rect(x + i * S * 0.14 - S * 0.05, base - S * 0.86, S * 0.1, S * 0.1); ctx.fill(); ctx.stroke(); }
+          ctx.fillStyle = '#3a2a12'; ctx.beginPath(); ctx.roundRect(x - S * 0.09, base - S * 0.26, S * 0.18, S * 0.26, [S * 0.09, S * 0.09, 0, 0]); ctx.fill(); // gate
+          ctx.strokeStyle = '#3b2a14'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, base - S * 0.86); ctx.lineTo(x, base - S * 1.12); ctx.stroke();
+          ctx.fillStyle = owner ? COL[owner] : '#d9a516'; ctx.beginPath(); ctx.moveTo(x, base - S * 1.12); ctx.lineTo(x + S * 0.22, base - S * 1.05); ctx.lineTo(x, base - S * 0.98); ctx.closePath(); ctx.fill();
+          break;
+        }
+        case 'village': { // three huts
+          shadow(S * 0.6);
+          for (const [dx, sc] of [[-0.4, 0.8], [0.35, 0.9], [0, 1]]) {
+            const hx = x + dx * S, h = S * 0.3 * sc, w = S * 0.34 * sc, by = base - (dx === 0 ? 0 : S * 0.04);
+            ctx.fillStyle = '#f1e4c8'; ctx.strokeStyle = '#5a4324'; ctx.beginPath(); ctx.rect(hx - w / 2, by - h, w, h); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = roof; ctx.beginPath(); ctx.moveTo(hx - w * 0.65, by - h); ctx.lineTo(hx, by - h - h * 0.9); ctx.lineTo(hx + w * 0.65, by - h); ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#5a4324'; ctx.beginPath(); ctx.roundRect(hx - w * 0.12, by - h * 0.55, w * 0.24, h * 0.55, [w * 0.12, w * 0.12, 0, 0]); ctx.fill();
+          }
+          break;
+        }
+        case 'watchtower': { // a tall wooden tower on legs with a lookout
+          shadow(S * 0.35);
+          ctx.strokeStyle = wood; ctx.lineWidth = Math.max(2, S * 0.07);
+          ctx.beginPath(); ctx.moveTo(x - S * 0.22, base); ctx.lineTo(x - S * 0.14, base - S * 0.7); ctx.moveTo(x + S * 0.22, base); ctx.lineTo(x + S * 0.14, base - S * 0.7); ctx.moveTo(x - S * 0.2, base - S * 0.35); ctx.lineTo(x + S * 0.2, base - S * 0.35); ctx.stroke();
+          ctx.fillStyle = '#9c6a34'; ctx.strokeStyle = '#5a3a1a'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.rect(x - S * 0.28, base - S * 0.95, S * 0.56, S * 0.28); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = roof; ctx.beginPath(); ctx.moveTo(x - S * 0.34, base - S * 0.95); ctx.lineTo(x, base - S * 1.2); ctx.lineTo(x + S * 0.34, base - S * 0.95); ctx.closePath(); ctx.fill(); ctx.stroke();
+          break;
+        }
+        case 'mine': { // a mine entrance in a rock with props and a cart
+          shadow(S * 0.6);
+          ctx.fillStyle = stone; ctx.strokeStyle = stoneDark; ctx.beginPath(); ctx.moveTo(x - S * 0.6, base); ctx.lineTo(x - S * 0.4, base - S * 0.5); ctx.lineTo(x, base - S * 0.68); ctx.lineTo(x + S * 0.4, base - S * 0.48); ctx.lineTo(x + S * 0.6, base); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#2a1e10'; ctx.beginPath(); ctx.roundRect(x - S * 0.18, base - S * 0.36, S * 0.36, S * 0.36, [S * 0.18, S * 0.18, 0, 0]); ctx.fill();
+          ctx.strokeStyle = wood; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(x - S * 0.22, base); ctx.lineTo(x - S * 0.22, base - S * 0.36); ctx.moveTo(x + S * 0.22, base); ctx.lineTo(x + S * 0.22, base - S * 0.36); ctx.moveTo(x - S * 0.26, base - S * 0.36); ctx.lineTo(x + S * 0.26, base - S * 0.36); ctx.stroke();
+          ctx.fillStyle = roof; ctx.strokeStyle = '#3a2a12'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x + S * 0.3, base - S * 0.2); ctx.lineTo(x + S * 0.58, base - S * 0.2); ctx.lineTo(x + S * 0.52, base); ctx.lineTo(x + S * 0.36, base); ctx.closePath(); ctx.fill(); ctx.stroke();
+          break;
+        }
+        case 'shrine': { // a stone altar with an obelisk and a glowing gem
+          shadow(S * 0.45);
+          ctx.fillStyle = stone; ctx.strokeStyle = stoneDark; ctx.beginPath(); ctx.rect(x - S * 0.42, base - S * 0.14, S * 0.84, S * 0.14); ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.rect(x - S * 0.3, base - S * 0.26, S * 0.6, S * 0.12); ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(x - S * 0.12, base - S * 0.26); ctx.lineTo(x - S * 0.08, base - S * 0.95); ctx.lineTo(x + S * 0.08, base - S * 0.95); ctx.lineTo(x + S * 0.12, base - S * 0.26); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = owner ? COL[owner + 'Light'] : '#ffe27a'; ctx.beginPath(); ctx.moveTo(x, base - S * 1.12); ctx.lineTo(x + S * 0.1, base - S * 1.0); ctx.lineTo(x, base - S * 0.88); ctx.lineTo(x - S * 0.1, base - S * 1.0); ctx.closePath(); ctx.fill(); ctx.stroke();
+          break;
+        }
+        case 'workshop': { // a forge: stone building with a chimney, a glowing furnace and an anvil
+          shadow(S * 0.55);
+          ctx.fillStyle = '#8f7a5a'; ctx.strokeStyle = '#4a3a22'; ctx.beginPath(); ctx.rect(x - S * 0.5, base - S * 0.45, S * 1.0, S * 0.45); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = roof; ctx.beginPath(); ctx.moveTo(x - S * 0.56, base - S * 0.45); ctx.lineTo(x - S * 0.1, base - S * 0.78); ctx.lineTo(x + S * 0.56, base - S * 0.45); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = stoneDark; ctx.beginPath(); ctx.rect(x + S * 0.22, base - S * 0.9, S * 0.14, S * 0.4); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#ff9a3a'; ctx.beginPath(); ctx.roundRect(x - S * 0.12, base - S * 0.3, S * 0.24, S * 0.3, [S * 0.1, S * 0.1, 0, 0]); ctx.fill();
+          ctx.fillStyle = '#3a3a40'; ctx.beginPath(); ctx.moveTo(x - S * 0.5, base - S * 0.02); ctx.lineTo(x - S * 0.18, base - S * 0.02); ctx.lineTo(x - S * 0.22, base - S * 0.14); ctx.lineTo(x - S * 0.46, base - S * 0.14); ctx.closePath(); ctx.fill();
+          break;
+        }
+        case 'scout_camp': { // two tents and a campfire
+          shadow(S * 0.6);
+          for (const [dx, sc] of [[-0.38, 0.9], [0.38, 0.8]]) {
+            const tx = x + dx * S, h = S * 0.42 * sc, w = S * 0.46 * sc;
+            ctx.fillStyle = roof; ctx.strokeStyle = '#3a2a12'; ctx.beginPath(); ctx.moveTo(tx - w / 2, base); ctx.lineTo(tx, base - h); ctx.lineTo(tx + w / 2, base); ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#3a2a12'; ctx.beginPath(); ctx.moveTo(tx, base - h * 0.45); ctx.lineTo(tx - w * 0.14, base); ctx.lineTo(tx + w * 0.14, base); ctx.closePath(); ctx.fill();
+          }
+          ctx.strokeStyle = wood; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - S * 0.12, base - S * 0.02); ctx.lineTo(x + S * 0.12, base - S * 0.14); ctx.moveTo(x + S * 0.12, base - S * 0.02); ctx.lineTo(x - S * 0.12, base - S * 0.14); ctx.stroke();
+          ctx.fillStyle = '#ffb347'; ctx.beginPath(); ctx.moveTo(x - S * 0.09, base - S * 0.1); ctx.quadraticCurveTo(x - S * 0.04, base - S * 0.3, x, base - S * 0.4); ctx.quadraticCurveTo(x + S * 0.06, base - S * 0.28, x + S * 0.09, base - S * 0.1); ctx.closePath(); ctx.fill();
+          ctx.fillStyle = '#ffe27a'; ctx.beginPath(); ctx.moveTo(x - S * 0.04, base - S * 0.1); ctx.quadraticCurveTo(x, base - S * 0.22, x + S * 0.01, base - S * 0.3); ctx.quadraticCurveTo(x + S * 0.03, base - S * 0.2, x + S * 0.04, base - S * 0.1); ctx.closePath(); ctx.fill();
+          break;
+        }
+        case 'war_banner': { // a tall standard with a swallow-tailed flag on a stone base
+          shadow(S * 0.35);
+          ctx.fillStyle = stone; ctx.strokeStyle = stoneDark; ctx.beginPath(); ctx.rect(x - S * 0.22, base - S * 0.12, S * 0.44, S * 0.12); ctx.fill(); ctx.stroke();
+          ctx.strokeStyle = '#3b2a14'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x, base - S * 0.12); ctx.lineTo(x, base - S * 1.15); ctx.stroke();
+          ctx.fillStyle = roof; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, base - S * 1.12); ctx.lineTo(x + S * 0.56, base - S * 1.04); ctx.lineTo(x + S * 0.42, base - S * 0.82); ctx.lineTo(x + S * 0.56, base - S * 0.6); ctx.lineTo(x, base - S * 0.52); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#ffe14a'; ctx.beginPath(); ctx.arc(x, base - S * 1.18, S * 0.06, 0, Math.PI * 2); ctx.fill();
+          break;
+        }
+        case 'portal': { // a stone arch with a glowing gate
+          shadow(S * 0.5);
+          ctx.fillStyle = owner ? COL[owner + 'Light'] : '#b28cff'; ctx.globalAlpha = 0.7; ctx.beginPath(); ctx.ellipse(x, base - S * 0.36, S * 0.24, S * 0.36, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+          ctx.strokeStyle = stoneDark; ctx.fillStyle = stone; ctx.lineWidth = 1.5;
+          for (const sgn of [-1, 1]) { ctx.beginPath(); ctx.rect(x + sgn * S * 0.3 - S * 0.09, base - S * 0.62, S * 0.18, S * 0.62); ctx.fill(); ctx.stroke(); }
+          ctx.beginPath(); ctx.moveTo(x - S * 0.4, base - S * 0.62); ctx.quadraticCurveTo(x, base - S * 1.1, x + S * 0.4, base - S * 0.62); ctx.lineTo(x + S * 0.24, base - S * 0.62); ctx.quadraticCurveTo(x, base - S * 0.9, x - S * 0.24, base - S * 0.62); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#ffe27a'; ctx.beginPath(); ctx.arc(x, base - S * 0.9, S * 0.05, 0, Math.PI * 2); ctx.fill();
+          break;
+        }
+        default: { // fence fallback
+          ctx.strokeStyle = wood; ctx.lineWidth = Math.max(2, S * 0.06); ctx.lineCap = 'round';
+          const fy = y + S * 0.72;
+          ctx.beginPath(); ctx.moveTo(x - S * 0.62, fy); ctx.lineTo(x + S * 0.62, fy); ctx.stroke();
+          for (let i = -3; i <= 3; i++) { const fx = x + i * S * 0.2; ctx.beginPath(); ctx.moveTo(fx, fy - S * 0.16); ctx.lineTo(fx, fy + S * 0.06); ctx.stroke(); }
+          ctx.lineCap = 'butt';
+        }
+      }
+      ctx.lineWidth = 1;
     }
     warbandPos(p, now) {
       const sl = this.slide[p.id], end = this.cellXY(p.warband.col, p.warband.row);
