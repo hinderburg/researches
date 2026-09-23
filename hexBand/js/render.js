@@ -163,9 +163,13 @@ window.HB = window.HB || {};
             t += per * path.length;
             break;
           }
-          case 'paint': // walked hexes pop up under the warband as it arrives on each of them
-            ev.cells.forEach((c, i) => this.schedule(Math.max(0, t - 190 * (ev.cells.length - i) + 60), () => this.popCell(c.col, c.row, ev.player)));
+          case 'paint': { // D-065: hexes the warband passes through flip over; only the hex it stops on just pops up
+            const w = this.s.players[ev.player].warband;
+            ev.cells.forEach((c, i) => this.schedule(Math.max(0, t - 190 * (ev.cells.length - i) + 60), () => {
+              if (c.col === w.col && c.row === w.row) this.popCell(c.col, c.row, ev.player); else this.flipCell(c.col, c.row, c.from || 0, ev.player);
+            }));
             break;
+          }
           case 'fill': { // enclosure: a wave of pop-ups spreading out from the warband (D-055)
             const w = this.s.players[ev.player].warband, origin = { col: w.col, row: w.row };
             const cells = ev.cells.map(c => ({ c, d: hex.distance(c, origin) })).sort((a, b) => a.d - b.d);
@@ -348,22 +352,35 @@ window.HB = window.HB || {};
       // flips (D-057): an enclosed hex jumps, turns over to its new colour and lands back in place
       for (const k in this.flip) {
         const f = this.flip[k], c = s.cells[k], kk = (now - f.t0) / f.dur, pt = this.cellXY(c.col, c.row);
-        const jump = S * 0.85 * Math.sin(Math.PI * kk), sy = Math.cos(Math.PI * kk); // sy > 0: old face up, sy < 0: new face up
+        const jump = S * 0.85 * Math.sin(Math.PI * kk), th = Math.PI * kk, cs = Math.cos(th), sn = Math.sin(th);
         lifts[k] = jump;
         // the hole under the tile and its shadow
         ctx.fillStyle = '#4a3a22'; this.hexPath(ctx, pt.x, pt.y, 0); ctx.fill();
-        ctx.fillStyle = `rgba(0,0,0,${0.3 - 0.15 * jump / S})`; ctx.beginPath(); ctx.ellipse(pt.x, pt.y + S * 0.15, S * (0.8 - 0.2 * jump / S), S * (0.35 - 0.1 * jump / S) * Math.max(0.15, Math.abs(sy)), 0, 0, Math.PI * 2); ctx.fill();
-        const faceOwner = sy >= 0 ? f.from : f.to, face = faceOwner ? COL[faceOwner] : COL.grass, edge = faceOwner ? COL[faceOwner + 'Dark'] : COL.grassEdge;
-        const sc = Math.max(0.05, Math.abs(sy)), thick = S * 0.16 * Math.sqrt(1 - sc * sc);
-        ctx.save(); ctx.translate(pt.x, pt.y - jump);
-        // rim (tile thickness) shows most when the tile is edge-on
-        ctx.fillStyle = edge; ctx.beginPath(); ctx.ellipse(0, 0, S * 0.98, S * 0.86 * sc + thick, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.scale(1, sc);
-        ctx.fillStyle = face; this.hexPath(ctx, 0, 0, 0); ctx.fill();
-        ctx.strokeStyle = faceOwner ? COL[faceOwner + 'Light'] : COL.grassEdge; ctx.lineWidth = 2.5 / sc; this.hexPath(ctx, 0, 0, 1.5); ctx.stroke();
+        ctx.fillStyle = `rgba(0,0,0,${0.3 - 0.15 * jump / S})`; ctx.beginPath(); ctx.ellipse(pt.x, pt.y + S * 0.15, S * (0.8 - 0.2 * jump / S), S * (0.35 - 0.1 * jump / S) * Math.max(0.15, Math.abs(cs)), 0, 0, Math.PI * 2); ctx.fill();
+        // D-065: a solid slab of thickness T rotating about its horizontal axis. A corner (u, v) on a face at height z
+        // maps to v' = v·cos − z·sin (screen y) and z' = v·sin + z·cos (height, drawn as an upward offset);
+        // the two faces and six walls are painted back to front by their average height.
+        // H is the oblique factor (how much of a vertical extent shows on screen); the slab's real thickness is T / H
+        // so that a resting slab shows exactly the block's side height T
+        const T = S * TILE_THICK, H = 0.6, TZ = T / H, cy0 = pt.y - jump + T / 2;
+        const local = hex.corners(0, 0, S, 1);
+        const proj = (u, v, z) => ({ x: pt.x + u, y: cy0 + (v * cs - z * sn) - H * (v * sn + z * cs), d: v * sn + z * cs });
+        const topPts = local.map(c => proj(c.x, c.y, TZ / 2)), botPts = local.map(c => proj(c.x, c.y, -TZ / 2));
+        const fromCol = f.from ? COL[f.from] : COL.grass, toCol = f.to ? COL[f.to] : COL.grass;
+        const fromSide = f.from ? COL[f.from + 'Dark'] : COL.grassSide, toSide = f.to ? COL[f.to + 'Dark'] : COL.grassSide;
+        const wallCol = cs >= 0 ? fromSide : toSide; // walls take the shade of the face currently on top
+        const polys = [];
+        const avg = pts => pts.reduce((a, p) => a + p.d, 0) / pts.length;
+        polys.push({ pts: topPts, d: avg(topPts), fill: fromCol, stroke: f.from ? COL[f.from + 'Light'] : COL.grassEdge });
+        polys.push({ pts: botPts, d: avg(botPts), fill: toCol, stroke: f.to ? COL[f.to + 'Light'] : COL.grassEdge });
+        for (let i = 0; i < 6; i++) { const j = (i + 1) % 6, pts = [topPts[i], topPts[j], botPts[j], botPts[i]]; polys.push({ pts, d: avg(pts), fill: wallCol, stroke: 'rgba(0,0,0,0.25)' }); }
+        polys.sort((a, b) => a.d - b.d);
+        for (const poly of polys) {
+          ctx.fillStyle = poly.fill; ctx.strokeStyle = poly.stroke; ctx.lineWidth = 1.2;
+          ctx.beginPath(); ctx.moveTo(poly.pts[0].x, poly.pts[0].y); for (let i = 1; i < poly.pts.length; i++) ctx.lineTo(poly.pts[i].x, poly.pts[i].y); ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
         // sheen while the new face swings up
-        if (sy < 0) { ctx.fillStyle = `rgba(255,255,255,${0.45 * (1 - sc)})`; this.hexPath(ctx, 0, 0, 0); ctx.fill(); }
-        ctx.restore();
+        if (cs < 0) { ctx.fillStyle = `rgba(255,255,255,${0.4 * (1 - Math.abs(cs))})`; ctx.beginPath(); ctx.moveTo(botPts[0].x, botPts[0].y); for (let i = 1; i < 6; i++) ctx.lineTo(botPts[i].x, botPts[i].y); ctx.closePath(); ctx.fill(); }
       }
       // flashes, blocked, decorations, settlements
       for (const k in s.cells) {
