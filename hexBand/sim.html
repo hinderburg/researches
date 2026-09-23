@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HEXBand — симуляция баланса</title>
+<title>HEXBand — balance simulation</title>
 <link rel="stylesheet" href="css/style.css">
 <style>
   main { padding: 20px 16px 40px; }
@@ -15,17 +15,17 @@
 </head>
 <body>
 <main>
-  <h1>Симуляция бот-бот <span class="muted" id="ver"></span></h1>
-  <p class="muted">Прогоняет партии между пресетами колод и считает статистику. Тот же движок, что в игре. <a href="./">← Игра</a></p>
+  <h1>Bot vs bot simulation <span class="muted" id="ver"></span></h1>
+  <p class="muted">Runs matches between deck presets and collects statistics with the same engine the game uses. <a href="./">← Game</a></p>
   <div class="controls">
-    <div class="field"><label>Синие</label><select id="a"></select></div>
-    <div class="field"><label>Красные</label><select id="b"></select></div>
-    <div class="field"><label>Партий</label><input id="n" type="number" value="100" min="1" max="2000"></div>
-    <div class="field"><label>Лимит раундов</label><input id="rounds" type="number" value="10" min="2" max="40"></div>
-    <div class="field"><label>Стартовый seed</label><input id="seed" type="number" value="1"></div>
-    <div class="field"><label>Атак за ход на отряд</label><select id="attacks"><option value="1">1</option><option value="2">2</option><option value="0">без лимита</option></select></div>
+    <div class="field"><label>Blue</label><select id="a"></select></div>
+    <div class="field"><label>Red</label><select id="b"></select></div>
+    <div class="field"><label>Matches</label><input id="n" type="number" value="100" min="1" max="2000"></div>
+    <div class="field"><label>Round limit</label><input id="rounds" type="number" value="10" min="2" max="40"></div>
+    <div class="field"><label>First seed</label><input id="seed" type="number" value="1"></div>
+    <div class="field"><label>Attacks per turn</label><select id="attacks"><option value="1">1</option><option value="2">2</option><option value="0">unlimited</option></select></div>
   </div>
-  <div class="row"><button class="btn primary" id="run">Запустить</button><button class="btn ghost" id="all">Все пары пресетов</button></div>
+  <div class="row"><button class="btn primary" id="run">Run</button><button class="btn ghost" id="all">All preset pairs</button></div>
   <div id="result"></div>
   <div id="out"></div>
 </main>
@@ -38,13 +38,13 @@
 (function () {
   const P = HB.cards.PRESETS, keys = Object.keys(P), $ = s => document.querySelector(s);
   $('#ver').textContent = 'v' + HB.CONFIG.VERSION;
-  for (const id of ['#a', '#b']) for (const k of keys) { const o = document.createElement('option'); o.value = k; o.textContent = P[k].name; $(id).appendChild(o); }
+  for (const id of ['#a', '#b']) for (const k of keys) { const o = document.createElement('option'); o.value = k; o.textContent = P[k].title; $(id).appendChild(o); }
   $('#b').value = 'duel';
 
   function runOne(a, b, seed, rounds, attackLimit) {
     const s = HB.rules.createGame({ seed, roundLimit: rounds, attackLimit, players: { 1: { deck: P[a].cards, pois: P[a].pois, bot: true }, 2: { deck: P[b].cards, pois: P[b].pois, bot: true } } });
     HB.rules.takeEvents(s);
-    const r = { fills: 0, filled: 0, attacks: 0, dmg: 0, pois: 0, passes: 0, backstabs: 0, flanks: 0, cards: 0 };
+    const r = { fills: 0, filled: 0, clashes: 0, ranged: 0, dmg: 0, pois: 0, passes: 0, cards: 0 };
     let guard = 0;
     while (s.phase === 'play' && guard++ < 2000) {
       const mv = HB.ai.choose(s);
@@ -54,7 +54,8 @@
       for (const e of HB.rules.takeEvents(s)) {
         if (e.type === 'fill') { r.fills++; r.filled += e.count; }
         if (e.type === 'poi') r.pois++;
-        if (e.type === 'attack') { r.attacks++; r.dmg += e.dmg; if (e.zone === 'back') r.backstabs++; if (e.zone === 'side') r.flanks++; }
+        if (e.type === 'clash') { r.clashes++; r.dmg += e.dmgToDef + e.dmgToAtt; }
+        if (e.type === 'attack') { r.ranged++; r.dmg += e.dmg; }
       }
     }
     return Object.assign(r, { winner: s.winner, reason: s.endReason, turns: s.turnIndex, t1: s.scores[1].territory, t2: s.scores[2].territory, m1: s.scores[1].minions, m2: s.scores[2].minions, total: HB.rules.totalCells(s) });
@@ -63,27 +64,27 @@
     const n = rows.length, avg = k => (rows.reduce((x, r) => x + r[k], 0) / n);
     const wins = { 0: 0, 1: 0, 2: 0 }, reasons = {};
     for (const r of rows) { wins[r.winner]++; reasons[r.reason] = (reasons[r.reason] || 0) + 1; }
-    return { n, wins, reasons, t1: avg('t1'), t2: avg('t2'), used: (avg('t1') + avg('t2')) / rows[0].total, m1: avg('m1'), m2: avg('m2'), fills: avg('fills'), filled: avg('filled'), attacks: avg('attacks'), dmg: avg('dmg'), backstabs: avg('backstabs'), flanks: avg('flanks'), pois: avg('pois'), passes: avg('passes'), turns: avg('turns'), cardsPerTurn: avg('cards') / Math.max(1, avg('turns')) };
+    return { n, wins, reasons, t1: avg('t1'), t2: avg('t2'), used: (avg('t1') + avg('t2')) / rows[0].total, m1: avg('m1'), m2: avg('m2'), fills: avg('fills'), filled: avg('filled'), clashes: avg('clashes'), ranged: avg('ranged'), dmg: avg('dmg'), pois: avg('pois'), passes: avg('passes'), turns: avg('turns'), cardsPerTurn: avg('cards') / Math.max(1, avg('turns')) };
   }
   function renderTable(list) {
     const f = x => (Math.round(x * 100) / 100).toString();
-    let h = '<table><tr><th>Пара</th><th>N</th><th>Синие</th><th>Красные</th><th>Ничьи</th><th>Уничт.</th><th>Терр. С/К</th><th>Поле %</th><th>Миньоны С/К</th><th>Заливок</th><th>Гексов заливкой</th><th>Атак</th><th>Урон</th><th>POI</th><th>Пропусков</th><th>Карт/ход</th></tr>';
+    let h = '<table><tr><th>Pair</th><th>N</th><th>Blue</th><th>Red</th><th>Draws</th><th>Destroyed</th><th>Map</th><th>Terr. B/R</th><th>Map %</th><th>Minions B/R</th><th>Fills</th><th>Filled hexes</th><th>Clashes</th><th>Ranged</th><th>Damage</th><th>Outposts</th><th>Passes</th><th>Cards/turn</th></tr>';
     for (const { label, s } of list) {
-      h += `<tr><td>${label}</td><td>${s.n}</td><td>${s.wins[1]}</td><td>${s.wins[2]}</td><td>${s.wins[0]}</td><td>${s.reasons.elimination || 0}</td><td>${f(s.t1)} / ${f(s.t2)}</td><td>${Math.round(s.used * 100)}</td><td>${f(s.m1)} / ${f(s.m2)}</td><td>${f(s.fills)}</td><td>${f(s.filled)}</td><td>${f(s.attacks)}</td><td>${f(s.dmg)}</td><td>${f(s.pois)}</td><td>${f(s.passes)}</td><td>${f(s.cardsPerTurn)}</td></tr>`;
+      h += `<tr><td>${label}</td><td>${s.n}</td><td>${s.wins[1]}</td><td>${s.wins[2]}</td><td>${s.wins[0]}</td><td>${s.reasons.elimination || 0}</td><td>${s.reasons.domination || 0}</td><td>${f(s.t1)} / ${f(s.t2)}</td><td>${Math.round(s.used * 100)}</td><td>${f(s.m1)} / ${f(s.m2)}</td><td>${f(s.fills)}</td><td>${f(s.filled)}</td><td>${f(s.clashes)}</td><td>${f(s.ranged)}</td><td>${f(s.dmg)}</td><td>${f(s.pois)}</td><td>${f(s.passes)}</td><td>${f(s.cardsPerTurn)}</td></tr>`;
     }
     $('#result').innerHTML = h + '</table>';
   }
-  function params() { return { n: +$('#n').value, rounds: +$('#rounds').value, seed: +$('#seed').value, diag: +$('#attacks').value }; }
+  function params() { return { n: +$('#n').value, rounds: +$('#rounds').value, seed: +$('#seed').value, attacks: +$('#attacks').value }; }
   function batch(pairs) {
-    const { n, rounds, seed, diag } = params(), list = [], t0 = performance.now();
-    $('#out').textContent = 'Считаю…';
+    const { n, rounds, seed, attacks } = params(), list = [], t0 = performance.now();
+    $('#out').textContent = 'Running…';
     setTimeout(() => {
       for (const [a, b] of pairs) {
-        const rows = []; for (let i = 0; i < n; i++) rows.push(runOne(a, b, seed + i, rounds, diag));
-        list.push({ label: `${P[a].name} vs ${P[b].name}`, s: summarize(rows) });
+        const rows = []; for (let i = 0; i < n; i++) rows.push(runOne(a, b, seed + i, rounds, attacks));
+        list.push({ label: `${P[a].title} vs ${P[b].title}`, s: summarize(rows) });
       }
       renderTable(list);
-      $('#out').textContent = `${pairs.length * n} партий за ${Math.round(performance.now() - t0)} мс · раундов ${rounds} · seed ${seed}… · атак за ход: ${diag || 'без лимита'}`;
+      $('#out').textContent = `${pairs.length * n} matches in ${Math.round(performance.now() - t0)} ms · ${rounds} rounds · seeds from ${seed} · attacks per turn: ${attacks || 'unlimited'}`;
     }, 20);
   }
   $('#run').addEventListener('click', () => batch([[$('#a').value, $('#b').value]]));

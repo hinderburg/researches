@@ -95,12 +95,12 @@ window.HB = window.HB || {};
             const cells = ev.cells;
             cells.forEach((c, i) => this.schedule(t + 40 * i, () => this.flashCell(c.col, c.row, '#ffffff', 600)));
             const mid = cells[Math.floor(cells.length / 2)];
-            this.schedule(t + 40 * cells.length, () => this.addText(mid.col, mid.row, `+${ev.count} территории`, light, { big: true, dur: 1500 }));
+            this.schedule(t + 40 * cells.length, () => this.addText(mid.col, mid.row, `+${ev.count} territory`, light, { big: true, dur: 1500 }));
             t += 40 * cells.length + 200;
             break;
           }
           case 'poi':
-            this.schedule(t, () => { this.flashCell(ev.col, ev.row, '#ffe27a', 800); this.addText(ev.col, ev.row, 'Точка захвачена!', '#ffe27a', { dy: -this.size * 1.9, dur: 1600, big: true }); });
+            this.schedule(t, () => { this.flashCell(ev.col, ev.row, '#ffe27a', 800); this.addText(ev.col, ev.row, 'Outpost captured!', '#ffe27a', { dy: -this.size * 1.9, dur: 1600, big: true }); });
             t += 250;
             break;
           case 'attack': { // one-sided ranged hit: a bolt flies, then the target shakes
@@ -142,7 +142,7 @@ window.HB = window.HB || {};
             t += 50 * ev.cells.length + 200;
             break;
           case 'explosion':
-            this.schedule(t, () => { this.flashCell(ev.col, ev.row, '#ffb347', 700); if (ev.dmg) { this.shake[ev.defender] = performance.now(); this.addText(ev.col, ev.row, `−${ev.dmg}`, '#ff6b6b', { big: true }); } else this.addText(ev.col, ev.row, 'ЗАБЛОКИРОВАНО', '#ffb347'); });
+            this.schedule(t, () => { this.flashCell(ev.col, ev.row, '#ffb347', 700); if (ev.dmg) { this.shake[ev.defender] = performance.now(); this.addText(ev.col, ev.row, `−${ev.dmg}`, '#ff6b6b', { big: true }); } else this.addText(ev.col, ev.row, 'BLOCKED', '#ffb347'); });
             t += 400;
             break;
           case 'reinforce':
@@ -318,12 +318,12 @@ window.HB = window.HB || {};
       ctx.fillStyle = owner ? teamCol : '#8a6b3a';
       ctx.beginPath(); ctx.roundRect(cx, cy, cw, ch * 0.2, [S * 0.12, S * 0.12, 0, 0]); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.round(S * 0.22)}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(def.ru, x, cy + ch * 0.1 + 1, cw * 0.92);
+      ctx.fillText(def.title, x, cy + ch * 0.1 + 1, cw * 0.92);
       // reward icon + name
       const img = HB.icons.image(def.card, '#3a2a12'), isz = cw * 0.66;
       if (img.complete && img.naturalWidth) ctx.drawImage(img, x - isz / 2, cy + ch * 0.24, isz, isz);
       ctx.fillStyle = '#3a2a12'; ctx.font = `bold ${Math.round(S * 0.2)}px system-ui, sans-serif`;
-      ctx.fillText(CARDS[def.card].ru, x, cy + ch * 0.88, cw * 0.92);
+      ctx.fillText(CARDS[def.card].title, x, cy + ch * 0.88, cw * 0.92);
     }
     warbandPos(p, now) {
       const sl = this.slide[p.id], end = this.cellXY(p.warband.col, p.warband.row);

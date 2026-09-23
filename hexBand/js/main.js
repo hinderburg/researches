@@ -1,12 +1,12 @@
-// UI glue: setup screen, hand with piles (D-037), drag-to-play with a glowing cursor FX (D-028, D-036), bot turns,
-// hotseat hand-over, results.
+// UI glue: main menu (D-051), settings screen, hand with piles (D-037), drag-to-play (D-028/D-036) and tap-to-play
+// (D-046/D-048), bot turns, hotseat hand-over, results. All player-facing text is English (D-052).
 window.HB = window.HB || {};
 (function () {
   const R = HB.rules, hex = HB.hex, CFG = HB.CONFIG, CARDS = HB.cards.CARDS, POIS = HB.cards.POIS, PRESETS = HB.cards.PRESETS;
   const $ = sel => document.querySelector(sel);
   const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
   const KIND_CLASS = { move: 'k-move', blink: 'k-move', reinforce: 'k-reinf', buff_next: 'k-combat', explosive: 'k-combat', volley: 'k-combat', catapult: 'k-combat', formation: 'k-def', flank_claim: 'k-terr', cordon: 'k-terr', banner: 'k-terr', prayer: 'k-util', scout_draw: 'k-util' };
-  const cardHTML = (defId, poi) => { const d = CARDS[defId]; return `<div class="card-icon">${HB.icons.svg(defId)}</div><div class="card-name">${d.ru}</div>${poi ? '<div class="card-poi">POI</div>' : ''}`; };
+  const cardHTML = (defId, poi) => { const d = CARDS[defId]; return `<div class="card-icon">${HB.icons.svg(defId)}</div><div class="card-name">${d.title}</div>${poi ? '<div class="card-poi">POI</div>' : ''}`; };
   const cardClass = (defId, poi) => 'card ' + (KIND_CLASS[CARDS[defId].kind] || '') + (poi ? ' poi' : '');
   const rectOf = e => e.getBoundingClientRect();
 
@@ -24,7 +24,7 @@ window.HB = window.HB || {};
       if (this.drag) this.endDrag({}, false);
     },
 
-    // ------------------------------------------------------------ setup screen
+    // ------------------------------------------------------------ settings screen
     initSetup() {
       const S = this.setup;
       S.p[1] = { cards: PRESETS.balanced.cards.slice(), pois: PRESETS.balanced.pois.slice() };
@@ -45,23 +45,20 @@ window.HB = window.HB || {};
       $('#btn-help').addEventListener('click', () => this.showHelp());
       $('#btn-help-game').addEventListener('click', () => this.showHelp());
       $('#btn-intro').addEventListener('click', () => this.showIntro(true));
-      this.renderSetup(); // D-051: the "Основы" popup is no longer shown automatically; it lives behind a button
+      this.renderSetup(); // D-051: the Basics popup is no longer shown automatically; it lives behind a button
     },
     showIntro(manual) {
       const ic = id => `<span class="intro-ic">${HB.icons.svg(id)}</span>`;
+      const tap = this.setup.control === 'tap';
       const ov = this.overlay(`<div class="intro">
-        <h2>HEXBand — как это работает</h2>
-        <div class="intro-item">${ic('hook')}<div><b>Ходите картами.</b> ${this.setup.control === 'tap' ? 'Тапните карту — на поле подсветятся все места, куда она может привести отряд; тапните нужный гекс, и отряд пойдёт сразу.' : 'Перетащите карту на поле: отпустите её там, куда должен пойти отряд, и он пойдёт сразу.'} Карта задаёт форму маршрута, направление выбираете вы. За ход можно сыграть сколько угодно карт, минимум одну; затем «Закончить ход». Способ управления (перетаскивание / кнопки) меняется в меню.</div></div>
-        <div class="intro-item">${ic('ring')}<div><b>Захватывайте территорию.</b> Каждый пройденный гекс становится вашим. Замкните область своими гексами (или своими гексами и краем поля) — всё внутри тоже станет вашим, если там нет противника. Очки = ваши гексы.</div></div>
-        <div class="intro-item">${ic('recruitment')}<div><b>Берите форпосты.</b> Пройдите через форпост или обведите его контуром. Карта, парящая над ним, сразу прилетает вам в руку — её эффект срабатывает мгновенно. Потеряете форпост — потеряете и карту.</div></div>
-        <div class="intro-item">${ic('battle_cry')}<div><b>Бой.</b> Чтобы атаковать, доведите маршрут карты до гекса противника (он подсветится красным) — игра сразу покажет прогноз: сколько потеряет каждый отряд и кто отступит. Больше миньонов — сильнее удар, но карты позволяют выиграть обмен и меньшей армией. Не больше одной атаки за ход.</div></div>
-        <div class="intro-item">${ic('claim')}<div><b>Победа.</b> Уничтожили отряд противника или захватили всё поле — победа сразу. Иначе после ${this.setup.rounds} раундов побеждает тот, у кого больше захваченной территории.</div></div>
-        <label class="radio intro-skip"><input type="checkbox" id="intro-skip"> Больше не показывать</label>
-        <button class="btn primary" id="btn-intro-close">${manual ? 'Понятно' : 'К настройке матча'}</button></div>`);
-      $('#btn-intro-close').addEventListener('click', () => {
-        ov.hidden = true;
-        if ($('#intro-skip').checked) { try { localStorage.setItem('hexband.introSeen', '1'); } catch (e) {} }
-      });
+        <h2>HEXBand — how it works</h2>
+        <div class="intro-item">${ic('hook')}<div><b>Move with cards.</b> ${tap ? 'Tap a card — every hex it can take your warband to lights up; tap the one you want and the warband moves at once.' : 'Drag a card onto the board and release it where the warband should go; it moves at once.'} The card sets the shape of the route, you choose the direction. Play as many cards per turn as you like, at least one, then press End Turn. The control scheme (drag / tap) can be changed in Settings.</div></div>
+        <div class="intro-item">${ic('ring')}<div><b>Claim territory.</b> Every hex you walk through becomes yours. Enclose an area with your hexes (or with your hexes and the map edge) and everything inside becomes yours too, as long as the enemy is not in it. Score = your hexes.</div></div>
+        <div class="intro-item">${ic('recruitment')}<div><b>Take outposts.</b> Walk through an outpost or enclose it. The card floating above it flies straight into your hand and works instantly. Lose the outpost and you lose the card.</div></div>
+        <div class="intro-item">${ic('battle_cry')}<div><b>Fight.</b> To attack, run a card's route onto the enemy's hex (it turns red) — the game shows a forecast: how much each warband loses and who falls back. More minions hit harder, but cards let a smaller army win the exchange. One attack per turn.</div></div>
+        <div class="intro-item">${ic('claim')}<div><b>Win.</b> Destroy the enemy warband or capture the whole map — instant win. Otherwise, after ${this.setup.rounds} rounds the player with more territory wins.</div></div>
+        <button class="btn primary" id="btn-intro-close">${manual ? 'Got it' : 'To settings'}</button></div>`);
+      $('#btn-intro-close').addEventListener('click', () => { ov.hidden = true; });
     },
     renderSetup() {
       const S = this.setup;
@@ -73,19 +70,19 @@ window.HB = window.HB || {};
     renderBuilder(pid) {
       const S = this.setup, sel = S.p[pid], root = $('#builder-' + pid);
       root.innerHTML = '';
-      root.appendChild(el('h3', null, pid === 1 ? 'Синие (вы)' : 'Красные'));
+      root.appendChild(el('h3', null, pid === 1 ? 'Blue (you)' : 'Red'));
       const presets = el('div', 'presets');
       for (const key in PRESETS) {
-        const b = el('button', 'chip', PRESETS[key].ru);
+        const b = el('button', 'chip', PRESETS[key].title);
         b.addEventListener('click', () => { sel.cards = PRESETS[key].cards.slice(); sel.pois = PRESETS[key].pois.slice(); this.renderBuilder(pid); this.validateSetup(); });
         presets.appendChild(b);
       }
       root.appendChild(presets);
-      root.appendChild(el('div', 'builder-label', `Колода: <b>${sel.cards.length}</b>/${CFG.DECK_SIZE}`));
+      root.appendChild(el('div', 'builder-label', `Deck: <b>${sel.cards.length}</b>/${CFG.DECK_SIZE}`));
       const grid = el('div', 'pick-grid');
       for (const id of HB.cards.DECK_POOL) {
         const d = CARDS[id], on = sel.cards.includes(id);
-        const c = el('div', 'pick' + (on ? ' on' : '') + (HB.cards.ADVANCED_POOL.includes(id) ? ' adv' : ''), `<div class="pick-icon">${HB.icons.svg(id)}</div><div class="pick-name">${d.ru}</div><div class="pick-type">${d.name} · ${d.type}</div><div class="pick-text">${d.text}</div>`);
+        const c = el('div', 'pick' + (on ? ' on' : '') + (HB.cards.ADVANCED_POOL.includes(id) ? ' adv' : ''), `<div class="pick-icon">${HB.icons.svg(id)}</div><div class="pick-name">${d.title}</div><div class="pick-type">${d.type}</div><div class="pick-text">${d.text}</div>`);
         c.addEventListener('click', () => {
           if (on) sel.cards = sel.cards.filter(x => x !== id); else if (sel.cards.length < CFG.DECK_SIZE) sel.cards.push(id); else return;
           this.renderBuilder(pid); this.validateSetup();
@@ -93,11 +90,11 @@ window.HB = window.HB || {};
         grid.appendChild(c);
       }
       root.appendChild(grid);
-      root.appendChild(el('div', 'builder-label', `Точки интереса (слева направо: у себя, посередине, у центра): <b>${sel.pois.length}</b>/${CFG.POI_PICKS}`));
+      root.appendChild(el('div', 'builder-label', `Outposts (left to right: near you, middle, near the centre): <b>${sel.pois.length}</b>/${CFG.POI_PICKS}`));
       const pg = el('div', 'pick-grid pois');
       for (const id of HB.cards.POI_POOL) {
         const d = POIS[id], on = sel.pois.includes(id), idx = sel.pois.indexOf(id);
-        const c = el('div', 'pick' + (on ? ' on' : ''), `<div class="pick-icon">${HB.icons.svg(d.card)}</div><div class="pick-name">${on ? (idx + 1) + '. ' : ''}${d.ru}</div><div class="pick-type">${d.name} → ${CARDS[d.card].ru}</div><div class="pick-text">${d.text}</div>`);
+        const c = el('div', 'pick' + (on ? ' on' : ''), `<div class="pick-icon">${HB.icons.svg(d.card)}</div><div class="pick-name">${on ? (idx + 1) + '. ' : ''}${d.title}</div><div class="pick-type">→ ${CARDS[d.card].title}</div><div class="pick-text">${d.text}</div>`);
         c.addEventListener('click', () => {
           if (on) sel.pois = sel.pois.filter(x => x !== id); else if (sel.pois.length < CFG.POI_PICKS) sel.pois.push(id); else return;
           this.renderBuilder(pid); this.validateSetup();
@@ -111,14 +108,14 @@ window.HB = window.HB || {};
       const okP = p => p.cards.length === CFG.DECK_SIZE && p.pois.length === CFG.POI_PICKS;
       const ok = okP(S.p[1]) && (S.mode === 'bot' || okP(S.p[2]));
       $('#btn-start').disabled = !ok;
-      $('#setup-hint').textContent = ok ? '' : `Нужно выбрать ровно ${CFG.DECK_SIZE} карт и ${CFG.POI_PICKS} точки интереса для каждого игрока.`;
+      $('#setup-hint').textContent = ok ? '' : `Pick exactly ${CFG.DECK_SIZE} cards and ${CFG.POI_PICKS} outposts for each player.`;
     },
     startFromSetup() {
       const S = this.setup;
-      const p2 = S.mode === 'bot' ? { deck: PRESETS[S.botPreset].cards.slice(), pois: PRESETS[S.botPreset].pois.slice(), bot: true, name: 'Красные (бот)' }
-        : { deck: S.p[2].cards, pois: S.p[2].pois, bot: false, name: 'Красные' };
+      const p2 = S.mode === 'bot' ? { deck: PRESETS[S.botPreset].cards.slice(), pois: PRESETS[S.botPreset].pois.slice(), bot: true, name: 'Red (bot)' }
+        : { deck: S.p[2].cards, pois: S.p[2].pois, bot: false, name: 'Red' };
       const seed = S.seed.trim() ? (parseInt(S.seed, 10) || hashStr(S.seed)) : (Math.random() * 0xffffffff) >>> 0;
-      this.opts = { seed, roundLimit: S.rounds, attackLimit: S.attacks != null ? S.attacks : CFG.ATTACKS_PER_TURN, players: { 1: { deck: S.p[1].cards, pois: S.p[1].pois, bot: false, name: 'Синие' }, 2: p2 } };
+      this.opts = { seed, roundLimit: S.rounds, attackLimit: S.attacks != null ? S.attacks : CFG.ATTACKS_PER_TURN, players: { 1: { deck: S.p[1].cards, pois: S.p[1].pois, bot: false, name: 'Blue' }, 2: p2 } };
       this.startGame(this.opts);
     },
 
@@ -152,7 +149,7 @@ window.HB = window.HB || {};
       $('#btn-play').addEventListener('click', () => this.startFromSetup());
       $('#btn-settings').addEventListener('click', () => this.showSetup());
       $('#btn-back').addEventListener('click', () => this.showMenu());
-      $('#btn-menu-intro').addEventListener('click', () => this.showIntro(true));
+      $('#btn-menu-intro').addEventListener('click', e => { e.preventDefault(); this.showIntro(true); });
       this.menuPics = [];
       this.buildMenuPics();
       window.addEventListener('resize', () => this.layoutMenu());
@@ -242,7 +239,7 @@ window.HB = window.HB || {};
         $(`#hud-${pid} .hud-poi`).textContent = sc[pid].pois;
         $(`#hud-${pid}`).classList.toggle('active', s.current === pid && s.phase === 'play');
       }
-      $('#hud-round').textContent = `Раунд ${R.round(s)} / ${s.roundLimit}`;
+      $('#hud-round').textContent = `Round ${R.round(s)} / ${s.roundLimit}`;
       // D-044: against the bot the hand, deck and discard always belong to the human player
       const p = this.handPlayer(), mine = s.current === p.id;
       const busy = this.busy || !mine || s.phase !== 'play' || this.handoverPending;
@@ -260,7 +257,7 @@ window.HB = window.HB || {};
           if (this.sel && this.sel.uid === card.uid) c.classList.add('selected');
           slot.appendChild(c);
         } else if (i === CFG.HAND_SIZE - 1 && s.playedThisTurn >= 1 && !busy) {
-          const b = el('button', 'btn end-turn', 'Закончить<br>ход');
+          const b = el('button', 'btn end-turn', 'End<br>turn');
           b.addEventListener('click', () => this.endTurn());
           slot.appendChild(b);
         }
@@ -272,23 +269,16 @@ window.HB = window.HB || {};
       $('#pile-discard').classList.toggle('empty', p.discard.length === 0);
       const last = p.discard[p.discard.length - 1];
       $('#pile-discard').innerHTML = last ? `<div class="pile-face">${HB.icons.svg(last.def)}</div>` : '';
-      $('#status-line').textContent = busy ? (!mine && s.phase === 'play' ? `Ход: ${this.current().name}…` : '') : this.statusText(p);
+      $('#status-line').textContent = busy ? (!mine && s.phase === 'play' ? `${this.current().name}'s turn…` : '') : this.statusText(p);
       $('#btn-pass').hidden = busy || s.playedThisTurn > 0 || playable.some(x => x);
       // a full hand (outpost card arrived) leaves no slot for the end-turn button — show a fallback under the hand
       $('#btn-end-fb').hidden = busy || s.playedThisTurn < 1 || p.hand.length < CFG.HAND_SIZE;
     },
     statusText(p) {
       const s = this.state, st = p.status, out = [];
-      if (st.attackBonus) out.push(`Боевой клич +${st.attackBonus}`);
-      if (R.active(s, st.counterUntil)) out.push('Ответный удар');
-      if (R.active(s, st.blessingUntil)) out.push('Благословение +15%');
-      if (R.active(s, st.formationUntil)) out.push('Плотный строй');
-      if (R.active(s, st.forcedUntil)) out.push('Форс-марш −15% защиты');
-      if (R.active(s, st.overwatchUntil)) out.push('Дозор');
-      if (st.shieldsOnce) out.push('Крепкие щиты');
-      if (st.splitSteps) out.push(`Широкий марш ×${st.splitSteps}`);
-      if (st.claimSteps) out.push(`Знамя ×${st.claimSteps}`);
-      return out.length ? 'Эффекты: ' + out.join(', ') : '';
+      if (st.attackBonus) out.push(`Battle Cry +${st.attackBonus}`);
+      if (R.active(s, st.formationUntil)) out.push('Formation −2');
+      return out.length ? 'Effects: ' + out.join(', ') : '';
     },
     // flying card between two screen rects (played card → discard, deck → slot, discard → deck)
     fly(fromRect, toRect, html, cls, dur) {
@@ -354,8 +344,8 @@ window.HB = window.HB || {};
     showDesc(title, text, needsTarget) {
       const tap = this.setup.control === 'tap';
       const hint = tap
-        ? `<span class="desc-cancel-ic">✕</span><span>${needsTarget ? 'Тапните по подсвеченному гексу на поле, чтобы сыграть' : 'Тапните по полю, чтобы сыграть'}. Передумали? Тапните по этой панели — карта останется в руке.</span>`
-        : `<span class="desc-cancel-ic">↩</span><span>Передумали? Отпустите карту здесь — она вернётся в руку</span>`;
+        ? `<span class="desc-cancel-ic">✕</span><span>${needsTarget ? 'Tap a highlighted hex on the board to play' : 'Tap the board to play'}. Changed your mind? Tap this panel — the card stays in your hand.</span>`
+        : `<span class="desc-cancel-ic">↩</span><span>Changed your mind? Release the card here — it returns to your hand</span>`;
       $('#card-desc').innerHTML = `<div class="desc-body"><b>${title}</b><span>${text}</span><div class="desc-forecast" hidden></div></div><div class="desc-cancel">${hint}</div>`;
       $('#card-desc').hidden = false;
     },
@@ -369,9 +359,9 @@ window.HB = window.HB || {};
       const fcEl = $('#card-desc .desc-forecast');
       if (!fcEl) return;
       if (fc) {
-        const outcome = { defenderRetreats: 'противник отступит, вы займёте его гекс', attackerRetreats: fc.aAfter === fc.dAfter ? 'равные силы — вы отступите' : 'вы отступите', ranged: 'без ответа',
-          eliminated: fc.dAfter <= 0 && fc.aAfter <= 0 ? 'оба отряда погибнут — ничья' : fc.dAfter <= 0 ? 'отряд противника будет уничтожен' : 'ваш отряд будет уничтожен' }[fc.result];
-        fcEl.innerHTML = `<b>Прогноз боя:</b> вы −${fc.dmgToAtt} (${p.warband.minions} → ${fc.aAfter}), противник −${fc.dmgToDef} (${enemy.warband.minions} → ${fc.dAfter}) — ${outcome}`;
+        const outcome = { defenderRetreats: 'the enemy falls back, you take its hex', attackerRetreats: fc.aAfter === fc.dAfter ? 'equal numbers — you fall back' : 'you fall back', ranged: 'no retaliation',
+          eliminated: fc.dAfter <= 0 && fc.aAfter <= 0 ? 'both warbands die — a draw' : fc.dAfter <= 0 ? 'the enemy warband is destroyed' : 'your warband is destroyed' }[fc.result];
+        fcEl.innerHTML = `<b>Battle forecast:</b> you −${fc.dmgToAtt} (${p.warband.minions} → ${fc.aAfter}), enemy −${fc.dmgToDef} (${enemy.warband.minions} → ${fc.dAfter}) — ${outcome}`;
         fcEl.hidden = false;
       } else fcEl.hidden = true;
     },
@@ -380,9 +370,8 @@ window.HB = window.HB || {};
       if (!s || this.busy || s.current !== p.id || s.phase !== 'play' || this.handoverPending) return;
       const card = p.hand.find(c => c.uid === uid); if (!card) return;
       const play = R.getPlay(s, card), d = CARDS[card.def];
-      this.showDesc(d.ru, d.text);
+      this.showDesc(d.title, d.text);
       if (!play.ok) { cardEl.classList.add('shake'); setTimeout(() => { cardEl.classList.remove('shake'); $('#card-desc').hidden = true; }, 700); return; }
-      if (d.kind === 'scout') play.options = R.scoutOptions(s, p);
       const fx = $('#drag-fx'); fx.hidden = false; fx.className = 'p' + p.id;
       cardEl.classList.add('lifted');
       this.drag = { uid, card, def: d, play, cardEl, pointerId: e.pointerId, choice: null, over: false, x: e.clientX, y: e.clientY };
@@ -421,14 +410,12 @@ window.HB = window.HB || {};
         const wx = rd.warbandScreenX(p.id), side = e.clientX < wx ? -1 : 1;
         const opt = play.options.find(o => o.side === side) || play.options[0];
         dg.choice = opt; dg.valid = true;
-        this.showDesc(`${dg.def.ru}: ${opt.label}`, dg.def.text);
+        this.showDesc(`${dg.def.title}: ${opt.label}`, dg.def.text);
       } else if (kind === 'explosive') {
         const cell = dg.over ? rd.cellFromPointer(e.clientX, e.clientY) : null;
         const opt = cell && play.options.find(o => o.cell.col === cell.col && o.cell.row === cell.row);
         dg.choice = opt || null; dg.valid = !!opt;
         for (const o of play.options) hl.push({ col: o.cell.col, row: o.cell.row, kind: 'target', strong: o === opt });
-      } else if (kind === 'scout') {
-        dg.valid = true;
       } else {
         dg.valid = true;
         if (play.path) play.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: i + 1, strong: dg.over, attack: !!c.attack }));
@@ -467,7 +454,7 @@ window.HB = window.HB || {};
       const play = R.getPlay(s, card), d = CARDS[card.def];
       if (!play.ok) { cardEl.classList.add('shake'); setTimeout(() => cardEl.classList.remove('shake'), 400); return; }
       this.sel = { uid, card, def: d, play, choice: null, valid: false };
-      this.showDesc(d.ru, d.text, this.needsTarget(play));
+      this.showDesc(d.title, d.text, this.needsTarget(play));
       this.refresh();
       this.previewAt(null, null);
     },
@@ -547,11 +534,11 @@ window.HB = window.HB || {};
       const cell = this.renderer.cellFromPointer(e.clientX, e.clientY);
       if (!cell) return;
       const c = s.cells[hex.key(cell.col, cell.row)];
-      const owner = c.owner ? s.players[c.owner].name : 'нейтральный';
-      let txt = `Гекс ${cell.col},${cell.row}: ${owner}${c.bonus ? ', +' + c.bonus + ' бонус' : ''}`;
-      if (c.poi >= 0) { const poi = s.pois[c.poi], d = POIS[poi.type]; txt += ` · ${d.ru} → «${CARDS[d.card].ru}»`; }
+      const owner = c.owner ? s.players[c.owner].name : 'neutral';
+      let txt = `Hex ${cell.col},${cell.row}: ${owner}${c.bonus ? ', +' + c.bonus + ' bonus' : ''}`;
+      if (c.poi >= 0) { const poi = s.pois[c.poi], d = POIS[poi.type]; txt += ` · ${d.title} → ${CARDS[d.card].title}`; }
       const occ = R.occupant(s, cell);
-      if (occ) { const w = s.players[occ].warband; txt += ` · отряд ${s.players[occ].name}, ${w.minions} миньонов`; }
+      if (occ) { const w = s.players[occ].warband; txt += ` · ${s.players[occ].name} warband, ${w.minions} minions`; }
       $('#status-line').textContent = txt;
     },
 
@@ -559,7 +546,7 @@ window.HB = window.HB || {};
     overlay(html) { const ov = $('#overlay'); ov.hidden = false; ov.innerHTML = `<div class="panel">${html}</div>`; return ov; },
     showPassPicker() {
       const s = this.state, p = this.current(); if (s.playedThisTurn > 0 || this.busy) return;
-      const ov = this.overlay(`<h2>Нет доступных ходов</h2><p>Выберите карту, которая уйдёт в сброс — ход перейдёт сопернику.</p><div class="pick-row" id="pass-row"></div><button class="btn ghost" id="pass-cancel">Отмена</button>`);
+      const ov = this.overlay(`<h2>No playable cards</h2><p>Pick a card to discard — the turn passes to your opponent.</p><div class="pick-row" id="pass-row"></div><button class="btn ghost" id="pass-cancel">Cancel</button>`);
       const row = $('#pass-row');
       for (const card of p.hand) {
         const c = el('div', cardClass(card.def, card.poi >= 0), cardHTML(card.def, card.poi >= 0));
@@ -570,33 +557,34 @@ window.HB = window.HB || {};
     },
     showHandover(p) {
       this.handoverPending = true; this.refresh();
-      const ov = this.overlay(`<h2>Ход: ${p.name}</h2><p>Передайте устройство.</p><button class="btn primary" id="btn-handover">Продолжить</button>`);
+      const ov = this.overlay(`<h2>${p.name}'s turn</h2><p>Pass the device.</p><button class="btn primary" id="btn-handover">Continue</button>`);
       $('#btn-handover').addEventListener('click', () => { ov.hidden = true; this.handoverPending = false; this.refresh(); });
     },
     showGameOver() {
       const s = this.state, sc = s.scores;
-      const title = s.winner ? `Победа: ${s.players[s.winner].name}` : 'Ничья';
-      const reason = { elimination: 'Отряд противника уничтожен', domination: 'Всё поле захвачено', territory: 'Больше территории', 'tiebreak:pois': 'Тай-брейк: больше точек интереса', 'tiebreak:minions': 'Тай-брейк: больше миньонов', 'tiebreak:lastRound': 'Тай-брейк: захват в последнем раунде', draw: 'Полное равенство' }[s.endReason] || s.endReason;
+      const title = s.winner ? `${s.players[s.winner].name} win` : 'Draw';
+      const reason = { elimination: 'Enemy warband destroyed', domination: 'The whole map captured', territory: 'More territory', 'tiebreak:pois': 'Tie-break: more outposts', 'tiebreak:minions': 'Tie-break: more minions', 'tiebreak:lastRound': 'Tie-break: more captured in the last round', draw: 'A perfect tie' }[s.endReason] || s.endReason;
       const row = (label, k) => `<tr><td>${label}</td><td class="c1">${sc[1][k]}</td><td class="c2">${sc[2][k]}</td></tr>`;
       this.overlay(`<h2 class="${s.winner ? 'w' + s.winner : ''}">${title}</h2><p>${reason}</p>
         <table class="score"><tr><th></th><th class="c1">${s.players[1].name}</th><th class="c2">${s.players[2].name}</th></tr>
-        ${row('Очки территории', 'territory')}${row('Гексов', 'cells')}${row('Точек интереса', 'pois')}${row('Миньонов', 'minions')}</table>
-        <p class="muted">Seed ${s.seed} · ${s.roundLimit} раундов</p>
-        <div class="row"><button class="btn primary" id="btn-rematch">Реванш</button><button class="btn ghost" id="btn-menu">В меню</button></div>`);
+        ${row('Territory points', 'territory')}${row('Hexes', 'cells')}${row('Outposts', 'pois')}${row('Minions', 'minions')}</table>
+        <p class="muted">Seed ${s.seed} · ${s.roundLimit} rounds</p>
+        <div class="row"><button class="btn primary" id="btn-rematch">Rematch</button><button class="btn ghost" id="btn-menu">Main menu</button></div>`);
       $('#btn-rematch').addEventListener('click', () => { this.opts.seed = (Math.random() * 0xffffffff) >>> 0; this.startGame(this.opts); });
       $('#btn-menu').addEventListener('click', () => this.toSetup());
     },
     showHelp() {
-      const ov = this.overlay(`<div class="help"><h2>Как играть</h2>
-        <p><b>Ход.</b> В начале хода рука добирается до 4 карт из колоды (если колода пуста, сброс перемешивается в колоду). ${this.setup.control === 'tap'
-          ? 'Чтобы сыграть карту, тапните её: над рукой появится панель с описанием, а на поле подсветятся все цели. Тапните нужный гекс — отряд выполнит действие сразу, а карта уйдёт в сброс. Карту без цели (Сбор, Боевой клич…) играет тап по полю или повторный тап по карте. Передумали — тапните по панели с описанием, карта останется в руке.'
-          : 'Чтобы сыграть карту, перетащите её на поле: маршрут показывается заранее, отряд выполняет действие сразу после того, как вы отпустите карту, и она уходит в сброс. Отпустите над рукой — карта вернётся на место.'} За ход можно сыграть сколько угодно карт, минимум одну; после первой карты в правом слоте появляется «Закончить ход». Способ управления переключается в меню: «Управление».</p>
-        <p><b>Направления.</b> Карта движения задаёт только форму и длину маршрута (прямая, крюк, зигзаг, полукольцо). Куда идти — решаете вы: подсвечены все возможные концы маршрута, выбирается тот, что ближе к точке, где вы отпустили карту или тапнули. Для «Широкого марша» сторона — слева или справа от отряда.</p>
-        <p><b>Территория.</b> Пройденные гексы окрашиваются в ваш цвет. Если область ограничена только вашими гексами — или вашими гексами и краем поля — и в ней нет гексов и отряда противника, она целиком становится вашей. Область, замкнутая полностью (без выхода к краю), заливается даже вместе с гексами противника внутри. <b>Форпосты</b> захватываются проходом через гекс или замыканием контура; карта, парящая над форпостом, сразу прилетает в руку (если рука полна — ложится наверх колоды). Все карты форпостов срабатывают мгновенно: Вербовка +6, Оцепление красит гексы вокруг отряда, Взрывной заряд бьёт соседний гекс, Молитва возвращает верхнюю карту сброса, Катапульта бьёт на 3 гекса, Разведка добирает руку, Знамя даёт +1 очко вашим гексам вокруг отряда, Прыжок — через гекс. Потеря форпоста забирает карту.</p>
-        <p><b>Бой.</b> Отряды не дерутся сами по себе: чтобы атаковать, доведите маршрут карты движения до гекса противника — этот шаг подсвечивается красным с мечом, и движение на нём заканчивается. Пока вы целитесь, у обоих отрядов показывается прогноз потерь, а в этой панели — кто отступит. Ваш отряд набегает на гекс противника, оба бьют одновременно. Сила удара растёт с числом миньонов, но медленнее, чем оно само (24 миньона — около 5 урона, 12 — около 3, 6 — около 2); «Боевой клич» даёт +2 к следующему удару, «Плотный строй» уменьшает каждый входящий удар на 2. После обмена отряд, в котором осталось меньше бойцов, отступает на гекс (атакующий — откуда пришёл, защитник — прочь от атакующего, и тогда атакующий занимает его гекс); при равенстве отступает атакующий. Не больше одной атаки за ход. «Залп» и «Катапульта» бьют на расстоянии без ответа.</p>
-        <p><b>Победа</b>: уничтожить отряд противника или иметь больше очков территории после лимита раундов. Тай-брейк: точки → миньоны → захват в последнем раунде.</p>
-        <p class="muted">Пиктограммы: стрелки — движение (шевроны = число шагов), фигурки — миньоны, меч — атака, щит — защита, глаз — дозор, флаг — очки территории.</p>
-        <button class="btn primary" id="btn-help-close">Понятно</button></div>`);
+      const tap = this.setup.control === 'tap';
+      const ov = this.overlay(`<div class="help"><h2>How to play</h2>
+        <p><b>Turn.</b> At the start of your turn you draw up to 4 cards (when the deck runs out, the discard pile is shuffled into it). ${tap
+          ? 'To play a card, tap it: a description panel appears over the hand and every target lights up on the board. Tap the hex you want — the warband acts at once and the card goes to the discard pile. A card without a target (Rally, Battle Cry…) is played by tapping the board or tapping the card again. Changed your mind — tap the description panel and the card stays in your hand.'
+          : 'To play a card, drag it onto the board: the route is previewed, the warband acts as soon as you release the card, and the card goes to the discard pile. Release it over the hand and it returns.'} Play as many cards per turn as you like, at least one; after the first card an End Turn button appears in the rightmost slot. The control scheme can be switched in Settings → Controls.</p>
+        <p><b>Directions.</b> A movement card sets only the shape and length of the route (straight, hook, zigzag, half-ring). Where to go is your choice: every possible end of the route is highlighted, and the one closest to where you release or tap is used. For Wide March the side is left or right of the warband.</p>
+        <p><b>Territory.</b> Hexes you walk through take your colour. An area bounded only by your hexes — or by your hexes and the map edge — with no enemy hexes or warband inside becomes entirely yours. A fully enclosed area (no way out to the edge) is filled even with enemy hexes inside. <b>Outposts</b> are captured by walking through their hex or enclosing it; the card floating above an outpost flies straight into your hand (onto the deck if the hand is full). Every outpost card works instantly: Recruitment +6, Cordon captures the hexes around the warband, Explosive Charge hits an adjacent hex, Prayer returns the top discard card, Catapult hits at up to 3 hexes, Scouting refills the hand, Banner makes your hexes around the warband worth +1, Blink jumps over a hex. Losing an outpost takes the card away.</p>
+        <p><b>Combat.</b> Warbands never fight on their own: to attack, run a movement card's route onto the enemy's hex — that step is highlighted red with a sword and the move ends there. While you aim, both warbands show their predicted losses and this panel says who falls back. Your warband charges the enemy's hex and both strike at once. Strength grows with the number of minions, but slower than the number itself (24 minions — about 5 damage, 12 — about 3, 6 — about 2); Battle Cry adds +2 to your next strike, Formation reduces every incoming strike by 2. After the exchange the warband with fewer minions falls back one hex (the attacker to where it came from; the defender away from the attacker, and then the attacker takes its hex); on equal numbers the attacker falls back. One attack per turn. Volley and Catapult strike from a distance with no retaliation.</p>
+        <p><b>Victory</b>: destroy the enemy warband, capture the whole map, or have more territory points when the round limit is reached. Tie-breaks: outposts → minions → captured in the last round.</p>
+        <p class="muted">Pictograms: arrows — movement (chevrons = number of steps), figures — minions, sword — attack, shield — defence, flag — territory points.</p>
+        <button class="btn primary" id="btn-help-close">Got it</button></div>`);
       $('#btn-help-close').addEventListener('click', () => { ov.hidden = true; });
     },
     appendLog(lines) {

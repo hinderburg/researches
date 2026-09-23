@@ -58,7 +58,7 @@ window.HB = window.HB || {};
     for (const pid of [1, 2]) {
       const o = opts.players[pid], st = CFG.START[pid];
       s.players[pid] = {
-        id: pid, name: o.name || (pid === 1 ? 'Синие' : 'Красные'), bot: !!o.bot,
+        id: pid, name: o.name || (pid === 1 ? 'Blue' : 'Red'), bot: !!o.bot,
         deckIds: o.deck.slice(), poiIds: o.pois.slice(),
         warband: { col: st.col, row: st.row, minions: CFG.START_MINIONS },
         status: newStatus(), deck: [], hand: [], discard: [], inPlay: null, gained: 0, gainedLastRound: 0,
@@ -81,7 +81,7 @@ window.HB = window.HB || {};
     }
     s.paintBuf = []; s.events = [];
     for (const pid of [1, 2]) s.players[pid].gained = 0;
-    log(s, `Матч начат. Seed ${seed}, лимит ${s.roundLimit} раундов.`);
+    log(s, `Match started. Seed ${seed}, ${s.roundLimit} rounds.`);
     s.events.push({ type: 'turn', player: 1, round: 1 });
     return s;
   }
@@ -155,7 +155,7 @@ window.HB = window.HB || {};
       if (touchesEdge && hasEnemy) continue; // the open field: bounded by the enemy too
       for (const c of comp) if (paint(s, p, c, 'fill')) filled++;
     }
-    if (filled) log(s, `${p.name}: контур замкнут, +${filled} гексов.`);
+    if (filled) log(s, `${p.name}: enclosure closed, +${filled} hexes.`);
     return filled;
   }
   function capturePoi(s, p, poiId) {
@@ -166,15 +166,15 @@ window.HB = window.HB || {};
       const prev = s.players[poi.owner];
       removePoiCard(s, prev, poiId);
       s.events.push({ type: 'poiLost', player: prev.id, poiId });
-      log(s, `${prev.name} теряют ${def.ru} и карту «${CARDS[def.card].ru}».`);
+      log(s, `${prev.name} lose ${def.title} and its ${CARDS[def.card].title} card.`);
     }
     poi.owner = p.id;
     const card = makeCard(s, def.card, poiId);
     // D-040: the reward card goes straight into the hand when there is room, otherwise on top of the deck
     if (p.hand.length < CFG.HAND_SIZE) { p.hand.push(card); s.events.push({ type: 'poiCard', player: p.id, uid: card.uid, col: poi.col, row: poi.row }); }
     else p.deck.unshift(card);
-    s.events.push({ type: 'poi', player: p.id, poiId, cardName: CARDS[def.card].ru, col: poi.col, row: poi.row });
-    log(s, `${p.name} захватывают ${def.ru}: карта «${CARDS[def.card].ru}» ${p.hand.includes(card) ? 'в руку' : 'в колоду'}.`);
+    s.events.push({ type: 'poi', player: p.id, poiId, cardName: CARDS[def.card].title, col: poi.col, row: poi.row });
+    log(s, `${p.name} capture ${def.title}: ${CARDS[def.card].title} goes ${p.hand.includes(card) ? 'to the hand' : 'to the deck'}.`);
   }
   const territory = (s, pid) => { let t = 0; for (const k in s.cells) { const c = s.cells[k]; if (c.owner === pid) t += 1 + c.bonus; } return t; };
   const cellCount = (s, pid) => { let t = 0; for (const k in s.cells) if (s.cells[k].owner === pid) t++; return t; };
@@ -230,8 +230,8 @@ window.HB = window.HB || {};
   function strikeValue(s, a, d, consume) {
     let v = baseDamage(a.warband.minions);
     const notes = [];
-    if (a.status.attackBonus) { v += a.status.attackBonus; if (consume) a.status.attackBonus = 0; notes.push('Боевой клич'); }
-    if (d && active(s, d.status.formationUntil)) { v -= CFG.FORMATION_REDUCE; notes.push('Плотный строй'); }
+    if (a.status.attackBonus) { v += a.status.attackBonus; if (consume) a.status.attackBonus = 0; notes.push('Battle Cry'); }
+    if (d && active(s, d.status.formationUntil)) { v -= CFG.FORMATION_REDUCE; notes.push('Formation'); }
     return { value: v, notes };
   }
   // D-047: what an attack would do, without touching the state — shown to the player while choosing an attacking route
@@ -283,8 +283,8 @@ window.HB = window.HB || {};
     }
     s.events.push({ type: 'clash', attacker: a.id, defender: d.id, from, at, dmgToDef: sa.value, dmgToAtt: sd.value,
       aBefore, aAfter: aw.minions, dBefore, dAfter: dw.minions, result, attackerTo, defenderTo, notes: sa.notes.concat(sd.notes) });
-    const outcome = { attackerRetreats: `${a.name} отступают`, defenderRetreats: `${d.name} отступают`, hold: 'оба стоят', eliminated: 'отряд уничтожен' }[result];
-    log(s, `Бой: ${a.name} −${sd.value} (${aBefore} → ${aw.minions}), ${d.name} −${sa.value} (${dBefore} → ${dw.minions}) — ${outcome}.`);
+    const outcome = { attackerRetreats: `${a.name} fall back`, defenderRetreats: `${d.name} fall back`, hold: 'both hold', eliminated: 'a warband is destroyed' }[result];
+    log(s, `Clash: ${a.name} −${sd.value} (${aBefore} → ${aw.minions}), ${d.name} −${sa.value} (${dBefore} → ${dw.minions}) — ${outcome}.`);
     if (result === 'eliminated') {
       const winner = aw.minions > 0 ? a.id : dw.minions > 0 ? d.id : 0;
       endGame(s, winner, winner ? 'elimination' : 'draw');
@@ -305,7 +305,7 @@ window.HB = window.HB || {};
           const dirs = def.pattern.map(o => ((d + m * o) % 6 + 6) % 6), key = dirs.join('');
           if (seen.has(key)) continue; seen.add(key);
           const path = previewPath(s, p, dirs);
-          if (path.length) opts.push({ key: 'p' + key, dirs, path, end: path[path.length - 1], label: HB.cards.DIR_RU[d] + (m < 0 ? ' (зеркально)' : '') });
+          if (path.length) opts.push({ key: 'p' + key, dirs, path, end: path[path.length - 1], label: HB.cards.DIR_LABEL[d] + (m < 0 ? ' (mirrored)' : '') });
         }
         return { ok: opts.length > 0, options: opts };
       }
@@ -313,7 +313,7 @@ window.HB = window.HB || {};
         const opts = [];
         for (let d = 0; d < 6; d++) {
           const mid = hex.neighbor(w.col, w.row, d), tgt = hex.neighbor(mid.col, mid.row, d);
-          if (canEnter(s, tgt)) opts.push({ key: 'b' + d, dir: d, path: [tgt], end: tgt, label: HB.cards.DIR_RU[d] });
+          if (canEnter(s, tgt)) opts.push({ key: 'b' + d, dir: d, path: [tgt], end: tgt, label: HB.cards.DIR_LABEL[d] });
         }
         return { ok: opts.length > 0, options: opts };
       }
@@ -321,7 +321,7 @@ window.HB = window.HB || {};
         const opts = [];
         for (let axis = 0; axis < 3; axis++) {
           const cells = [hex.neighbor(w.col, w.row, axis), hex.neighbor(w.col, w.row, axis + 3)].filter(c => exists(s, c) && !occupant(s, c));
-          if (cells.length) opts.push({ key: 'a' + axis, axis, cells, label: HB.cards.AXIS_RU[axis] });
+          if (cells.length) opts.push({ key: 'a' + axis, axis, cells, label: HB.cards.AXIS_LABEL[axis] });
         }
         return { ok: opts.length > 0, options: opts };
       }
@@ -353,12 +353,12 @@ window.HB = window.HB || {};
       }
       case 'flank_claim': { for (const c of choice.cells) paint(s, p, c, 'split'); enclosure(s, p); break; }
       case 'cordon': { for (let d = 0; d < 6; d++) { const n = hex.neighbor(w.col, w.row, d); if (exists(s, n)) paint(s, p, n, 'split'); } enclosure(s, p); break; }
-      case 'volley': { const sv = strikeValue(s, p, e, true); strike(s, p, e, applyDamage(sv.value), 'Залп'); break; }
-      case 'catapult': { strike(s, p, e, def.damage, 'Катапульта'); break; }
+      case 'volley': { const sv = strikeValue(s, p, e, true); strike(s, p, e, applyDamage(sv.value), 'Volley'); break; }
+      case 'catapult': { strike(s, p, e, def.damage, 'Catapult'); break; }
       case 'reinforce': {
         const before = w.minions; w.minions += def.amount;
         s.events.push({ type: 'reinforce', player: p.id, amount: def.amount, before, after: w.minions, col: w.col, row: w.row });
-        log(s, `${p.name}: +${def.amount} миньонов (${before} → ${w.minions}).`); break;
+        log(s, `${p.name}: +${def.amount} minions (${before} → ${w.minions}).`); break;
       }
       case 'buff_next': st.attackBonus += def.bonus; break;
       case 'formation': st.formationUntil = T + 2; break;
@@ -369,26 +369,26 @@ window.HB = window.HB || {};
           const v = s.players[victim], before = v.warband.minions;
           v.warband.minions = Math.max(0, before - CFG.EXPLOSIVE_DAMAGE);
           s.events.push({ type: 'explosion', col: c.col, row: c.row, dmg: CFG.EXPLOSIVE_DAMAGE, defender: victim, before, after: v.warband.minions });
-          log(s, `${p.name}: Взрывной заряд, −${CFG.EXPLOSIVE_DAMAGE} (${before} → ${v.warband.minions}).`);
+          log(s, `${p.name}: Explosive Charge, −${CFG.EXPLOSIVE_DAMAGE} (${before} → ${v.warband.minions}).`);
           if (v.warband.minions <= 0) endGame(s, p.id, 'elimination');
         } else {
           s.events.push({ type: 'explosion', col: c.col, row: c.row, dmg: 0 });
-          log(s, `${p.name}: Взрывной заряд — гекс заблокирован.`);
+          log(s, `${p.name}: Explosive Charge — hex blocked.`);
         }
         break;
       }
       case 'prayer': {
         const c = p.discard.pop();
-        if (c) { p.hand.push(c); s.events.push({ type: 'cardToHand', player: p.id, uid: c.uid, from: 'discard' }); log(s, `${p.name}: Молитва — «${CARDS[c.def].ru}» возвращается в руку.`); }
+        if (c) { p.hand.push(c); s.events.push({ type: 'cardToHand', player: p.id, uid: c.uid, from: 'discard' }); log(s, `${p.name}: Prayer — ${CARDS[c.def].title} returns to the hand.`); }
         break;
       }
-      case 'scout_draw': { const n = p.hand.length; draw(s, p, CFG.HAND_SIZE); log(s, `${p.name}: Разведка — добор ${p.hand.length - n} карт.`); break; }
+      case 'scout_draw': { const n = p.hand.length; draw(s, p, CFG.HAND_SIZE); log(s, `${p.name}: Scouting — ${p.hand.length - n} card(s) drawn.`); break; }
       case 'banner': {
         const cells = [];
         const mark = c => { const cell = cellAt(s, c); if (cell && cell.owner === p.id && !cell.bonus) { cell.bonus = 1; cells.push({ col: cell.col, row: cell.row }); } };
         mark(w); for (let d = 0; d < 6; d++) mark(hex.neighbor(w.col, w.row, d));
         s.events.push({ type: 'bonus', player: p.id, cells });
-        log(s, `${p.name}: Знамя — +${cells.length} очков территории.`); break;
+        log(s, `${p.name}: Banner — +${cells.length} territory points.`); break;
       }
     }
   }
@@ -408,7 +408,7 @@ window.HB = window.HB || {};
     if (!play.ok || !validChoice(play, choice)) return false;
     p.hand.splice(idx, 1); p.inPlay = card;
     s.events.push({ type: 'play', player: p.id, card: def.ru });
-    log(s, `${p.name} играют «${def.ru}»${choice && choice.label ? ' (' + choice.label + ')' : ''}.`);
+    log(s, `${p.name} play ${def.title}${choice && choice.label ? ' (' + choice.label + ')' : ''}.`);
     resolve(s, p, card, def, choice);
     flushPaint(s, p);
     checkDomination(s, p);
@@ -430,7 +430,7 @@ window.HB = window.HB || {};
     const idx = p.hand.findIndex(c => c.uid === uid);
     if (idx < 0) return false;
     p.discard.push(p.hand.splice(idx, 1)[0]);
-    log(s, `${p.name} пропускают ход, сбрасывая «${CARDS[p.discard[p.discard.length - 1].def].ru}».`);
+    log(s, `${p.name} pass, discarding ${CARDS[p.discard[p.discard.length - 1].def].title}.`);
     finishTurn(s);
     return true;
   }
@@ -476,10 +476,10 @@ window.HB = window.HB || {};
   function endGame(s, winner, reason) {
     if (s.phase === 'over') return;
     s.phase = 'over'; s.winner = winner; s.endReason = reason; s.scores = scoreboard(s);
-    const name = winner ? s.players[winner].name : 'Ничья';
-    const why = { elimination: 'отряд противника уничтожен', domination: 'всё поле захвачено', territory: 'больше территории', 'tiebreak:pois': 'равная территория, больше точек',
-      'tiebreak:minions': 'равная территория и точки, больше миньонов', 'tiebreak:lastRound': 'равные показатели, больше захвачено в последнем раунде', draw: 'полное равенство' }[reason];
-    log(s, winner ? `Победа: ${name} — ${why}.` : `Ничья — ${why}.`);
+    const name = winner ? s.players[winner].name : 'Draw';
+    const why = { elimination: 'enemy warband destroyed', domination: 'the whole map captured', territory: 'more territory', 'tiebreak:pois': 'equal territory, more outposts',
+      'tiebreak:minions': 'equal territory and outposts, more minions', 'tiebreak:lastRound': 'all equal, more captured in the last round', draw: 'a perfect tie' }[reason];
+    log(s, winner ? `${name} win — ${why}.` : `Draw — ${why}.`);
     s.events.push({ type: 'gameover', winner, reason, scores: s.scores });
   }
 

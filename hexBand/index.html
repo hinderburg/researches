@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>HEXBand — прототип</title>
-<meta name="description" content="HEXBand: пошаговая PvP-тактика на гексах — захват территории, колода манёвров, бой при соседстве.">
+<title>HEXBand — prototype</title>
+<meta name="description" content="HEXBand: turn-based hex tactics — paint territory, capture outposts, clash with warbands.">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -13,63 +13,63 @@
   <section id="menu">
     <header class="menu-head">
       <h1>HEXBand</h1>
-      <p class="muted">Пошаговая тактика на гексах: один отряд, колода из восьми карт, десять раундов.</p>
+      <p class="muted">Turn-based hex tactics: one warband, a deck of eight cards, ten rounds.</p>
     </header>
-    <h3>Как победить</h3>
+    <h3>How to win</h3>
     <div class="win-list">
-      <div class="win"><div class="win-pic"><canvas id="pic-elim"></canvas></div><div class="win-text"><b>Уничтожить отряд противника</b><span>Атакуйте, заводя маршрут на его гекс. Как только у него не останется миньонов — победа сразу.</span></div></div>
-      <div class="win"><div class="win-pic"><canvas id="pic-dom"></canvas></div><div class="win-text"><b>Захватить всё поле</b><span>Красьте гексы движением и замыкайте контуры. Когда всё поле станет вашим — победа сразу.</span></div></div>
-      <div class="win"><div class="win-pic"><canvas id="pic-terr"></canvas><div class="win-badge">Раунд 10 / 10</div></div><div class="win-text"><b>Больше территории к концу игры</b><span>После последнего раунда побеждает тот, кто захватил больше гексов.</span></div></div>
+      <div class="win"><div class="win-pic"><canvas id="pic-elim"></canvas></div><div class="win-text"><b>Destroy the enemy warband</b><span>Attack by running a route onto its hex. When it has no minions left, you win at once.</span></div></div>
+      <div class="win"><div class="win-pic"><canvas id="pic-dom"></canvas></div><div class="win-text"><b>Capture the whole map</b><span>Paint hexes by moving and close enclosures. When the entire map is yours, you win at once.</span></div></div>
+      <div class="win"><div class="win-pic"><canvas id="pic-terr"></canvas><div class="win-badge">Round 10 / 10</div></div><div class="win-text"><b>Hold more territory at the end</b><span>After the last round the player who captured more hexes wins.</span></div></div>
     </div>
     <div class="menu-actions">
-      <button class="btn primary big" id="btn-play">Играть</button>
-      <button class="btn big" id="btn-settings">Настройки</button>
+      <button class="btn primary big" id="btn-play">Play</button>
+      <button class="btn big" id="btn-settings">Settings</button>
     </div>
-    <p class="muted menu-links"><a href="#" id="btn-menu-intro">Основы игры</a> · <a href="docs/index.html">Документация</a> · <a href="sim.html">Симуляция баланса</a></p>
+    <p class="muted menu-links"><a href="#" id="btn-menu-intro">Basics</a> · <a href="docs/index.html">Docs</a> · <a href="sim.html">Balance sim</a></p>
   </section>
 
   <section id="setup" hidden>
     <header class="setup-head">
       <div>
-        <button class="btn ghost" id="btn-back">← Меню</button>
-        <h1>Настройки <span id="setup-version" class="muted"></span></h1>
+        <button class="btn ghost" id="btn-back">← Menu</button>
+        <h1>Settings <span id="setup-version" class="muted"></span></h1>
       </div>
-      <div class="row"><button class="btn ghost" id="btn-intro">Основы</button><button class="btn ghost" id="btn-help">Правила</button></div>
+      <div class="row"><button class="btn ghost" id="btn-intro">Basics</button><button class="btn ghost" id="btn-help">Rules</button></div>
     </header>
 
     <div class="setup-grid">
       <div class="setup-col">
-        <h3>Управление</h3>
+        <h3>Controls</h3>
         <div class="field">
-          <label for="sel-control">Как играть карты</label>
+          <label for="sel-control">How to play cards</label>
           <select id="sel-control">
-            <option value="drag">Перетаскивание: тяните карту на поле</option>
-            <option value="tap">Кнопки: тап по карте, затем тап по гексу</option>
+            <option value="drag">Drag: drag a card onto the board</option>
+            <option value="tap">Tap: tap a card, then tap a hex</option>
           </select>
         </div>
-        <h3>Режим</h3>
-        <label class="radio"><input type="radio" name="mode" value="bot" checked> Против бота</label>
-        <label class="radio"><input type="radio" name="mode" value="hotseat"> Два игрока на одном устройстве</label>
+        <h3>Mode</h3>
+        <label class="radio"><input type="radio" name="mode" value="bot" checked> Versus bot</label>
+        <label class="radio"><input type="radio" name="mode" value="hotseat"> Two players on one device</label>
         <div id="bot-preset-row" class="field">
-          <label for="sel-bot-preset">Колода бота</label>
+          <label for="sel-bot-preset">Bot deck</label>
           <select id="sel-bot-preset">
-            <option value="balanced">Сбалансированная</option>
-            <option value="expansion">Экспансия</option>
-            <option value="duel">Дуэль</option>
-            <option value="swarm">Орда</option>
+            <option value="balanced">Balanced</option>
+            <option value="expansion">Expansion</option>
+            <option value="duel">Duel</option>
+            <option value="swarm">Swarm</option>
           </select>
         </div>
         <div class="field">
-          <label for="sel-rounds">Лимит раундов</label>
+          <label for="sel-rounds">Round limit</label>
           <select id="sel-rounds"><option>8</option><option>10</option><option>12</option><option>16</option></select>
         </div>
         <div class="field">
-          <label for="sel-attacks">Атак за ход на отряд</label>
-          <select id="sel-attacks"><option value="1">1 (по умолчанию)</option><option value="2">2</option><option value="0">без лимита</option></select>
+          <label for="sel-attacks">Attacks per turn per warband</label>
+          <select id="sel-attacks"><option value="1">1 (default)</option><option value="2">2</option><option value="0">unlimited</option></select>
         </div>
         <div class="field">
-          <label for="inp-seed">Seed (пусто — случайный)</label>
-          <input id="inp-seed" type="text" inputmode="numeric" placeholder="например 42">
+          <label for="inp-seed">Seed (empty = random)</label>
+          <input id="inp-seed" type="text" inputmode="numeric" placeholder="e.g. 42">
         </div>
       </div>
       <div class="setup-col builders">
@@ -80,24 +80,24 @@
 
     <footer class="setup-foot">
       <span id="setup-hint" class="muted"></span>
-      <button class="btn primary" id="btn-start">Начать матч</button>
+      <button class="btn primary" id="btn-start">Start match</button>
     </footer>
-    <p class="muted docs-link">Документация: <a href="docs/index.html">GDD, журнал решений, история изменений</a> · <a href="sim.html">симуляция баланса</a></p>
+    <p class="muted docs-link">Docs: <a href="docs/index.html">GDD, decision log, changelog</a> · <a href="sim.html">balance sim</a></p>
   </section>
 
   <section id="game" hidden>
     <header class="hud">
       <div class="hud-side p1" id="hud-1">
-        <span class="hud-name">Синие</span>
+        <span class="hud-name">Blue</span>
         <span class="hud-stats"><b class="hud-terr">0</b> <span class="hud-pct">(0%)</span> · <b class="hud-min">24</b>⚔ · <span class="hud-poi">0</span>⚑</span>
       </div>
       <div class="hud-center">
-        <span id="hud-round">Раунд 1</span>
+        <span id="hud-round">Round 1</span>
         <button class="btn tiny ghost" id="btn-help-game">?</button><button class="btn tiny ghost" id="btn-quit">≡</button>
       </div>
       <div class="hud-side p2" id="hud-2">
         <span class="hud-stats"><span class="hud-poi">0</span>⚑ · <b class="hud-min">24</b>⚔ · <span class="hud-pct">(0%)</span> <b class="hud-terr">0</b></span>
-        <span class="hud-name">Красные</span>
+        <span class="hud-name">Red</span>
       </div>
     </header>
 
@@ -106,14 +106,14 @@
     <div id="hand-area">
       <div id="card-desc" hidden></div>
       <div id="hand-row">
-        <div class="pile-col"><div class="pile-count" id="discard-count">0</div><div class="pile discard" id="pile-discard"></div><div class="pile-label">сброс</div></div>
+        <div class="pile-col"><div class="pile-count" id="discard-count">0</div><div class="pile discard" id="pile-discard"></div><div class="pile-label">discard</div></div>
         <div id="hand-frame"><div id="hand"></div></div>
-        <div class="pile-col"><div class="pile-count" id="deck-count">0</div><div class="pile deck" id="pile-deck"></div><div class="pile-label">колода</div></div>
+        <div class="pile-col"><div class="pile-count" id="deck-count">0</div><div class="pile deck" id="pile-deck"></div><div class="pile-label">deck</div></div>
       </div>
-      <div id="status-row"><span id="status-line" class="muted"></span><button class="btn tiny ghost" id="btn-pass" hidden>Нет ходов — сбросить карту</button><button class="btn tiny end-fb" id="btn-end-fb" hidden>Закончить ход</button></div>
+      <div id="status-row"><span id="status-line" class="muted"></span><button class="btn tiny ghost" id="btn-pass" hidden>No moves — discard a card</button><button class="btn tiny end-fb" id="btn-end-fb" hidden>End turn</button></div>
     </div>
 
-    <details id="log"><summary>Журнал матча</summary><div id="log-lines"></div></details>
+    <details id="log"><summary>Match log</summary><div id="log-lines"></div></details>
   </section>
 
   <div id="drag-fx" hidden></div>
