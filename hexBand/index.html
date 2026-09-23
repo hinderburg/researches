@@ -10,11 +10,29 @@
 <body>
 <div id="app">
 
-  <section id="setup">
+  <section id="menu">
+    <header class="menu-head">
+      <h1>HEXBand</h1>
+      <p class="muted">Пошаговая тактика на гексах: один отряд, колода из восьми карт, десять раундов.</p>
+    </header>
+    <h3>Как победить</h3>
+    <div class="win-list">
+      <div class="win"><div class="win-pic"><canvas id="pic-elim"></canvas></div><div class="win-text"><b>Уничтожить отряд противника</b><span>Атакуйте, заводя маршрут на его гекс. Как только у него не останется миньонов — победа сразу.</span></div></div>
+      <div class="win"><div class="win-pic"><canvas id="pic-dom"></canvas></div><div class="win-text"><b>Захватить всё поле</b><span>Красьте гексы движением и замыкайте контуры. Когда всё поле станет вашим — победа сразу.</span></div></div>
+      <div class="win"><div class="win-pic"><canvas id="pic-terr"></canvas><div class="win-badge">Раунд 10 / 10</div></div><div class="win-text"><b>Больше территории к концу игры</b><span>После последнего раунда побеждает тот, кто захватил больше гексов.</span></div></div>
+    </div>
+    <div class="menu-actions">
+      <button class="btn primary big" id="btn-play">Играть</button>
+      <button class="btn big" id="btn-settings">Настройки</button>
+    </div>
+    <p class="muted menu-links"><a href="#" id="btn-menu-intro">Основы игры</a> · <a href="docs/index.html">Документация</a> · <a href="sim.html">Симуляция баланса</a></p>
+  </section>
+
+  <section id="setup" hidden>
     <header class="setup-head">
       <div>
-        <h1>HEXBand <span id="setup-version" class="muted"></span></h1>
-        <p class="muted">Захват территории × колода манёвров × бой при соседстве.</p>
+        <button class="btn ghost" id="btn-back">← Меню</button>
+        <h1>Настройки <span id="setup-version" class="muted"></span></h1>
       </div>
       <div class="row"><button class="btn ghost" id="btn-intro">Основы</button><button class="btn ghost" id="btn-help">Правила</button></div>
     </header>

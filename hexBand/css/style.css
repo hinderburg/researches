@@ -24,6 +24,23 @@ button { font: inherit; cursor: pointer; }
 .btn.tiny { padding: 3px 8px; font-size: 12px; border-radius: 8px; box-shadow: none; }
 .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 
+/* ---------- main menu (D-051) */
+#menu { padding: 24px 16px 32px; display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
+.menu-head { text-align: center; margin-bottom: 6px; }
+.menu-head h1 { font-size: 34px; letter-spacing: .04em; }
+#menu h3 { text-align: center; margin: 14px 0 10px; }
+.win-list { display: flex; flex-direction: column; gap: 10px; }
+.win { display: flex; gap: 12px; align-items: center; background: linear-gradient(#2b2418, #221c12); border: 2px solid var(--line); border-radius: 14px; padding: 8px; }
+.win-pic { position: relative; flex: 0 0 132px; width: 132px; height: 120px; border-radius: 10px; overflow: hidden; background: #2e4a28; border: 1px solid #1f3a1a; }
+.win-pic canvas { display: block; }
+.win-badge { position: absolute; top: 4px; left: 4px; font-size: 10px; font-weight: 800; background: rgba(20,16,10,.85); color: var(--accent); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
+.win-text { display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 1.35; }
+.win-text b { font-size: 15px; color: var(--accent); }
+.win-text span { color: var(--muted); }
+.menu-actions { display: flex; flex-direction: column; gap: 10px; margin: 22px auto 0; width: 100%; max-width: 320px; }
+.btn.big { padding: 14px 20px; font-size: 18px; border-radius: 14px; }
+.menu-links { text-align: center; margin-top: 18px; }
+
 /* ---------- setup */
 #setup { padding: 20px 16px 32px; }
 .setup-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; }

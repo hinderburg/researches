@@ -45,9 +45,7 @@ window.HB = window.HB || {};
       $('#btn-help').addEventListener('click', () => this.showHelp());
       $('#btn-help-game').addEventListener('click', () => this.showHelp());
       $('#btn-intro').addEventListener('click', () => this.showIntro(true));
-      this.renderSetup();
-      let skip = false; try { skip = localStorage.getItem('hexband.introSeen') === '1'; } catch (e) {}
-      if (!skip) this.showIntro(false);
+      this.renderSetup(); // D-051: the "Основы" popup is no longer shown automatically; it lives behind a button
     },
     showIntro(manual) {
       const ic = id => `<span class="intro-ic">${HB.icons.svg(id)}</span>`;
@@ -57,7 +55,7 @@ window.HB = window.HB || {};
         <div class="intro-item">${ic('ring')}<div><b>Захватывайте территорию.</b> Каждый пройденный гекс становится вашим. Замкните область своими гексами (или своими гексами и краем поля) — всё внутри тоже станет вашим, если там нет противника. Очки = ваши гексы.</div></div>
         <div class="intro-item">${ic('recruitment')}<div><b>Берите форпосты.</b> Пройдите через форпост или обведите его контуром. Карта, парящая над ним, сразу прилетает вам в руку — её эффект срабатывает мгновенно. Потеряете форпост — потеряете и карту.</div></div>
         <div class="intro-item">${ic('battle_cry')}<div><b>Бой.</b> Чтобы атаковать, доведите маршрут карты до гекса противника (он подсветится красным) — игра сразу покажет прогноз: сколько потеряет каждый отряд и кто отступит. Больше миньонов — сильнее удар, но карты позволяют выиграть обмен и меньшей армией. Не больше одной атаки за ход.</div></div>
-        <div class="intro-item">${ic('claim')}<div><b>Победа.</b> Уничтожили отряд противника — победа сразу. Иначе после ${this.setup.rounds} раундов побеждает тот, у кого больше очков территории.</div></div>
+        <div class="intro-item">${ic('claim')}<div><b>Победа.</b> Уничтожили отряд противника или захватили всё поле — победа сразу. Иначе после ${this.setup.rounds} раундов побеждает тот, у кого больше захваченной территории.</div></div>
         <label class="radio intro-skip"><input type="checkbox" id="intro-skip"> Больше не показывать</label>
         <button class="btn primary" id="btn-intro-close">${manual ? 'Понятно' : 'К настройке матча'}</button></div>`);
       $('#btn-intro-close').addEventListener('click', () => {
@@ -128,7 +126,7 @@ window.HB = window.HB || {};
     startGame(opts) {
       this.state = R.createGame(opts);
       this.lastActor = null; this.handoverPending = false; this.busy = false; this.lastEvents = []; this.pendingIncoming = new Set();
-      $('#setup').hidden = true; $('#game').hidden = false; $('#overlay').hidden = true;
+      $('#setup').hidden = true; $('#menu').hidden = true; $('#game').hidden = false; $('#overlay').hidden = true;
       if (!this.renderer) {
         this.renderer = new HB.Renderer($('#board'));
         $('#board').addEventListener('click', e => this.onCanvasClick(e));
@@ -148,7 +146,42 @@ window.HB = window.HB || {};
       this.refresh();
       this.nextTurn();
     },
-    toSetup() { $('#game').hidden = true; $('#overlay').hidden = true; $('#setup').hidden = false; this.state = null; },
+    toSetup() { this.showMenu(); },
+    // ------------------------------------------------------------ main menu (D-051): win conditions with live scenes, Play, Settings
+    initMenu() {
+      $('#btn-play').addEventListener('click', () => this.startFromSetup());
+      $('#btn-settings').addEventListener('click', () => this.showSetup());
+      $('#btn-back').addEventListener('click', () => this.showMenu());
+      $('#btn-menu-intro').addEventListener('click', () => this.showIntro(true));
+      this.menuPics = [];
+      this.buildMenuPics();
+      window.addEventListener('resize', () => this.layoutMenu());
+    },
+    showMenu() { $('#game').hidden = true; $('#setup').hidden = true; $('#overlay').hidden = true; $('#menu').hidden = false; this.state = null; this.layoutMenu(); },
+    showSetup() { $('#menu').hidden = true; $('#game').hidden = true; $('#setup').hidden = false; },
+    // a tiny hand-made board state the normal renderer can draw
+    miniState(cols, rows, fn) {
+      const st = () => ({ attackBonus: 0, formationUntil: -1 });
+      const s = { cols, rows, cells: {}, pois: [], blocked: {}, turnIndex: 0, current: 1, phase: 'play', decorSeed: 11,
+        players: [null, { id: 1, warband: { col: 1, row: 1, minions: 24 }, status: st() }, { id: 2, warband: { col: 3, row: 1, minions: 24 }, status: st() }] };
+      for (let c = 0; c < cols; c++) for (let r = 0; r < hex.rowsInCol(c, rows); r++) s.cells[hex.key(c, r)] = { col: c, row: r, owner: 0, bonus: 0, poi: -1 };
+      fn(s); return s;
+    },
+    buildMenuPics() {
+      const mk = (id, s) => { const cv = $(id); if (!cv) return null; const rd = new HB.Renderer(cv); rd.setState(s); this.menuPics.push({ el: cv, rd }); return rd; };
+      // 1 · elimination: a full warband keeps hitting a dying one
+      const s1 = this.miniState(5, 4, s => { s.players[1].warband = { col: 1, row: 1, minions: 24 }; s.players[2].warband = { col: 2, row: 1, minions: 3 }; for (const k in s.cells) s.cells[k].owner = s.cells[k].col <= 1 ? 1 : s.cells[k].col >= 3 ? 2 : 0; });
+      const r1 = mk('#pic-elim', s1);
+      if (r1) setInterval(() => { if ($('#menu').hidden) return; const p = r1.cellXY(2, 1); r1.spawnFight(p.x, p.y); r1.shake[2] = performance.now(); r1.addText(2, 1, '−5', '#ff6b6b', { dy: -r1.size * 0.6, big: true }); }, 1700);
+      // 2 · domination: every hex is blue except the one under the enemy
+      const s2 = this.miniState(5, 4, s => { s.players[1].warband = { col: 1, row: 1, minions: 24 }; s.players[2].warband = { col: 3, row: 1, minions: 9 }; for (const k in s.cells) s.cells[k].owner = 1; s.cells[hex.key(3, 1)].owner = 0; });
+      mk('#pic-dom', s2);
+      // 3 · territory at the end: a split board
+      const s3 = this.miniState(5, 4, s => { s.players[1].warband = { col: 1, row: 2, minions: 18 }; s.players[2].warband = { col: 3, row: 0, minions: 14 }; for (const k in s.cells) { const c = s.cells[k]; c.owner = c.row >= 2 || (c.row === 1 && c.col <= 2) ? 1 : (c.col === 0 && c.row === 0 ? 0 : 2); } });
+      mk('#pic-terr', s3);
+      this.layoutMenu();
+    },
+    layoutMenu() { for (const m of this.menuPics) { const r = rectOf(m.el.parentElement); if (r.width > 0) m.rd.resize(Math.floor(r.width), Math.floor(r.height)); } },
     positions() { const s = this.state; return { 1: { col: s.players[1].warband.col, row: s.players[1].warband.row }, 2: { col: s.players[2].warband.col, row: s.players[2].warband.row } }; },
     layout() {
       const wrap = $('#board-wrap'); if (!this.renderer || !this.state) return;
@@ -543,7 +576,7 @@ window.HB = window.HB || {};
     showGameOver() {
       const s = this.state, sc = s.scores;
       const title = s.winner ? `Победа: ${s.players[s.winner].name}` : 'Ничья';
-      const reason = { elimination: 'Отряд противника уничтожен', territory: 'Больше территории', 'tiebreak:pois': 'Тай-брейк: больше точек интереса', 'tiebreak:minions': 'Тай-брейк: больше миньонов', 'tiebreak:lastRound': 'Тай-брейк: захват в последнем раунде', draw: 'Полное равенство' }[s.endReason] || s.endReason;
+      const reason = { elimination: 'Отряд противника уничтожен', domination: 'Всё поле захвачено', territory: 'Больше территории', 'tiebreak:pois': 'Тай-брейк: больше точек интереса', 'tiebreak:minions': 'Тай-брейк: больше миньонов', 'tiebreak:lastRound': 'Тай-брейк: захват в последнем раунде', draw: 'Полное равенство' }[s.endReason] || s.endReason;
       const row = (label, k) => `<tr><td>${label}</td><td class="c1">${sc[1][k]}</td><td class="c2">${sc[2][k]}</td></tr>`;
       this.overlay(`<h2 class="${s.winner ? 'w' + s.winner : ''}">${title}</h2><p>${reason}</p>
         <table class="score"><tr><th></th><th class="c1">${s.players[1].name}</th><th class="c2">${s.players[2].name}</th></tr>
@@ -574,6 +607,6 @@ window.HB = window.HB || {};
   };
   function hashStr(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 
-  window.addEventListener('DOMContentLoaded', () => UI.initSetup());
+  window.addEventListener('DOMContentLoaded', () => { UI.initSetup(); UI.initMenu(); });
   HB.UI = UI;
 })();

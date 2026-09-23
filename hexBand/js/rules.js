@@ -411,6 +411,7 @@ window.HB = window.HB || {};
     log(s, `${p.name} играют «${def.ru}»${choice && choice.label ? ' (' + choice.label + ')' : ''}.`);
     resolve(s, p, card, def, choice);
     flushPaint(s, p);
+    checkDomination(s, p);
     // D-022: effects apply at once and the card goes to the discard; the turn continues until endTurn().
     if (p.inPlay) { p.discard.push(p.inPlay); p.inPlay = null; }
     s.playedThisTurn++;
@@ -455,6 +456,13 @@ window.HB = window.HB || {};
     for (const pid of [1, 2]) out[pid] = { territory: territory(s, pid), cells: cellCount(s, pid), pois: poiCount(s, pid), minions: s.players[pid].warband.minions, gained: s.players[pid].gained };
     return out;
   }
+  // D-050: owning every hex except the one under the enemy warband wins at once
+  function checkDomination(s, p) {
+    if (s.phase !== 'play') return;
+    const e = enemyOf(s, p.id).warband;
+    for (const k in s.cells) { const c = s.cells[k]; if (c.owner !== p.id && !(c.col === e.col && c.row === e.row)) return; }
+    endGame(s, p.id, 'domination');
+  }
   function territoryVictory(s) {
     const sc = scoreboard(s);
     const cmp = key => Math.sign(sc[1][key] - sc[2][key]);
@@ -469,7 +477,7 @@ window.HB = window.HB || {};
     if (s.phase === 'over') return;
     s.phase = 'over'; s.winner = winner; s.endReason = reason; s.scores = scoreboard(s);
     const name = winner ? s.players[winner].name : 'Ничья';
-    const why = { elimination: 'отряд противника уничтожен', territory: 'больше территории', 'tiebreak:pois': 'равная территория, больше точек',
+    const why = { elimination: 'отряд противника уничтожен', domination: 'всё поле захвачено', territory: 'больше территории', 'tiebreak:pois': 'равная территория, больше точек',
       'tiebreak:minions': 'равная территория и точки, больше миньонов', 'tiebreak:lastRound': 'равные показатели, больше захвачено в последнем раунде', draw: 'полное равенство' }[reason];
     log(s, winner ? `Победа: ${name} — ${why}.` : `Ничья — ${why}.`);
     s.events.push({ type: 'gameover', winner, reason, scores: s.scores });
