@@ -122,8 +122,12 @@ select, input[type=text] { background: var(--panel2); color: var(--text); border
 #card-desc .desc-forecast b { display: inline; color: #ff8a76; margin: 0; }
 #card-desc .desc-cancel { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 4px; padding-top: 4px; border-top: 1px dashed rgba(255,199,66,.45); font-size: 12px; color: var(--muted); transition: color .15s; }
 #card-desc .desc-cancel-ic { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; border: 1px solid currentColor; font-size: 13px; }
-#hand-area.drop-cancel #card-desc { border-color: var(--accent); }
-#hand-area.drop-cancel #card-desc .desc-cancel { color: var(--accent); }
+/* tap control scheme (D-048): cards are buttons; the description panel is tappable and cancels the selection */
+body.ctl-tap #card-desc { pointer-events: auto; cursor: pointer; border-color: var(--accent); }
+body.ctl-tap #card-desc .desc-cancel { color: var(--accent); }
+body.ctl-tap #card-desc:active { background: rgba(40,30,15,.92); }
+body.ctl-tap .card { cursor: pointer; }
+.card.selected { transform: translateY(-6px) scale(1.04); box-shadow: 0 0 0 3px #fff, 0 6px 14px rgba(0,0,0,.5), 0 0 18px rgba(255,215,102,.6); z-index: 2; }
 /* glowing cursor FX while a card is dragged (D-036) */
 #drag-fx { position: fixed; left: 0; top: 0; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; pointer-events: none; z-index: 50; background: radial-gradient(circle, rgba(255,255,255,.95) 0%, rgba(255,215,102,.75) 30%, rgba(255,215,102,0) 70%); box-shadow: 0 0 24px 8px rgba(255,215,102,.55); animation: fxpulse .9s ease-in-out infinite; }
 #drag-fx.p1 { background: radial-gradient(circle, rgba(255,255,255,.95) 0%, rgba(140,196,255,.8) 30%, rgba(140,196,255,0) 70%); box-shadow: 0 0 24px 8px rgba(140,196,255,.55); }

@@ -11,10 +11,18 @@ window.HB = window.HB || {};
   const rectOf = e => e.getBoundingClientRect();
 
   const UI = {
-    state: null, renderer: null, busy: false, opts: null, drag: null, lastActor: null, handoverPending: false, lastEvents: [], pendingIncoming: new Set(),
+    state: null, renderer: null, busy: false, opts: null, drag: null, sel: null, lastActor: null, handoverPending: false, lastEvents: [], pendingIncoming: new Set(),
     // whose hand the bottom panel shows: the human in bot mode, the current player in hotseat (D-044)
     handPlayer() { const s = this.state; return this.opts && this.opts.players[2].bot ? s.players[1] : s.players[s.current]; },
-    setup: { mode: 'bot', rounds: CFG.ROUND_LIMIT, seed: '', p: { 1: null, 2: null }, botPreset: 'balanced' },
+    setup: { mode: 'bot', rounds: CFG.ROUND_LIMIT, seed: '', p: { 1: null, 2: null }, botPreset: 'balanced', control: 'drag' },
+    // D-048: input scheme — 'drag' (drag the card onto the board) or 'tap' (tap the card, then tap the target)
+    setControl(mode) {
+      this.setup.control = mode === 'tap' ? 'tap' : 'drag';
+      document.body.classList.toggle('ctl-tap', this.setup.control === 'tap');
+      try { localStorage.setItem('hexband.control', this.setup.control); } catch (e) {}
+      if (this.sel) this.cancelSelect();
+      if (this.drag) this.endDrag({}, false);
+    },
 
     // ------------------------------------------------------------ setup screen
     initSetup() {
@@ -29,6 +37,10 @@ window.HB = window.HB || {};
       $('#sel-attacks').value = String(CFG.ATTACKS_PER_TURN);
       $('#sel-attacks').addEventListener('change', e => S.attacks = +e.target.value);
       $('#sel-bot-preset').addEventListener('change', e => { S.botPreset = e.target.value; this.renderSetup(); });
+      let ctl = 'drag'; try { ctl = localStorage.getItem('hexband.control') || 'drag'; } catch (e) {}
+      this.setControl(ctl);
+      $('#sel-control').value = this.setup.control;
+      $('#sel-control').addEventListener('change', e => this.setControl(e.target.value));
       $('#btn-start').addEventListener('click', () => this.startFromSetup());
       $('#btn-help').addEventListener('click', () => this.showHelp());
       $('#btn-help-game').addEventListener('click', () => this.showHelp());
@@ -41,7 +53,7 @@ window.HB = window.HB || {};
       const ic = id => `<span class="intro-ic">${HB.icons.svg(id)}</span>`;
       const ov = this.overlay(`<div class="intro">
         <h2>HEXBand — как это работает</h2>
-        <div class="intro-item">${ic('hook')}<div><b>Ходите картами.</b> Перетащите карту на поле: карта задаёт форму маршрута, а куда идти — решаете вы, отпустив её в нужной стороне. Отряд идёт сразу. За ход можно сыграть сколько угодно карт, минимум одну; затем «Закончить ход».</div></div>
+        <div class="intro-item">${ic('hook')}<div><b>Ходите картами.</b> ${this.setup.control === 'tap' ? 'Тапните карту — на поле подсветятся все места, куда она может привести отряд; тапните нужный гекс, и отряд пойдёт сразу.' : 'Перетащите карту на поле: отпустите её там, куда должен пойти отряд, и он пойдёт сразу.'} Карта задаёт форму маршрута, направление выбираете вы. За ход можно сыграть сколько угодно карт, минимум одну; затем «Закончить ход». Способ управления (перетаскивание / кнопки) меняется в меню.</div></div>
         <div class="intro-item">${ic('ring')}<div><b>Захватывайте территорию.</b> Каждый пройденный гекс становится вашим. Замкните область своими гексами — всё внутри тоже станет вашим. Очки = ваши гексы.</div></div>
         <div class="intro-item">${ic('recruitment')}<div><b>Берите форпосты.</b> Пройдите через форпост или обведите его контуром. Карта, парящая над ним, сразу прилетает вам в руку — её эффект срабатывает мгновенно. Потеряете форпост — потеряете и карту.</div></div>
         <div class="intro-item">${ic('battle_cry')}<div><b>Бой.</b> Чтобы атаковать, доведите маршрут карты до гекса противника (он подсветится красным) — игра сразу покажет прогноз: сколько потеряет каждый отряд и кто отступит. Больше миньонов — сильнее удар, но карты позволяют выиграть обмен и меньшей армией. Не больше одной атаки за ход.</div></div>
@@ -125,7 +137,7 @@ window.HB = window.HB || {};
         $('#btn-quit').addEventListener('click', () => this.toSetup());
         $('#btn-pass').addEventListener('click', () => this.showPassPicker());
         $('#btn-end-fb').addEventListener('click', () => this.endTurn());
-        this.bindDrag();
+        this.bindDrag(); this.bindTap();
       }
       this.renderer.setState(this.state);
       this.renderer.prevPos = this.positions();
@@ -169,6 +181,7 @@ window.HB = window.HB || {};
     afterAction() {
       const s = this.state, events = R.takeEvents(s);
       this.lastEvents = events;
+      this.sel = null; $('#card-desc').hidden = true; this.renderer.forecast = null;
       // cards that will fly into the hand must not flash in the hand before their flight (D-044)
       const hp = this.handPlayer();
       for (const ev of events) {
@@ -211,6 +224,7 @@ window.HB = window.HB || {};
           c.dataset.uid = card.uid;
           if (hideHand) c.classList.add('hidden-card');
           if (this.pendingIncoming.has(card.uid)) c.classList.add('incoming');
+          if (this.sel && this.sel.uid === card.uid) c.classList.add('selected');
           slot.appendChild(c);
         } else if (i === CFG.HAND_SIZE - 1 && s.playedThisTurn >= 1 && !busy) {
           const b = el('button', 'btn end-turn', 'Закончить<br>ход');
@@ -294,6 +308,7 @@ window.HB = window.HB || {};
     bindDrag() {
       const hand = $('#hand');
       hand.addEventListener('pointerdown', e => {
+        if (this.setup.control !== 'drag') return; // tap mode handles cards on click (bindTap)
         const cardEl = e.target.closest('.card'); if (!cardEl || !cardEl.dataset.uid) return;
         e.preventDefault();
         this.startDrag(e, +cardEl.dataset.uid, cardEl);
@@ -302,10 +317,30 @@ window.HB = window.HB || {};
       window.addEventListener('pointerup', e => { if (this.drag && e.pointerId === this.drag.pointerId) this.endDrag(e, true); });
       window.addEventListener('pointercancel', e => { if (this.drag && e.pointerId === this.drag.pointerId) this.endDrag(e, false); });
     },
-    // description of the dragged card over the hand zone; the footer explains that dropping it here cancels the play
-    showDesc(title, text) {
-      $('#card-desc').innerHTML = `<div class="desc-body"><b>${title}</b><span>${text}</span><div class="desc-forecast" hidden></div></div><div class="desc-cancel"><span class="desc-cancel-ic">↩</span><span>Передумали? Отпустите карту здесь — она вернётся в руку</span></div>`;
+    // description of the chosen card over the hand zone; the footer explains how to cancel in the current input scheme
+    showDesc(title, text, needsTarget) {
+      const tap = this.setup.control === 'tap';
+      const hint = tap
+        ? `<span class="desc-cancel-ic">✕</span><span>${needsTarget ? 'Тапните по подсвеченному гексу на поле, чтобы сыграть' : 'Тапните по полю, чтобы сыграть'}. Передумали? Тапните по этой панели — карта останется в руке.</span>`
+        : `<span class="desc-cancel-ic">↩</span><span>Передумали? Отпустите карту здесь — она вернётся в руку</span>`;
+      $('#card-desc').innerHTML = `<div class="desc-body"><b>${title}</b><span>${text}</span><div class="desc-forecast" hidden></div></div><div class="desc-cancel">${hint}</div>`;
       $('#card-desc').hidden = false;
+    },
+    // D-047: battle forecast while an attacking route (or a ranged card) is being aimed — shared by both input schemes
+    updateForecast(ctx) {
+      const s = this.state, p = this.current(), enemy = s.players[3 - p.id], kind = ctx.def.kind, rd = this.renderer;
+      let fc = null;
+      if (ctx.valid && ctx.choice && ctx.choice.path && ctx.choice.path.some(c => c.attack)) fc = R.forecast(s, p, enemy, 'clash');
+      else if (ctx.valid && ctx.over && (kind === 'volley' || kind === 'catapult')) fc = R.forecast(s, p, enemy, kind);
+      rd.forecast = fc ? Object.assign({ a: p.id, d: enemy.id }, fc) : null;
+      const fcEl = $('#card-desc .desc-forecast');
+      if (!fcEl) return;
+      if (fc) {
+        const outcome = { defenderRetreats: 'противник отступит, вы займёте его гекс', attackerRetreats: fc.aAfter === fc.dAfter ? 'равные силы — вы отступите' : 'вы отступите', ranged: 'без ответа',
+          eliminated: fc.dAfter <= 0 && fc.aAfter <= 0 ? 'оба отряда погибнут — ничья' : fc.dAfter <= 0 ? 'отряд противника будет уничтожен' : 'ваш отряд будет уничтожен' }[fc.result];
+        fcEl.innerHTML = `<b>Прогноз боя:</b> вы −${fc.dmgToAtt} (${p.warband.minions} → ${fc.aAfter}), противник −${fc.dmgToDef} (${enemy.warband.minions} → ${fc.dAfter}) — ${outcome}`;
+        fcEl.hidden = false;
+      } else fcEl.hidden = true;
     },
     startDrag(e, uid, cardEl) {
       const s = this.state, p = this.handPlayer();
@@ -366,21 +401,7 @@ window.HB = window.HB || {};
         if (play.path) play.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: i + 1, strong: dg.over, attack: !!c.attack }));
       }
       rd.highlights = hl;
-      // D-047: battle forecast while an attacking route (or a ranged card) is being aimed
-      const enemy = s.players[3 - p.id];
-      let fc = null;
-      if (dg.valid && dg.choice && dg.choice.path && dg.choice.path.some(c => c.attack)) fc = R.forecast(s, p, enemy, 'clash');
-      else if (dg.valid && dg.over && (kind === 'volley' || kind === 'catapult')) fc = R.forecast(s, p, enemy, kind);
-      rd.forecast = fc ? Object.assign({ a: p.id, d: enemy.id }, fc) : null;
-      const fcEl = $('#card-desc .desc-forecast');
-      if (fcEl) {
-        if (fc) {
-          const outcome = { defenderRetreats: 'противник отступит, вы займёте его гекс', attackerRetreats: fc.aAfter === fc.dAfter ? 'равные силы — вы отступите' : 'вы отступите', ranged: 'без ответа',
-            eliminated: fc.dAfter <= 0 && fc.aAfter <= 0 ? 'оба отряда погибнут — ничья' : fc.dAfter <= 0 ? 'отряд противника будет уничтожен' : 'ваш отряд будет уничтожен' }[fc.result];
-          fcEl.innerHTML = `<b>Прогноз боя:</b> вы −${fc.dmgToAtt} (${p.warband.minions} → ${fc.aAfter}), противник −${fc.dmgToDef} (${enemy.warband.minions} → ${fc.dAfter}) — ${outcome}`;
-          fcEl.hidden = false;
-        } else fcEl.hidden = true;
-      }
+      this.updateForecast({ valid: dg.valid, choice: dg.choice, over: dg.over, def: dg.def });
       fx.classList.toggle('ok', dg.over && dg.valid);
       $('#hand-area').classList.toggle('drop-cancel', !dg.over);
     },
@@ -397,6 +418,74 @@ window.HB = window.HB || {};
         return;
       }
       this.refresh();
+    },
+    // ------------------------------------------------------------ tap to play (control = 'tap', D-046/D-048)
+    bindTap() {
+      $('#hand').addEventListener('click', e => { if (this.setup.control !== 'tap') return; const el = e.target.closest('.card'); if (!el || !el.dataset.uid) return; this.onCardTap(+el.dataset.uid, el); });
+      $('#card-desc').addEventListener('click', () => { if (this.setup.control === 'tap' && this.sel) this.cancelSelect(); });
+      $('#board').addEventListener('pointermove', e => { if (this.sel && e.pointerType !== 'touch') this.previewAt(e.clientX, e.clientY); });
+    },
+    needsTarget(play) { return !!(play.options && play.options.length); },
+    onCardTap(uid, cardEl) {
+      const s = this.state, p = this.handPlayer();
+      if (!s || this.busy || s.current !== p.id || s.phase !== 'play' || this.handoverPending) return;
+      const card = p.hand.find(c => c.uid === uid); if (!card) return;
+      if (this.sel && this.sel.uid === uid) { if (!this.needsTarget(this.sel.play)) this.commitSel(this.cardCenter(uid)); return; }
+      const play = R.getPlay(s, card), d = CARDS[card.def];
+      if (!play.ok) { cardEl.classList.add('shake'); setTimeout(() => cardEl.classList.remove('shake'), 400); return; }
+      this.sel = { uid, card, def: d, play, choice: null, valid: false };
+      this.showDesc(d.ru, d.text, this.needsTarget(play));
+      this.refresh();
+      this.previewAt(null, null);
+    },
+    cardCenter(uid) { const el = document.querySelector(`#hand .card[data-uid="${uid}"]`); if (!el) return null; const r = rectOf(el); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; },
+    cancelSelect() { this.sel = null; $('#card-desc').hidden = true; this.renderer.highlights = []; this.renderer.pathFrom = null; this.renderer.forecast = null; this.refresh(); },
+    // computes the option for a tap/hover position and draws the preview; without a position every target is shown faintly
+    previewAt(clientX, clientY) {
+      const sel = this.sel, p = this.current(), rd = this.renderer, play = sel.play, kind = sel.def.kind, hl = [];
+      const br = rectOf($('#board')), has = clientX != null;
+      rd.pathFrom = { col: p.warband.col, row: p.warband.row };
+      sel.choice = null; sel.valid = false;
+      if (play.options && play.options[0] && play.options[0].end) {
+        let opt = null;
+        if (has) {
+          const px = clientX - br.left, py = clientY - br.top;
+          const dist = c => { const q = rd.cellXY(c.col, c.row); return Math.hypot(q.x - px, q.y - py); };
+          let best = Infinity;
+          for (const o of play.options) { const sc = dist(o.end) + 0.35 * dist(o.path[0]); if (sc < best) { best = sc; opt = o; } }
+          if (best > rd.size * 2.4) opt = null; // tapped far from any end cell
+        }
+        const ends = new Set(play.options.map(o => hex.key(o.end.col, o.end.row)));
+        for (const k of ends) { const [c, r] = k.split(',').map(Number); hl.push({ col: c, row: r, kind: 'target', strong: false }); }
+        if (opt) { sel.choice = opt; sel.valid = true; opt.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: i + 1, strong: true, attack: !!c.attack })); }
+      } else if (play.options && play.options[0] && play.options[0].axis != null) {
+        let opt = null;
+        if (has) {
+          const wc = rd.cellXY(p.warband.col, p.warband.row);
+          const ang = Math.atan2(clientY - (br.top + wc.y), clientX - (br.left + wc.x));
+          const diff = (a, b) => { let d = Math.abs(a - b) % (Math.PI * 2); return d > Math.PI ? Math.PI * 2 - d : d; };
+          let best = Infinity;
+          for (const o of play.options) { const d = Math.min(diff(ang, hex.dirAngle(o.axis)), diff(ang, hex.dirAngle(o.axis + 3))); if (d < best) { best = d; opt = o; } }
+        }
+        if (opt) { sel.choice = opt; sel.valid = true; }
+        for (const o of play.options) for (const c of o.cells) hl.push({ col: c.col, row: c.row, kind: 'target', strong: o === opt });
+      } else if (play.options && play.options[0] && play.options[0].side != null) {
+        if (has) { const wx = rd.warbandScreenX(p.id), side = clientX < wx ? -1 : 1; const opt = play.options.find(o => o.side === side) || play.options[0]; sel.choice = opt; sel.valid = true; }
+        for (let d = 0; d < 6; d++) { const n = hex.neighbor(p.warband.col, p.warband.row, d); if (hex.exists(n.col, n.row, this.state.cols, this.state.rows)) hl.push({ col: n.col, row: n.row, kind: 'target', strong: false }); }
+      } else if (kind === 'explosive') {
+        const cell = has ? rd.cellFromPointer(clientX, clientY) : null;
+        const opt = cell && play.options.find(o => o.cell.col === cell.col && o.cell.row === cell.row);
+        if (opt) { sel.choice = opt; sel.valid = true; }
+        for (const o of play.options) hl.push({ col: o.cell.col, row: o.cell.row, kind: 'target', strong: o === opt });
+      } else { sel.valid = true; }
+      rd.highlights = hl;
+      this.updateForecast({ valid: sel.valid, choice: sel.choice, over: has, def: sel.def });
+      return sel.valid;
+    },
+    commitSel(from) {
+      const sel = this.sel; this.sel = null;
+      $('#card-desc').hidden = true; this.renderer.highlights = []; this.renderer.pathFrom = null; this.renderer.forecast = null;
+      this.commit(sel.uid, sel.choice, from);
     },
     commit(uid, choice, from) {
       const s = this.state, p = this.current(), card = p.hand.find(c => c.uid === uid);
@@ -418,6 +507,10 @@ window.HB = window.HB || {};
     },
     onCanvasClick(e) {
       const s = this.state; if (!s || this.drag) return;
+      if (this.sel) { // tap mode: a tap on the board plays the selected card at that target
+        if (this.previewAt(e.clientX, e.clientY)) this.commitSel(this.cardCenter(this.sel.uid));
+        return;
+      }
       const cell = this.renderer.cellFromPointer(e.clientX, e.clientY);
       if (!cell) return;
       const c = s.cells[hex.key(cell.col, cell.row)];
@@ -462,8 +555,10 @@ window.HB = window.HB || {};
     },
     showHelp() {
       const ov = this.overlay(`<div class="help"><h2>Как играть</h2>
-        <p><b>Ход.</b> В начале хода рука добирается до 4 карт из колоды (если колода пуста, сброс перемешивается в колоду). Чтобы сыграть карту, перетащите её на поле: маршрут показывается заранее, отряд выполняет действие сразу после того, как вы отпустите карту, и она уходит в сброс. Отпустите над рукой — карта вернётся на место. За ход можно сыграть сколько угодно карт, минимум одну; после первой карты в правом слоте появляется «Закончить ход».</p>
-        <p><b>Направления.</b> Карта движения задаёт только форму и длину маршрута (прямая, крюк, зигзаг, полукольцо, кольцо). Куда идти — решаете вы: пока тянете карту, на поле подсвечены все возможные концы маршрута, а выбирается тот, что ближе к точке, где вы отпустите карту. Для «Широкого марша» сторона — слева или справа от отряда.</p>
+        <p><b>Ход.</b> В начале хода рука добирается до 4 карт из колоды (если колода пуста, сброс перемешивается в колоду). ${this.setup.control === 'tap'
+          ? 'Чтобы сыграть карту, тапните её: над рукой появится панель с описанием, а на поле подсветятся все цели. Тапните нужный гекс — отряд выполнит действие сразу, а карта уйдёт в сброс. Карту без цели (Сбор, Боевой клич…) играет тап по полю или повторный тап по карте. Передумали — тапните по панели с описанием, карта останется в руке.'
+          : 'Чтобы сыграть карту, перетащите её на поле: маршрут показывается заранее, отряд выполняет действие сразу после того, как вы отпустите карту, и она уходит в сброс. Отпустите над рукой — карта вернётся на место.'} За ход можно сыграть сколько угодно карт, минимум одну; после первой карты в правом слоте появляется «Закончить ход». Способ управления переключается в меню: «Управление».</p>
+        <p><b>Направления.</b> Карта движения задаёт только форму и длину маршрута (прямая, крюк, зигзаг, полукольцо). Куда идти — решаете вы: подсвечены все возможные концы маршрута, выбирается тот, что ближе к точке, где вы отпустили карту или тапнули. Для «Широкого марша» сторона — слева или справа от отряда.</p>
         <p><b>Территория.</b> Пройденные гексы окрашиваются в ваш цвет. Если ваши гексы замыкают область, всё внутри становится вашим. <b>Форпосты</b> захватываются проходом через гекс или замыканием контура; карта, парящая над форпостом, сразу прилетает в руку (если рука полна — ложится наверх колоды). Все карты форпостов срабатывают мгновенно: Вербовка +6, Оцепление красит гексы вокруг отряда, Взрывной заряд бьёт соседний гекс, Молитва возвращает верхнюю карту сброса, Катапульта бьёт на 3 гекса, Разведка добирает руку, Знамя даёт +1 очко вашим гексам вокруг отряда, Прыжок — через гекс. Потеря форпоста забирает карту.</p>
         <p><b>Бой.</b> Отряды не дерутся сами по себе: чтобы атаковать, доведите маршрут карты движения до гекса противника — этот шаг подсвечивается красным с мечом, и движение на нём заканчивается. Пока вы целитесь, у обоих отрядов показывается прогноз потерь, а в этой панели — кто отступит. Ваш отряд набегает на гекс противника, оба бьют одновременно. Сила удара растёт с числом миньонов, но медленнее, чем оно само (24 миньона — около 5 урона, 12 — около 3, 6 — около 2); «Боевой клич» даёт +2 к следующему удару, «Плотный строй» уменьшает каждый входящий удар на 2. После обмена отряд, в котором осталось меньше бойцов, отступает на гекс (атакующий — откуда пришёл, защитник — прочь от атакующего, и тогда атакующий занимает его гекс); при равенстве отступает атакующий. Не больше одной атаки за ход. «Залп» и «Катапульта» бьют на расстоянии без ответа.</p>
         <p><b>Победа</b>: уничтожить отряд противника или иметь больше очков территории после лимита раундов. Тай-брейк: точки → миньоны → захват в последнем раунде.</p>
