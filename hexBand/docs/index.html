@@ -24,7 +24,8 @@
 <body>
 <header>
   <a href="../">← Игра</a>
-  <button data-doc="GDD.md">GDD</button>
+  <button data-doc="GDD-current.md">GDD (актуальный)</button>
+  <button data-doc="GDD.md">GDD (исходный)</button>
   <button data-doc="DECISIONS.md">Решения</button>
   <button data-doc="CHANGELOG.md">История изменений</button>
 </header>
@@ -49,7 +50,7 @@
   }
   btns.forEach(b => b.addEventListener('click', () => show(b.dataset.doc)));
   const start = location.hash.slice(1);
-  show(btns.some(b => b.dataset.doc === start) ? start : 'GDD.md');
+  show(btns.some(b => b.dataset.doc === start) ? start : 'GDD-current.md');
 })();
 </script>
 </body>
