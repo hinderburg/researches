@@ -143,8 +143,11 @@ window.HB = window.HB || {};
       $('#log-lines').innerHTML = '';
       this.appendLog(this.state.log);
       this.layout();
+      // D-064: match intro — recruits arrive, banners rise, start zones flip; the first turn begins when it is over
+      const intro = this.renderer.playIntro();
+      this.busy = true;
       this.refresh();
-      this.nextTurn();
+      setTimeout(() => { this.busy = false; this.refresh(); this.nextTurn(); }, intro + 100);
     },
     toSetup() { this.showMenu(); },
     // ------------------------------------------------------------ main menu (D-051): win conditions with live scenes, Play, Settings

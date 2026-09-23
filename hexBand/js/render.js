@@ -10,6 +10,7 @@ window.HB = window.HB || {};
   // easing for the capture animation (D-055): a block shoots up with overshoot, hangs, then settles back down
   const easeOutBack = u => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(u - 1, 3) + c1 * Math.pow(u - 1, 2); };
   const liftCurve = k => k < 0.28 ? easeOutBack(k / 0.28) : k < 0.5 ? 1 : (u => 1 - (u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2))((k - 0.5) / 0.5);
+  const TILE_THICK = 0.14; // D-064: side face of a tile block, in hex sizes
   const mix = (a, b, t) => { const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16), ch = sh => Math.round(((pa >> sh) & 255) * (1 - t) + ((pb >> sh) & 255) * t); return `rgb(${ch(16)},${ch(8)},${ch(0)})`; };
 
   class Renderer {
@@ -20,9 +21,38 @@ window.HB = window.HB || {};
       this.timeline = []; this.decor = {}; this.dropOK = false; this.dragging = false; this.fx = []; this.forecast = null;
       // D-055: capture animation state — cells whose new owner is not revealed yet, cells popping up, settlements being built
       this.reveal = {}; this.pop = {}; this.flip = {}; this.build = {}; this.settle = {}; this.bump = { 1: 0, 2: 0 }; this.badgePop = {};
+      // D-064: match intro state — hidden warbands, rising banners, counting minions
+      this.hideWb = {}; this.raise = {}; this.countAnim = {}; this.order = [];
       requestAnimationFrame(t => this.frame(t));
     }
-    setState(s) { this.s = s; this.highlights = []; this.texts = []; this.flash = {}; this.timeline = []; this.slide = { 1: null, 2: null }; this.reveal = {}; this.pop = {}; this.flip = {}; this.build = {}; this.fx = []; this.bump = { 1: 0, 2: 0 }; this.badgePop = {}; this.buildDecor(); }
+    setState(s) {
+      this.s = s; this.highlights = []; this.texts = []; this.flash = {}; this.timeline = []; this.slide = { 1: null, 2: null }; this.reveal = {}; this.pop = {}; this.flip = {}; this.build = {}; this.fx = []; this.bump = { 1: 0, 2: 0 }; this.badgePop = {};
+      this.hideWb = {}; this.raise = {}; this.countAnim = {};
+      // D-064: tiles are drawn as blocks top to bottom, so a lower tile's face covers the side of the tile above it
+      this.order = Object.values(s.cells).sort((a, b) => (a.row + 0.5 * (a.col & 1)) - (b.row + 0.5 * (b.col & 1)) || a.col - b.col);
+      this.buildDecor();
+    }
+    // D-064: the match opens on a neutral board — recruits run to each start hex, the banner rises while the count
+    // climbs from 0, then the start zone (and the two outposts) flips to the player's colour
+    playIntro() {
+      const s = this.s; let t = 0, end = 0;
+      for (const k in s.cells) if (s.cells[k].owner) this.reveal[k] = 0;
+      for (const pid of [1, 2]) {
+        const w = s.players[pid].warband, t0 = t; t += 1000; // the second player starts a second later
+        this.hideWb[pid] = true;
+        this.schedule(t0, () => this.spawnRecruits(pid, w.col, w.row, 8));
+        this.schedule(t0 + 560, () => {
+          this.hideWb[pid] = false; this.raise[pid] = performance.now();
+          this.countAnim[pid] = { t0: performance.now() + 250, dur: 800, from: 0, to: w.minions };
+          this.bump[pid] = performance.now() + 1000;
+        });
+        const cells = Object.values(s.cells).filter(c => c.owner === pid).map(c => ({ c, d: hex.distance(c, w) })).sort((a, b) => a.d - b.d);
+        let last = 0;
+        cells.forEach(({ c, d }, i) => { const at = t0 + 1450 + d * 110 + (i % 4) * 20; last = Math.max(last, at); this.schedule(at, () => this.flipCell(c.col, c.row, 0, pid)); });
+        end = Math.max(end, last + 700);
+      }
+      return end;
+    }
     buildDecor() {
       const s = this.s; this.decor = {}; this.settle = {};
       const reserved = new Set();
@@ -251,6 +281,17 @@ window.HB = window.HB || {};
       for (let i = 1; i < 6; i++) ctx.lineTo(pts[i].x, pts[i].y);
       ctx.closePath();
     }
+    // D-064: a tile block — side face under corners 0..3 (right, lower-right, lower-left, left) extruded down by `thick`,
+    // then the top face with a thin outline; a 1 px inset leaves a dark seam between neighbouring tiles
+    drawTileBlock(ctx, x, y, top, side, thick) {
+      const S = this.size, inset = 1, t = hex.corners(x, y, S, inset), b = hex.corners(x, y + thick, S, inset);
+      ctx.fillStyle = side; ctx.beginPath();
+      ctx.moveTo(t[0].x, t[0].y); for (let i = 1; i <= 3; i++) ctx.lineTo(t[i].x, t[i].y);
+      for (let i = 3; i >= 0; i--) ctx.lineTo(b[i].x, b[i].y); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.22)'; ctx.lineWidth = 1; for (let i = 1; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(t[i].x, t[i].y); ctx.lineTo(b[i].x, b[i].y); ctx.stroke(); }
+      ctx.fillStyle = top; ctx.beginPath(); ctx.moveTo(t[0].x, t[0].y); for (let i = 1; i < 6; i++) ctx.lineTo(t[i].x, t[i].y); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 1; ctx.stroke();
+    }
     draw(now) {
       const ctx = this.ctx, s = this.s, S = this.size;
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -258,22 +299,19 @@ window.HB = window.HB || {};
       // finished pop-ups become flat territory before anything is drawn (no one-frame gap between block and tile)
       for (const k in this.pop) if (now - this.pop[k].t0 >= this.pop[k].dur) delete this.pop[k];
       for (const k in this.flip) if (now - this.flip[k].t0 >= this.flip[k].dur) delete this.flip[k];
-      // grass
-      for (const k in s.cells) {
-        const c = s.cells[k], p = this.cellXY(c.col, c.row);
-        this.hexPath(ctx, p.x, p.y, 0);
-        ctx.fillStyle = hash(s.decorSeed, c.col, c.row) < 0.5 ? COL.grass : COL.grassAlt; ctx.fill();
-        ctx.strokeStyle = COL.grassEdge; ctx.lineWidth = 2; ctx.stroke();
-        // grass tufts
-        ctx.strokeStyle = 'rgba(40,90,20,0.35)'; ctx.lineWidth = 1.5;
-        for (let i = 0; i < 3; i++) { const tx = p.x + (hash(c.col, c.row, i + 20) - 0.5) * S * 1.1, ty = p.y + (hash(c.col, c.row, i + 40) - 0.5) * S * 1.2; ctx.beginPath(); ctx.moveTo(tx - 2, ty + 3); ctx.lineTo(tx, ty - 2); ctx.lineTo(tx + 2, ty + 3); ctx.stroke(); }
-      }
-      // territory (flat tiles; a hex that is popping up is drawn later as a raised block)
-      for (const k in s.cells) {
-        const c = s.cells[k], owner = this.shownOwner(k); if (!owner || this.pop[k] || this.flip[k]) continue;
-        const p = this.cellXY(c.col, c.row);
-        this.hexPath(ctx, p.x, p.y, 0); ctx.fillStyle = COL[owner]; ctx.globalAlpha = 0.92; ctx.fill(); ctx.globalAlpha = 1;
-        ctx.strokeStyle = COL[owner + 'Dark']; ctx.lineWidth = 1.5; ctx.stroke();
+      // D-064: tiles as blocks — a dark side face under the lower edges and a slightly inset top face, drawn top to
+      // bottom so each lower tile covers the side of the one above. Tiles that are popping or flipping leave a hole.
+      const T = S * TILE_THICK;
+      for (const c of this.order) {
+        const k = hex.key(c.col, c.row), p = this.cellXY(c.col, c.row), owner = this.shownOwner(k);
+        if (this.pop[k] || this.flip[k]) { ctx.fillStyle = '#4a3a22'; this.hexPath(ctx, p.x, p.y, 0); ctx.fill(); continue; }
+        const grassAlt = hash(s.decorSeed, c.col, c.row) < 0.5;
+        const top = owner ? COL[owner] : grassAlt ? COL.grass : COL.grassAlt, side = owner ? COL[owner + 'Dark'] : COL.grassSide;
+        this.drawTileBlock(ctx, p.x, p.y, top, side, T);
+        if (!owner) { // grass tufts
+          ctx.strokeStyle = 'rgba(40,90,20,0.35)'; ctx.lineWidth = 1.5;
+          for (let i = 0; i < 3; i++) { const tx = p.x + (hash(c.col, c.row, i + 20) - 0.5) * S * 1.0, ty = p.y + (hash(c.col, c.row, i + 40) - 0.5) * S * 1.1; ctx.beginPath(); ctx.moveTo(tx - 2, ty + 3); ctx.lineTo(tx, ty - 2); ctx.lineTo(tx + 2, ty + 3); ctx.stroke(); }
+        }
       }
       // territory outline: edges between own cells and anything else
       for (const k in s.cells) {
@@ -296,7 +334,7 @@ window.HB = window.HB || {};
         const kk = (now - pp.t0) / pp.dur;
         const lift = S * 0.6 * liftCurve(kk), pt = this.cellXY(c.col, c.row);
         lifts[k] = lift;
-        const top = hex.corners(pt.x, pt.y - lift, S, 0), base = hex.corners(pt.x, pt.y, S, 0);
+        const top = hex.corners(pt.x, pt.y - lift, S, 0), base = hex.corners(pt.x, pt.y + S * TILE_THICK, S, 0); // keeps the block's own thickness when it settles
         // side faces: the lower silhouette (corners 0..3) extruded down to the ground
         ctx.fillStyle = COL[pp.owner + 'Dark']; ctx.beginPath();
         ctx.moveTo(top[0].x, top[0].y); for (let i = 1; i <= 3; i++) ctx.lineTo(top[i].x, top[i].y);
@@ -643,6 +681,7 @@ window.HB = window.HB || {};
       return { x: a.x + (b.x - a.x) * f, y: y - hop };
     }
     drawWarband(ctx, p, now) {
+      if (this.hideWb[p.id]) return; // D-064: not on the board yet during the match intro
       const S = this.size, w = p.warband, pos = this.warbandPos(p, now);
       let x = pos.x, y = pos.y;
       const sh = now - this.shake[p.id];
@@ -675,9 +714,14 @@ window.HB = window.HB || {};
       }
       // banner: only the minion count (D-047); it bumps when reinforcements arrive
       const bumpK = (now - this.bump[p.id]) / 380, bumpSc = bumpK >= 0 && bumpK < 1 ? 1 + 0.35 * Math.sin(bumpK * Math.PI) : 1;
-      const px = x + S * 0.05, top = y - S * 1.6;
+      // D-064: during the intro the banner rises from the crowd and the count climbs from 0
+      const rk = this.raise[p.id] ? Math.min(1, Math.max(0, (now - this.raise[p.id]) / 500)) : 1, rise = rk < 1 ? easeOutBack(rk) : 1;
+      const px = x + S * 0.05, top = y - S * 0.2 - S * 1.4 * rise;
       ctx.strokeStyle = '#3b2a14'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px, y - S * 0.2); ctx.lineTo(px, top); ctx.stroke();
-      const txt = String(w.minions), fs = Math.round(S * 0.44);
+      let shown = w.minions;
+      const ca = this.countAnim[p.id];
+      if (ca) { const ck = (now - ca.t0) / ca.dur; if (ck >= 1) delete this.countAnim[p.id]; else shown = Math.round(ca.from + (ca.to - ca.from) * (ck < 0 ? 0 : 1 - Math.pow(1 - ck, 2))); }
+      const txt = String(shown), fs = Math.round(S * 0.44);
       ctx.font = `900 ${fs}px system-ui, sans-serif`;
       const fw = Math.max(S * 0.9, ctx.measureText(txt).width + S * 0.5), fh = S * 0.56;
       ctx.save(); ctx.translate(px, top + fh * 0.54); ctx.scale(bumpSc, bumpSc); ctx.translate(-px, -(top + fh * 0.54));

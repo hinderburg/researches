@@ -1,7 +1,7 @@
 // HEXBand prototype — tunables. See docs/DECISIONS.md for the reasoning behind each value.
 window.HB = window.HB || {};
 HB.CONFIG = {
-  VERSION: '0.16.2',
+  VERSION: '0.17.0',
   COLS: 7,               // flat-top hex columns; odd columns are shifted down and hold one cell less (see D-002)
   ROWS: 11,              // rows in even columns; odd columns have ROWS-1
   HAND_SIZE: 4,
@@ -30,7 +30,7 @@ HB.CONFIG = {
   CENTER_POI: { col: 3, row: 4 },
   START: { 1: { col: 3, row: 9 }, 2: { col: 3, row: 0 } },
   COLORS: {
-    grass: '#74b64b', grassAlt: '#6dae46', grassEdge: '#4f8a33',
+    grass: '#74b64b', grassAlt: '#6dae46', grassEdge: '#4f8a33', grassSide: '#4a7d2e',
     1: '#3f8ae6', 2: '#e0503f',
     '1Light': '#8cc4ff', '2Light': '#ff9a8a',
     '1Dark': '#1f4f9a', '2Dark': '#8f2419',
