@@ -13,7 +13,7 @@ window.HB = window.HB || {};
       this.canvas = canvas; this.ctx = canvas.getContext('2d');
       this.s = null; this.size = 30; this.offset = { x: 0, y: 0 }; this.dpr = 1;
       this.highlights = []; this.texts = []; this.flash = {}; this.shake = { 1: 0, 2: 0 }; this.slide = { 1: null, 2: null };
-      this.timeline = []; this.decor = {}; this.dropOK = false; this.dragging = false; this.fx = [];
+      this.timeline = []; this.decor = {}; this.dropOK = false; this.dragging = false; this.fx = []; this.forecast = null;
       requestAnimationFrame(t => this.frame(t));
     }
     setState(s) { this.s = s; this.highlights = []; this.texts = []; this.flash = {}; this.timeline = []; this.slide = { 1: null, 2: null }; this.buildDecor(); }
@@ -362,21 +362,29 @@ window.HB = window.HB || {};
         ctx.fillStyle = '#ffe14a'; ctx.beginPath(); ctx.arc(mx - r * 0.3, my - r * 0.95, r * 0.17, 0, Math.PI * 2); ctx.arc(mx + r * 0.3, my - r * 0.95, r * 0.17, 0, Math.PI * 2); ctx.fill(); // eyes
         if (m.i % 3 === 1) { ctx.fillStyle = dark; ctx.beginPath(); ctx.arc(mx - r * 0.9, my + r * 0.1, r * 0.55, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = light; ctx.lineWidth = 1; ctx.stroke(); } // shield
       }
-      // banner: two lines — minion count and the current strike (D-043); a pending Battle Cry bonus shows in yellow
-      const strike = R.strikeOf(this.s, p), boosted = p.status.attackBonus > 0;
-      const px = x + S * 0.05, top = y - S * 1.85;
+      // banner: only the minion count (D-047); a pending Battle Cry bonus tints the flag border yellow
+      const boosted = p.status.attackBonus > 0;
+      const px = x + S * 0.05, top = y - S * 1.6;
       ctx.strokeStyle = '#3b2a14'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px, y - S * 0.2); ctx.lineTo(px, top); ctx.stroke();
-      const txt = String(w.minions), sub = 'удар ' + strike, fs = Math.round(S * 0.4), fs2 = Math.round(S * 0.23);
-      ctx.font = `900 ${fs}px system-ui, sans-serif`; const w1 = ctx.measureText(txt).width;
-      ctx.font = `700 ${fs2}px system-ui, sans-serif`; const w2 = ctx.measureText(sub).width;
-      const fw = Math.max(S * 1.15, Math.max(w1, w2) + S * 0.5), fh = S * 0.82;
-      ctx.fillStyle = color; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px + fw, top + fh * 0.06); ctx.lineTo(px + fw - S * 0.14, top + fh * 0.53); ctx.lineTo(px + fw, top + fh); ctx.lineTo(px, top + fh + fh * 0.06); ctx.closePath(); ctx.fill(); ctx.stroke();
-      const cx = px + fw / 2 - S * 0.05;
-      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.font = `900 ${fs}px system-ui, sans-serif`; ctx.fillText(txt, cx, top + fh * 0.33);
-      ctx.fillStyle = boosted ? '#ffe14a' : 'rgba(255,255,255,0.9)';
-      ctx.font = `700 ${fs2}px system-ui, sans-serif`; ctx.fillText(sub, cx, top + fh * 0.75);
+      const txt = String(w.minions), fs = Math.round(S * 0.44);
+      ctx.font = `900 ${fs}px system-ui, sans-serif`;
+      const fw = Math.max(S * 0.9, ctx.measureText(txt).width + S * 0.5), fh = S * 0.56;
+      ctx.fillStyle = color; ctx.strokeStyle = boosted ? '#ffe14a' : '#fff'; ctx.lineWidth = boosted ? 3 : 2;
+      ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px + fw, top + fh * 0.08); ctx.lineTo(px + fw - S * 0.13, top + fh * 0.54); ctx.lineTo(px + fw, top + fh); ctx.lineTo(px, top + fh + fh * 0.08); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, px + fw / 2 - S * 0.05, top + fh * 0.54);
+      // battle forecast (D-047): predicted losses of both warbands while an attacking route is being chosen
+      const fc = this.forecast;
+      if (fc && (fc.a === p.id || fc.d === p.id)) {
+        const mine = fc.a === p.id, loss = mine ? fc.dmgToAtt : fc.dmgToDef, after = mine ? fc.aAfter : fc.dAfter;
+        if (!(mine && loss === 0)) {
+          const t = `−${loss} → ${after}`, bs = Math.round(S * 0.3);
+          ctx.font = `900 ${bs}px system-ui, sans-serif`;
+          const bw = ctx.measureText(t).width + S * 0.4, bh = S * 0.42, bx = x - bw / 2, by = y + S * 0.42;
+          ctx.fillStyle = 'rgba(20,12,6,0.88)'; ctx.strokeStyle = after <= 0 ? '#ff5a3c' : '#ffd766'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, bh / 2); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = after <= 0 ? '#ff8a76' : '#ffe9a8'; ctx.fillText(t, x, by + bh / 2 + 1);
+        }
+      }
       if (p.id === this.s.current && this.s.phase === 'play') {
         ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 2; ctx.setLineDash([5, 5]);
         ctx.beginPath(); ctx.ellipse(x, y + S * 0.05, S * 0.78, S * 0.62, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);

@@ -21,8 +21,9 @@ window.HB = window.HB || {};
   const cellAt = (s, c) => s.cells[K(c.col, c.row)];
   const exists = (s, c) => hex.exists(c.col, c.row, s.cols, s.rows);
   const enemyOf = (s, pid) => s.players[3 - pid];
-  // D-039: a warband's strike = floor(log2(minions)), never below 1
-  const baseDamage = n => Math.max(1, Math.floor(Math.log2(Math.max(1, n))));
+  // D-047: a warband's strike = 5 × (N / 24)^0.7 — fractional; rounding happens only when damage is dealt
+  const baseDamage = n => CFG.DAMAGE_BASE * Math.pow(Math.max(0, n) / CFG.DAMAGE_REF, CFG.DAMAGE_EXP);
+  const applyDamage = v => Math.max(1, Math.round(v));
 
   function occupant(s, c) {
     for (const pid of [1, 2]) { const w = s.players[pid].warband; if (w.col === c.col && w.row === c.row) return pid; }
@@ -216,16 +217,26 @@ window.HB = window.HB || {};
 
   // ---------------------------------------------------------------- combat (D-039)
   // outgoing strike of a warband with its card modifiers, reduced by the target's formation
-  // D-043: flat modifiers — base + attack bonus (Battle Cry, consumed) − defender's formation reduction, never below 1
+  // D-043: flat modifiers — base + attack bonus (Battle Cry, consumed) − defender's formation reduction (fractional, D-047)
   function strikeValue(s, a, d, consume) {
     let v = baseDamage(a.warband.minions);
     const notes = [];
     if (a.status.attackBonus) { v += a.status.attackBonus; if (consume) a.status.attackBonus = 0; notes.push('Боевой клич'); }
     if (d && active(s, d.status.formationUntil)) { v -= CFG.FORMATION_REDUCE; notes.push('Плотный строй'); }
-    return { value: Math.max(1, v), notes };
+    return { value: v, notes };
   }
-  // current strike shown on the banner (base + pending bonus)
-  const strikeOf = (s, p) => baseDamage(p.warband.minions) + (p.status.attackBonus || 0);
+  // D-047: what an attack would do, without touching the state — shown to the player while choosing an attacking route
+  function forecast(s, a, d, kind) {
+    const aw = a.warband, dw = d.warband;
+    if (kind === 'volley' || kind === 'catapult') {
+      const dmg = kind === 'volley' ? applyDamage(strikeValue(s, a, d, false).value) : CARDS.catapult.damage;
+      return { kind, dmgToDef: dmg, dmgToAtt: 0, aAfter: aw.minions, dAfter: Math.max(0, dw.minions - dmg), result: dw.minions - dmg <= 0 ? 'eliminated' : 'ranged' };
+    }
+    const dmgToDef = applyDamage(strikeValue(s, a, d, false).value), dmgToAtt = applyDamage(strikeValue(s, d, a, false).value);
+    const aAfter = Math.max(0, aw.minions - dmgToAtt), dAfter = Math.max(0, dw.minions - dmgToDef);
+    const result = aAfter <= 0 || dAfter <= 0 ? 'eliminated' : aAfter > dAfter ? 'defenderRetreats' : 'attackerRetreats';
+    return { kind: 'clash', dmgToDef, dmgToAtt, aAfter, dAfter, result };
+  }
   // one-sided hit (Volley, Catapult): no clash, no retreat
   function strike(s, a, d, dmg, kind) {
     const dw = d.warband, before = dw.minions;
@@ -239,6 +250,7 @@ window.HB = window.HB || {};
   function clash(s, a, d) {
     const aw = a.warband, dw = d.warband, from = { col: aw.col, row: aw.row }, at = { col: dw.col, row: dw.row };
     const sa = strikeValue(s, a, d, true), sd = strikeValue(s, d, a, true);
+    sa.value = applyDamage(sa.value); sd.value = applyDamage(sd.value); // D-047: round only when dealt
     const aBefore = aw.minions, dBefore = dw.minions;
     dw.minions = Math.max(0, dw.minions - sa.value);
     aw.minions = Math.max(0, aw.minions - sd.value);
@@ -332,7 +344,7 @@ window.HB = window.HB || {};
       }
       case 'flank_claim': { for (const c of choice.cells) paint(s, p, c, 'split'); enclosure(s, p); break; }
       case 'cordon': { for (let d = 0; d < 6; d++) { const n = hex.neighbor(w.col, w.row, d); if (exists(s, n)) paint(s, p, n, 'split'); } enclosure(s, p); break; }
-      case 'volley': { const sv = strikeValue(s, p, e, true); strike(s, p, e, sv.value, 'Залп'); break; }
+      case 'volley': { const sv = strikeValue(s, p, e, true); strike(s, p, e, applyDamage(sv.value), 'Залп'); break; }
       case 'catapult': { strike(s, p, e, def.damage, 'Катапульта'); break; }
       case 'reinforce': {
         const before = w.minions; w.minions += def.amount;
@@ -458,5 +470,5 @@ window.HB = window.HB || {};
   function clone(s) { const e = s.events, l = s.log; s.events = []; s.log = []; const c = JSON.parse(JSON.stringify(s)); s.events = e; s.log = l; return c; }
 
   HB.rules = { createGame, playCard, endTurn, passTurn, getPlay, takeEvents, clone, territory, cellCount, poiCount, totalCells,
-    scoreboard, round, occupant, isBlocked, active, rand, baseDamage, strikeOf };
+    scoreboard, round, occupant, isBlocked, active, rand, baseDamage, forecast };
 })();

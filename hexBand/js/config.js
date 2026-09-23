@@ -1,7 +1,7 @@
 // HEXBand prototype — tunables. See docs/DECISIONS.md for the reasoning behind each value.
 window.HB = window.HB || {};
 HB.CONFIG = {
-  VERSION: '0.8.2',
+  VERSION: '0.9.0',
   COLS: 7,               // flat-top hex columns; odd columns are shifted down and hold one cell less (see D-002)
   ROWS: 11,              // rows in even columns; odd columns have ROWS-1
   HAND_SIZE: 4,
@@ -9,7 +9,8 @@ HB.CONFIG = {
   POI_PICKS: 3,
   ROUND_LIMIT: 10,       // GDD §23: 10 rounds per player for the first prototype
   START_MINIONS: 24,
-  // D-039: a warband's strike = floor(log2(minions)), min 1 (see rules.baseDamage); clashes are mutual
+  // D-047: a warband's strike = DAMAGE_BASE × (minions / DAMAGE_REF) ^ DAMAGE_EXP, kept fractional until dealt
+  DAMAGE_BASE: 5, DAMAGE_REF: 24, DAMAGE_EXP: 0.7,
   // D-043: card modifiers are flat
   BATTLE_CRY_BONUS: 2,   // "Боевой клич": + to the next strike
   FORMATION_REDUCE: 2,   // "Плотный строй": − from every incoming strike until the next turn (never below 1)
