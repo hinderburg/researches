@@ -80,7 +80,7 @@ window.HB = window.HB || {};
     for (const pid of [1, 2]) {
       const o = opts.players[pid], st = CFG.START[pid];
       s.players[pid] = {
-        id: pid, name: o.name || (pid === 1 ? 'Blue' : 'Red'), bot: !!o.bot,
+        id: pid, name: o.name || (pid === 1 ? 'Blue' : 'Red'), bot: !!o.bot, army: o.preset || null, // army preset key — the bot plays to its goal
         deckIds: o.deck.slice(), poiIds: o.pois.slice(),
         warband: { col: st.col, row: st.row, minions: CFG.START_MINIONS },
         status: newStatus(), deck: [], hand: [], discard: [], inPlay: null, gained: 0, gainedLastRound: 0,

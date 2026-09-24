@@ -42,7 +42,7 @@
   $('#b').value = keys[1] || keys[0];
 
   function runOne(a, b, seed, rounds, attackLimit) {
-    const s = HB.rules.createGame({ seed, roundLimit: rounds, attackLimit, players: { 1: { deck: P[a].cards, pois: P[a].pois, bot: true }, 2: { deck: P[b].cards, pois: P[b].pois, bot: true } } });
+    const s = HB.rules.createGame({ seed, roundLimit: rounds, attackLimit, players: { 1: { deck: P[a].cards, pois: P[a].pois, bot: true, preset: a }, 2: { deck: P[b].cards, pois: P[b].pois, bot: true, preset: b } } });
     HB.rules.takeEvents(s);
     const r = { fills: 0, filled: 0, clashes: 0, ranged: 0, dmg: 0, pois: 0, passes: 0, cards: 0 };
     let guard = 0;

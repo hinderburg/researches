@@ -12,27 +12,83 @@ window.HB = window.HB || {};
   // and how much the reply weighs against the position right after our turn
   const SEARCH = { depth: 4, beam: 12, finals: 10, reply: 0.6, replyDepth: 1 };
 
-  function evaluate(s, me) {
-    const en = 3 - me, p = s.players[me], e = s.players[en];
-    if (s.phase === 'over') return s.winner === me ? 1000 : s.winner === 0 ? 0 : -1000;
-    let score = W.territory * (R.territory(s, me) - R.territory(s, en))
-      + W.minions * (p.warband.minions - e.warband.minions)
-      + W.poi * (R.poiCount(s, me) - R.poiCount(s, en));
-    if (hex.distance(p.warband, e.warband) === 1) {
-      // D-039: adjacency means a mutual clash on the enemy's turn; the bigger warband holds the ground
-      score -= W.threat * R.baseDamage(e.warband.minions);
-      score += W.opportunity * R.baseDamage(p.warband.minions);
+  // D-081: each army's bot plays to its army's goal. Multipliers and extra terms on top of the shared evaluation:
+  //  terrOwn / terrEnemy — own hexes gained vs enemy hexes taken away; minOwn / minEnemy — own men vs damage dealt;
+  //  poiOwn / poiEnemy — holding outposts vs the enemy losing them; pull — towards outposts (enemyPoi: only the
+  //  enemy's); castleOpp — the chance to storm the enemy castle; hunt — closing in on the enemy warband; march —
+  //  closing in on the enemy castle while the warband outnumbers its defence; shadow — staying 2 hexes from the
+  //  enemy warband, in its way; block — fewer free hexes around the enemy warband; nearly — enemy/neutral hexes almost
+  //  enclosed by own hexes (the next loop); fort — fortified hexes; then bonuses for what the move itself did:
+  //  aggr — the clash bonus, kill — enemy warband destroyed, castleHit — per point of damage to the enemy castle,
+  //  fill — per hex taken by enclosure, steal — per enemy outpost taken, scorch — per enemy hex burnt.
+  const PROFILE_BASE = { terrOwn: 1, terrEnemy: 1, minOwn: 1, minEnemy: 1, poiOwn: 1, poiEnemy: 1, pull: 1, enemyPoi: false, castleOpp: 1,
+    hunt: 0, march: 0, shadow: 0, block: 0, nearly: 0, fort: 1, aggr: 1, kill: 4, castleHit: 0.3, fill: 0, steal: 0, scorch: 0 };
+  const PROFILES = {
+    landgrab: { terrOwn: 1.5, terrEnemy: 0.8, minOwn: 0.8, minEnemy: 0.6, pull: 1.2, castleOpp: 0.6, nearly: 0.35, aggr: 0.5, kill: 2, fill: 0.5 },
+    warlord: { terrOwn: 0.9, minOwn: 1.2, minEnemy: 1.6, castleOpp: 4, hunt: 0.35, march: 0.8, aggr: 2, kill: 12, castleHit: 2.5 },
+    warden: { terrOwn: 0.9, terrEnemy: 1.7, poiEnemy: 2.2, enemyPoi: true, pull: 1.3, shadow: 0.5, block: 0.8, fort: 2.5, aggr: 0.8, kill: 3, steal: 4, scorch: 0.6 },
+  };
+  const presetKeys = () => Object.keys(HB.cards.PRESETS || {});
+  const sameSet = (a, b) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
+  const profileMemo = {}; // evaluate() runs thousands of times per turn — resolve each army / deck once
+  function profileOf(p) {
+    const memo = (p.army || '') + '|' + p.deckIds.join();
+    if (profileMemo[memo]) return profileMemo[memo];
+    let key = p.army;
+    if (!key || !PROFILES[key]) key = presetKeys().find(k => sameSet(p.deckIds, HB.cards.PRESETS[k].cards)) || null; // a deck built by hand that matches an army
+    return (profileMemo[memo] = Object.assign({}, PROFILE_BASE, key ? PROFILES[key] : {}));
+  }
+  function freeAround(s, pl) { // hexes the warband could step to — what a Warden tries to take away
+    const w = pl.warband; let n = 0;
+    for (let d = 0; d < 6; d++) {
+      const c = hex.neighbor(w.col, w.row, d), cell = s.cells[hex.key(c.col, c.row)];
+      if (!cell || R.isBlocked(s, c) || R.walled(s, w, c) || R.occupant(s, c) || (cell.castle && cell.castle !== pl.id)) continue;
+      n++;
     }
-    let nearest = 99;
-    for (const poi of s.pois) if (poi.owner !== me) nearest = Math.min(nearest, hex.distance(p.warband, poi));
-    if (nearest < 99) score -= W.poiPull * nearest;
+    return n;
+  }
+  function nearlyEnclosed(s, me) { // non-own hexes with at least 4 own neighbours: the next loop is close
+    let n = 0;
+    for (const k in s.cells) {
+      const c = s.cells[k]; if (c.owner === me) continue;
+      let own = 0, edge = false;
+      for (let d = 0; d < 6; d++) { const nb = hex.neighbor(c.col, c.row, d), nc = s.cells[hex.key(nb.col, nb.row)]; if (!nc) edge = true; else if (nc.owner === me) own++; }
+      if (!edge && own >= 4) n++;
+    }
+    return n;
+  }
+
+  function evaluate(s, me) {
+    const en = 3 - me, p = s.players[me], e = s.players[en], P = profileOf(p);
+    if (s.phase === 'over') return s.winner === me ? 1000 : s.winner === 0 ? 0 : -1000;
+    const pw = p.warband, ew = e.warband, alive = !pw.dead && !ew.dead;
+    let score = W.territory * (P.terrOwn * R.territory(s, me) - P.terrEnemy * R.territory(s, en))
+      + W.minions * (P.minOwn * pw.minions - P.minEnemy * ew.minions)
+      + W.poi * (P.poiOwn * R.poiCount(s, me) - P.poiEnemy * R.poiCount(s, en));
+    if (alive && hex.distance(pw, ew) === 1) {
+      // D-039: adjacency means a mutual clash on the enemy's turn; the bigger warband holds the ground
+      score -= W.threat * R.baseDamage(ew.minions);
+      score += W.opportunity * P.aggr * R.baseDamage(pw.minions);
+    }
+    if (!pw.dead) {
+      let nearest = 99;
+      for (const poi of s.pois) if (P.enemyPoi ? poi.owner === en : poi.owner !== me) nearest = Math.min(nearest, hex.distance(pw, poi));
+      if (nearest === 99 && P.enemyPoi) for (const poi of s.pois) if (poi.owner !== me) nearest = Math.min(nearest, hex.distance(pw, poi));
+      if (nearest < 99) score -= W.poiPull * P.pull * nearest;
+    }
     // D-068: a summon is worth the hexes it will still capture
     for (const u of s.summons) score += (u.owner === me ? 1 : -1) * W.summon * u.acts;
     // D-070: a fortified hex cannot be lost — worth a little on top of its territory point
-    for (const k in s.cells) { const c = s.cells[k]; if (c.fortOwner && c.owner === c.fortOwner && R.active(s, c.fortUntil || -1)) score += (c.owner === me ? 1 : -1) * W.fort; }
+    for (const k in s.cells) { const c = s.cells[k]; if (c.fortOwner && c.owner === c.fortOwner && R.active(s, c.fortUntil || -1)) score += (c.owner === me ? P.fort : -1) * W.fort; }
     // iteration2 (D-074): a castle whose defence is close to the enemy warband's number is in danger when that
     // warband is near; a warband standing in its own castle shields it
-    if (s.castles) score += W.castleOpp * castleDanger(s, p, e) - W.castleThreat * castleDanger(s, e, p);
+    if (s.castles) score += W.castleOpp * P.castleOpp * castleDanger(s, p, e) - W.castleThreat * castleDanger(s, e, p);
+    // D-081: army goals
+    if (P.hunt && alive) score -= P.hunt * hex.distance(pw, ew);
+    if (P.march && !pw.dead && s.castles) score -= P.march * (pw.minions > R.defense(s, en) * 0.8 ? 1 : 0.35) * hex.distance(pw, s.castles[en]); // always towards it, hard once strong enough
+    if (P.shadow && alive) score -= P.shadow * Math.abs(hex.distance(pw, ew) - 2);
+    if (P.block && !ew.dead) score -= P.block * freeAround(s, e);
+    if (P.nearly) score += P.nearly * nearlyEnclosed(s, me);
     return score;
   }
   function castleDanger(s, att, def) {
@@ -59,12 +115,21 @@ window.HB = window.HB || {};
   const actions = s => s.playedThisTurn + (s.stepUsed ? 1 : 0);
 
   // D-045: an attack that pushes the enemy back (or eliminates it) is worth pressing; bouncing off is not
-  function aggressionBonus(events, me) {
+  // D-081: plus what the army wants to see happen: a kill, damage to the enemy castle, hexes enclosed, enemy outposts
+  // taken, enemy hexes burnt
+  function aggressionBonus(events, me, s) {
+    const P = s ? profileOf(s.players[me]) : PROFILE_BASE;
     let b = 0;
     for (const ev of events) {
-      if (ev.type !== 'clash' || ev.attacker !== me) continue;
-      if (ev.result === 'defenderRetreats' || (ev.result === 'eliminated' && ev.aAfter > 0)) b += W.aggression;
-      else if (ev.result === 'attackerRetreats') b -= W.aggression * 0.5;
+      if (ev.type === 'clash' && ev.attacker === me) {
+        if (ev.result === 'defenderRetreats' || (ev.result === 'eliminated' && ev.aAfter > 0)) b += W.aggression * P.aggr;
+        else if (ev.result === 'attackerRetreats') b -= W.aggression * 0.5;
+      }
+      else if (ev.type === 'warbandDown' && ev.player !== me) b += P.kill;
+      else if (ev.type === 'castleHit' && ev.attacker === me) b += P.castleHit * ev.dmg;
+      else if (ev.type === 'fill' && ev.player === me) b += P.fill * ev.cells.length;
+      else if (ev.type === 'poiLost' && ev.player !== me) b += P.steal;
+      else if (ev.type === 'scorch' && ev.player === me) b += P.scorch * ev.cells.length;
     }
     return b;
   }
@@ -107,7 +172,7 @@ window.HB = window.HB || {};
       for (const b of beams) for (const c of candidates(b.state)) {
         const sim = R.clone(b.state);
         if (!apply(sim, c)) continue;
-        const bonus = b.bonus + aggressionBonus(R.takeEvents(sim), me);
+        const bonus = b.bonus + aggressionBonus(R.takeEvents(sim), me, sim);
         const seq = b.seq.concat([c]), cards = seq.filter(x => x.step == null).length;
         // every card played costs a little: a card that changes nothing is better kept for the next turn
         next.push({ state: sim, seq, bonus, quick: evaluate(sim, me) + bonus - W.cardCost * cards + (R.rand(sim) - 0.5) * W.noise });
@@ -162,7 +227,7 @@ window.HB = window.HB || {};
     for (const c of cands) {
       const sim = R.clone(base);
       if (!apply(sim, c)) continue;
-      const sc = evaluate(sim, me) + (R.rand(sim) - 0.5) * W.noise + aggressionBonus(R.takeEvents(sim), me);
+      const sc = evaluate(sim, me) + (R.rand(sim) - 0.5) * W.noise + aggressionBonus(R.takeEvents(sim), me, sim);
       if (sc > bestScore) { bestScore = sc; best = c; }
     }
     if (!best) return fallback;
