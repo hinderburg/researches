@@ -372,7 +372,13 @@ window.HB = window.HB || {};
               const low = ev.row <= 1; // a castle on the top row gets its captions below it
               if (ev.label) this.addText(ev.col, ev.row, ev.label.toUpperCase(), '#ffd45a', { dy: low ? S * 1.75 : -S * 2.6, big: true, dur: 1400 });
               this.addText(ev.col, ev.row, 'CASTLE HIT', COL[A + 'Light'], { dy: low ? S * 1.15 : -S * 1.9, big: true, dur: 1500 });
-              this.addText(ev.col, ev.row, `−${ev.dmg}`, '#ff6b6b', { dy: -S * 0.6, big: true, dur: 1500, pop: true });
+              this.addText(ev.col, ev.row, `−${ev.dmg}`, '#ff6b6b', { dx: ev.counter ? S * 0.55 : 0, dy: -S * 0.6, big: true, dur: 1500, pop: true });
+              if (ev.counter) { // D-077: the castle strikes back at the same moment
+                this.shake[A] = performance.now(); this.minShown[A] = ev.aAfter;
+                this.addText(ev.col, ev.row, `−${ev.counter}`, COL[A + 'Light'], { dx: -S * 0.55, dy: -S * 0.6, big: true, dur: 1500, pop: true });
+                const fromXY = ev.from ? this.cellXY(ev.from.col, ev.from.row) : cxy;
+                for (let i = 0; i < 3; i++) this.schedule(i * 70, () => this.fx.push({ type: 'bolt', x0: cxy.x + (i - 1) * S * 0.3, y0: cxy.y - S * 0.9, x1: (cxy.x + fromXY.x) / 2 + (i - 1) * S * 0.2, y1: (cxy.y + fromXY.y) / 2, t0: performance.now(), dur: 220 })); // arrows from the walls
+              }
             });
             ev.lost.forEach((c, i) => this.schedule(hit + 250 + i * 85, () => this.flipCell(c.col, c.row, c.from, 0)));
             t = Math.max(done, hit + 250 + ev.lost.length * 85 + 450);
@@ -1243,7 +1249,7 @@ window.HB = window.HB || {};
       });
       // battle forecast (D-047): predicted losses of both warbands while an attacking route is being chosen
       const fc = this.forecast;
-      if (fc && fc.kind !== 'castle' && !ghost && (fc.a === p.id || fc.d === p.id)) {
+      if (fc && !ghost && (fc.kind === 'castle' ? fc.a === p.id && fc.dmgToAtt > 0 : fc.a === p.id || fc.d === p.id)) { // D-077: at a castle only the attacker's loss
         const mine = fc.a === p.id, loss = mine ? fc.dmgToAtt : fc.dmgToDef, after = mine ? fc.aAfter : fc.dAfter;
         if (!(mine && loss === 0)) {
           const t = `−${loss} → ${after}`, bs = Math.round(S * 0.3);

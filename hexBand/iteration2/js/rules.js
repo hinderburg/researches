@@ -363,8 +363,9 @@ window.HB = window.HB || {};
       const ranged = kind === 'volley' || kind === 'catapult';
       const dmg = kind === 'catapult' ? (bonus || CARDS.catapult.damage) : applyDamage(strikeValue(s, a, null, false).value + (kind === 'volley' ? 0 : bonus || 0)); // catapult: bonus carries the card's damage
       const sim = clone(s); loseTerritory(sim, sim.players[d.id], dmg);
-      const defBefore = defense(s, d.id), defAfter = defense(sim, d.id), falls = !ranged && defAfter < aw.minions;
-      return { kind: 'castle', ranged, dmgToDef: dmg, dmgToAtt: 0, defBefore, defAfter, falls, aAfter: aw.minions, dAfter: dw.minions, result: falls ? 'castleFalls' : 'castleHolds' };
+      const counter = ranged ? 0 : castleStrike(s, a, d), aAfter = Math.max(0, aw.minions - counter); // D-077: the castle hits back
+      const defBefore = defense(s, d.id), defAfter = defense(sim, d.id), falls = !ranged && aAfter > defAfter;
+      return { kind: 'castle', ranged, dmgToDef: dmg, dmgToAtt: counter, defBefore, defAfter, falls, aAfter, dAfter: dw.minions, result: falls ? 'castleFalls' : aAfter <= 0 ? 'attackerDies' : 'castleHolds' };
     }
     if (kind === 'volley' || kind === 'catapult') {
       const dmg = kind === 'volley' ? applyDamage(strikeValue(s, a, d, false).value) : (bonus || CARDS.catapult.damage);
@@ -415,16 +416,24 @@ window.HB = window.HB || {};
   function castleDamage(s, a, d, dmg, info) {
     const defBefore = defense(s, d.id), lost = loseTerritory(s, d, dmg), c = s.castles[d.id];
     s.events.push(Object.assign({ type: 'castleHit', attacker: a.id, owner: d.id, dmg, lost, defBefore, defAfter: defense(s, d.id), col: c.col, row: c.row }, info || {}));
-    log(s, `${a.name} hit ${d.name}'s castle: −${lost.length} territory (defence ${defBefore} → ${defense(s, d.id)}).`);
+    log(s, `${a.name} hit ${d.name}'s castle: −${lost.length} territory (defence ${defBefore} → ${defense(s, d.id)}).` + (info && info.counter ? ` The castle strikes back: ${a.name} −${info.counter} (${info.aBefore} → ${info.aAfter}).` : ''));
   }
-  // Melee assault on a castle with no warband in it: normal damage, then the attacker marches in if the defence has
-  // dropped below its number — the castle falls and the match is over.
+  // D-077: an empty castle strikes back like a warband as big as its defence (the attacker's Formation softens it)
+  function castleStrike(s, a, d) {
+    let v = baseDamage(defense(s, d.id));
+    if (active(s, a.status.formationUntil)) v -= CFG.FORMATION_REDUCE;
+    return applyDamage(v);
+  }
+  // Melee assault on a castle with no warband in it: the attacker and the castle hit each other at once; only then,
+  // if the attacker still outnumbers the castle's defence, it marches in — the castle falls and the match is over.
   function castleAssault(s, a, d) {
-    const aw = a.warband, from = { col: aw.col, row: aw.row }, c = s.castles[d.id];
-    const sv = strikeValue(s, a, null, true), dmg = applyDamage(sv.value);
+    const aw = a.warband, from = { col: aw.col, row: aw.row };
+    const sv = strikeValue(s, a, null, true), dmg = applyDamage(sv.value), counter = castleStrike(s, a, d), aBefore = aw.minions;
     s.attacksThisTurn++;
-    castleDamage(s, a, d, dmg, { from, melee: true });
-    if (defense(s, d.id) < aw.minions) castleFalls(s, a, d, from);
+    aw.minions = Math.max(0, aw.minions - counter);
+    castleDamage(s, a, d, dmg, { from, melee: true, counter, aBefore, aAfter: aw.minions });
+    if (aw.minions <= 0) { killWarband(s, a); return; }
+    if (aw.minions > defense(s, d.id)) castleFalls(s, a, d, from);
   }
   function castleFalls(s, a, d, from) {
     const aw = a.warband, c = s.castles[d.id];
@@ -624,7 +633,7 @@ window.HB = window.HB || {};
         if (c) { p.hand.push(c); s.events.push({ type: 'cardToHand', player: p.id, uid: c.uid, from: 'discard' }); log(s, `${p.name}: Prayer — ${CARDS[c.def].title} returns to the hand.`); }
         break;
       }
-      case 'scout_draw': { const n = p.hand.length; draw(s, p, CFG.HAND_SIZE); log(s, `${p.name}: Scouting — ${p.hand.length - n} card(s) drawn.`); break; }
+      case 'scout_draw': { const n = p.hand.length; draw(s, p, def.draw || 2); log(s, `${p.name}: Scouting — ${p.hand.length - n} card(s) drawn.`); break; } // iteration2: up to 2 cards, hand limit still applies
       case 'banner': {
         const cells = [];
         const mark = c => { const cell = cellAt(s, c); if (cell && cell.owner === p.id && !cell.bonus) { cell.bonus = 1; cells.push({ col: cell.col, row: cell.row }); } };

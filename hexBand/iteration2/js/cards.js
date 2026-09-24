@@ -33,7 +33,7 @@ window.HB = window.HB || {};
     explosive_charge:   { id: 'explosive_charge', title: 'Explosive Charge', type: 'Combat', kind: 'explosive', target: 'adjacent', poi: true, text: 'Pick an adjacent hex: an enemy on it takes 4 damage and the hex is blocked for one round.' },
     prayer:             { id: 'prayer', title: 'Prayer', type: 'Utility', kind: 'prayer', poi: true, text: 'Return the top card of your discard pile to your hand.' },
     catapult:           { id: 'catapult', title: 'Catapult', type: 'Combat', kind: 'catapult', range: 3, damage: 3, poi: true, text: '3 damage to the enemy warband up to 3 hexes away.' },
-    scout_draw:         { id: 'scout_draw', title: 'Scouting', type: 'Utility', kind: 'scout_draw', poi: true, text: 'Draw cards until your hand is full.' },
+    scout_draw:         { id: 'scout_draw', title: 'Scouting', type: 'Utility', kind: 'scout_draw', poi: true, draw: 2, text: 'Draw up to 2 cards (as many as your hand has room for).' },
     banner:             { id: 'banner', title: 'Banner', type: 'Territory', kind: 'banner', poi: true, text: 'Your hexes around (and under) the warband are worth 2 points instead of 1.' },
     blink:              { id: 'blink', title: 'Blink', type: 'Movement', kind: 'blink', poi: true, text: 'Jump over one hex in any direction. The hex in between is not captured.' },
     // D-059 / D-061: citadel cards — outpost cards about 15–25 % stronger; one of them sits in the citadel
@@ -57,7 +57,7 @@ window.HB = window.HB || {};
     mine:       { id: 'mine', title: 'Mine', card: 'explosive_charge', text: 'Grants Explosive Charge (4 damage + a blocked hex).' },
     shrine:     { id: 'shrine', title: 'Shrine', card: 'prayer', text: 'Grants Prayer (top discard card back to hand).' },
     workshop:   { id: 'workshop', title: 'Workshop', card: 'catapult', text: 'Grants Catapult (3 damage at up to 3 hexes).' },
-    scout_camp: { id: 'scout_camp', title: 'Scout Camp', card: 'scout_draw', text: 'Grants Scouting (draw up to a full hand).' },
+    scout_camp: { id: 'scout_camp', title: 'Scout Camp', card: 'scout_draw', text: 'Grants Scouting (draw up to 2 cards).' },
     war_banner: { id: 'war_banner', title: 'War Banner', card: 'banner', text: 'Grants Banner (+1 point on hexes around the warband).' },
     portal:     { id: 'portal', title: 'Mystic Gate', card: 'blink', text: 'Grants Blink (jump over a hex).' },
     // D-059: the neutral citadel in the middle of the map; its card is rolled from CITADEL_POOL and re-rolled after each capture

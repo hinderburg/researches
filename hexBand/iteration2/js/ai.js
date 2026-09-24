@@ -37,7 +37,8 @@ window.HB = window.HB || {};
   }
   function castleDanger(s, att, def) {
     const aw = att.warband; if (aw.dead) return 0;
-    const c = s.castles[def.id], margin = R.defense(s, def.id) - aw.minions - R.baseDamage(aw.minions);
+    // D-077: the castle strikes back, so the attacker must still outnumber the defence after both hits
+    const c = s.castles[def.id], dv = R.defense(s, def.id), margin = dv - R.baseDamage(aw.minions) - (aw.minions - R.baseDamage(dv));
     if (margin >= 6) return 0;
     const d = hex.distance(aw, c), shield = R.inOwnCastle(s, def) ? 0.3 : 1;
     return shield * (6 - margin) / Math.max(1, d - 1);
