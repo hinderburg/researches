@@ -196,7 +196,7 @@ window.HB = window.HB || {};
       opts = opts || {};
       const p = this.cellXY(col, row);
       this.texts.push({ x: p.x + (opts.dx || 0), y: Math.max(this.size * 1.0, p.y + (opts.dy || 0)), // kept inside the canvas for hexes on the top row
-                      text, color: color || '#fff', t0: performance.now(), dur: opts.dur || 1100, big: !!opts.big, pop: !!opts.pop });
+                      text, color: color || '#fff', t0: performance.now(), dur: opts.dur || 1100, big: !!opts.big, pop: !!opts.pop, parts: opts.parts || null }); // parts: [{ t, color }] — a text in several colours
     }
     // battle effects (D-039): smoke puffs and sparks at a hex, or a bolt flying between two hexes
     spawnFight(x, y) {
@@ -322,11 +322,16 @@ window.HB = window.HB || {};
             });
             // iteration2: the bigger warband's number swells — that is why it keeps (or takes) the hex
             if (ev.aAfter > 0 && ev.dAfter > 0 && (ev.aAfter !== ev.dAfter || ev.held)) {
-              const W = ev.held ? D : ev.aAfter > ev.dAfter ? A : D, big = W === A ? ev.aAfter : ev.dAfter, small = W === A ? ev.dAfter : ev.aAfter;
+              const W = ev.held ? D : ev.aAfter > ev.dAfter ? A : D;
               this.schedule(t + 480, () => {
                 this.bigBump[W] = performance.now();
-                const txt = ev.held ? 'CASTLE HOLDS' : `${big} > ${small}`; // in its castle a warband never falls back, bigger or not
-                this.addText(ev.at.col, ev.at.row, txt, COL[W + 'Light'], { dy: ev.at.row <= 1 ? S * 1.2 : -S * 2.35, big: true, dur: 1500, pop: true });
+                const dy = ev.at.row <= 1 ? S * 1.2 : -S * 2.35;
+                if (ev.held) this.addText(ev.at.col, ev.at.row, 'CASTLE HOLDS', COL[W + 'Light'], { dy, big: true, dur: 1500, pop: true }); // in its castle a warband never falls back, bigger or not
+                else { // each number in its warband's colour, on its warband's side (like the damage numbers); the sign in the bigger one's colour
+                  const L = fromXY.x <= atXY.x ? A : D, Rt = L === A ? D : A, lv = L === A ? ev.aAfter : ev.dAfter, rv = L === A ? ev.dAfter : ev.aAfter;
+                  this.addText(ev.at.col, ev.at.row, '', null, { dy, big: true, dur: 1500, pop: true,
+                    parts: [{ t: String(lv), color: COL[L + 'Light'] }, { t: lv > rv ? ' > ' : ' < ', color: COL[W + 'Light'] }, { t: String(rv), color: COL[Rt + 'Light'] }] });
+                }
               });
             }
             t += fight;
@@ -722,8 +727,15 @@ window.HB = window.HB || {};
         const popSc = t.pop ? (k < 0.18 ? easeOutBack(k / 0.18) * 1.35 : 1.35 - 0.35 * Math.min(1, (k - 0.18) / 0.3)) : 1;
         ctx.font = `${t.big ? '900 ' : 'bold '}${Math.round(S * (t.big ? 0.6 : 0.46) * popSc)}px system-ui, sans-serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(30,15,5,0.85)'; ctx.strokeText(t.text, t.x, t.y - k * S * 0.9);
-        ctx.fillStyle = t.color; ctx.fillText(t.text, t.x, t.y - k * S * 0.9);
+        const ty = t.y - k * S * 0.9;
+        if (t.parts) { // iteration2: several colours on one line, laid out left to right around the centre
+          const ws = t.parts.map(p => ctx.measureText(p.t).width), total = ws.reduce((a, b) => a + b, 0);
+          let x = t.x - total / 2; ctx.textAlign = 'left';
+          t.parts.forEach((p, j) => { ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(30,15,5,0.85)'; ctx.strokeText(p.t, x, ty); ctx.fillStyle = p.color; ctx.fillText(p.t, x, ty); x += ws[j]; });
+        } else {
+          ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(30,15,5,0.85)'; ctx.strokeText(t.text, t.x, ty);
+          ctx.fillStyle = t.color; ctx.fillText(t.text, t.x, ty);
+        }
         ctx.globalAlpha = 1;
       }
     }

@@ -74,7 +74,7 @@ window.HB = window.HB || {};
       const tap = this.setup.control === 'tap';
       const ov = this.overlay(`<div class="intro">
         <h2>HEXBand — how it works</h2>
-        <div class="intro-item">${ic('hook')}<div><b>Move with cards.</b> ${tap ? 'Tap a card — every hex it can take your warband to lights up; tap the one you want and the warband moves at once.' : 'Drag a card onto the board and release it where the warband should go; it moves at once.'} The card sets the shape of the route, you choose the direction. Once per turn your warband can also take one <b>free step</b>: tap a marked hex next to it (or drag from the warband). Play as many cards per turn as you like, at least one, then press End Turn. The control scheme (drag / tap) can be changed in Settings.</div></div>
+        <div class="intro-item">${ic('hook')}<div><b>Move with cards.</b> ${tap ? 'Tap a card — every hex it can take your warband to lights up; tap the one you want and the warband moves at once.' : 'Drag a card onto the board and release it where the warband should go; it moves at once.'} The card sets the shape of the route, you choose the direction. Once per turn your warband can also take one <b>free step</b>: tap a marked hex next to it, or drag from the warband in the direction you want. Play as many cards per turn as you like, at least one, then press End Turn. The control scheme (drag / tap) can be changed in Settings.</div></div>
         <div class="intro-item">${ic('ring')}<div><b>Claim territory.</b> Every hex you walk through becomes yours. Surround an area with your own hexes and everything inside becomes yours too, enemy hexes included — the map edge does not count as a wall, and an area with the enemy warband in it stays theirs. Score = your hexes.</div></div>
         <div class="intro-item">${ic('recruitment')}<div><b>Outposts.</b> Your two outposts flank your start and are yours from the beginning: their cards are shuffled into your deck. Walk through an enemy outpost or enclose it — its card flies straight into your hand and works instantly; lose an outpost and you lose its card. The neutral Citadel in the middle holds a stronger card.</div></div>
         <div class="intro-item">${ic('battle_cry')}<div><b>Fight.</b> To attack, run a card's route onto the enemy's hex (it turns red) — the game shows a forecast: how much each warband loses and who falls back. A warband that is wiped out is not the end: it gathers again in its castle at the start of its owner's next turn (16 men from the castle, 4 from every outpost, 6 from the Citadel).</div></div>
@@ -337,7 +337,7 @@ window.HB = window.HB || {};
       const s = this.state, st = p.status, out = [];
       if (st.attackBonus) out.push(`Battle Cry +${st.attackBonus}`);
       if (R.active(s, st.formationUntil)) out.push('Formation −2');
-      const step = s.stepUsed ? 'Free step used.' : 'Free step: tap a marked hex next to your warband.';
+      const step = s.stepUsed ? 'Free step used.' : 'Free step: tap a marked hex or drag from your warband.';
       return (out.length ? 'Effects: ' + out.join(', ') + ' · ' : '') + step;
     },
     // flying card between two screen rects (played card → discard, deck → slot, discard → deck)
@@ -600,17 +600,33 @@ window.HB = window.HB || {};
       const cell = this.renderer.cellFromPointer(clientX, clientY);
       return cell ? R.stepOptions(this.state).find(o => o.end.col === cell.col && o.end.row === cell.row) || null : null;
     },
+    // iteration2: a drag from the warband picks the neighbour by direction — the option whose hex lies closest in angle
+    // to the line from the warband to the finger; no need to land on the hex itself. Near the warband nothing is picked.
+    stepOptionToward(clientX, clientY) {
+      const rd = this.renderer, r = rd.canvas.getBoundingClientRect(), w = this.state.players[this.state.current].warband;
+      const c = rd.cellXY(w.col, w.row), dx = clientX - r.left - c.x, dy = clientY - r.top - c.y;
+      if (Math.hypot(dx, dy) < rd.size * 0.45) return null;
+      const a = Math.atan2(dy, dx);
+      let best = null, bd = Infinity;
+      for (const o of R.stepOptions(this.state)) {
+        const e = rd.cellXY(o.end.col, o.end.row);
+        let d = Math.abs(Math.atan2(e.y - c.y, e.x - c.x) - a); if (d > Math.PI) d = 2 * Math.PI - d;
+        if (d < bd) { bd = d; best = o; }
+      }
+      return bd <= Math.PI / 3 ? best : null; // a blocked direction does not snap to a far-off neighbour
+    },
     bindStep() {
       const board = $('#board');
       board.addEventListener('pointerdown', e => {
         this.stepPress = null;
         if (!this.stepAvailable()) return;
         const cell = this.renderer.cellFromPointer(e.clientX, e.clientY), w = this.state.players[this.state.current].warband;
-        if (cell && cell.col === w.col && cell.row === w.row) { this.stepPress = { id: e.pointerId }; try { board.setPointerCapture(e.pointerId); } catch (err) {} }
+        if (cell && cell.col === w.col && cell.row === w.row) { this.stepPress = { id: e.pointerId, opt: null }; try { board.setPointerCapture(e.pointerId); } catch (err) {} }
       });
       board.addEventListener('pointermove', e => {
         if (!this.stepPress || e.pointerId !== this.stepPress.id) return;
-        const opt = this.stepOptionAt(e.clientX, e.clientY), rd = this.renderer;
+        const opt = this.stepOptionToward(e.clientX, e.clientY), rd = this.renderer;
+        this.stepPress.opt = opt;
         rd.highlights = opt ? [{ col: opt.end.col, row: opt.end.row, kind: 'path', label: 1, strong: true, attack: !!opt.path[0].attack }] : [];
         rd.pathFrom = opt ? { col: this.state.players[this.state.current].warband.col, row: this.state.players[this.state.current].warband.row } : null;
         rd.forecast = null;
@@ -618,10 +634,15 @@ window.HB = window.HB || {};
       });
       board.addEventListener('pointerup', e => {
         if (!this.stepPress || e.pointerId !== this.stepPress.id) return;
+        const opt = this.stepOptionToward(e.clientX, e.clientY); // let go back on the warband — no step
         this.stepPress = null;
         const rd = this.renderer; rd.highlights = []; rd.pathFrom = null; rd.forecast = null;
-        const opt = this.stepOptionAt(e.clientX, e.clientY);
         if (opt) { this.skipClick = true; this.commitStep(opt.dir); }
+      });
+      board.addEventListener('pointercancel', e => {
+        if (!this.stepPress || e.pointerId !== this.stepPress.id) return;
+        this.stepPress = null;
+        const rd = this.renderer; rd.highlights = []; rd.pathFrom = null; rd.forecast = null;
       });
     },
     commitStep(dir) {
@@ -686,7 +707,7 @@ window.HB = window.HB || {};
         <p><b>Turn.</b> At the start of your turn you draw up to 4 cards (when the deck runs out, the discard pile is shuffled into it). ${tap
           ? 'To play a card, tap it: a description panel appears over the hand and every target lights up on the board. Tap the hex you want — the warband acts at once and the card goes to the discard pile. A card without a target (Rally, Battle Cry…) is played by tapping the board or tapping the card again. Changed your mind — tap the description panel and the card stays in your hand.'
           : 'To play a card, drag it onto the board: the route is previewed, the warband acts as soon as you release the card, and the card goes to the discard pile. Release it over the hand and it returns.'} Play as many cards per turn as you like, at least one; after the first card an End Turn button appears in the rightmost slot. The control scheme can be switched in Settings → Controls.</p>
-        <p><b>Free step.</b> Once per turn your warband may take one step to a neighbouring hex without a card: tap a hex marked with a chevron next to it, or drag from the warband onto it. The boot badge by the warband shows whether the step is still available. Stepping onto the enemy is an attack. The free step does not count as the card you must play each turn.</p>
+        <p><b>Free step.</b> Once per turn your warband may take one step to a neighbouring hex without a card: tap a hex marked with a chevron next to it, or press the warband and drag in the direction you want — the hex that way lights up, let go anywhere to step (let go on the warband to cancel). The boot badge by the warband shows whether the step is still available. Stepping onto the enemy is an attack. The free step does not count as the card you must play each turn.</p>
         <p><b>Field cards.</b> Palisade builds a wall one hex ahead — warbands and summons cannot cross it, and it closes enclosures like a border. Levy and Outriders summon units that capture a hex each turn on their own for 1–2 turns; an enemy warband that walks onto them kills them. Fortify makes your hexes within 2 of the warband impossible to capture or burn for 2 rounds. Scorch turns enemy hexes in a line of 3 neutral. Quagmire turns a hex into a swamp that stops any warband entering it.</p>
         <p><b>Directions.</b> A movement card sets only the shape and length of the route (straight, hook, zigzag, half-ring). Where to go is your choice: every possible end of the route is highlighted, and the one closest to where you release or tap is used. For Wide March the side is left or right of the warband.</p>
         <p><b>Territory.</b> Hexes you walk through take your colour. An area surrounded on every side by your own hexes (a Palisade wall counts as a border, the map edge does not) becomes entirely yours, enemy hexes included — unless the enemy warband stands in it. Castles never change hands this way. Ringing the enemy warband completely deals siege damage (one minion per ring hex painted by that card).</p>
