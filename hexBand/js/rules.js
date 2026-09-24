@@ -32,6 +32,12 @@ window.HB = window.HB || {};
   const isBlocked = (s, c) => active(s, s.blocked[K(c.col, c.row)] || -1);
   const canEnter = (s, c) => exists(s, c) && !occupant(s, c) && !isBlocked(s, c);
   const isEdge = (s, c) => { for (let d = 0; d < 6; d++) if (!exists(s, hex.neighbor(c.col, c.row, d))) return true; return false; };
+  // D-068: walls stand on the edge between two hexes; swamps and fortifications live on hexes
+  const edgeKey = (a, b) => { const ka = K(a.col, a.row), kb = K(b.col, b.row); return ka < kb ? ka + '|' + kb : kb + '|' + ka; };
+  const walled = (s, a, b) => { const w = s.walls[edgeKey(a, b)]; return !!w && active(s, w.until); };
+  const isSwamp = (s, c) => active(s, s.swamps[K(c.col, c.row)] || -1);
+  const isFortifiedAgainst = (s, cell, pid) => !!cell.fortOwner && cell.fortOwner !== pid && active(s, cell.fortUntil || -1);
+  const summonAt = (s, c) => s.summons.find(u => u.col === c.col && u.row === c.row) || null;
 
   function makeCard(s, defId, poiId) {
     return { uid: s.nextUid++, def: defId, poi: poiId == null ? -1 : poiId };
@@ -51,6 +57,8 @@ window.HB = window.HB || {};
       attackLimit: opts.attackLimit != null ? opts.attackLimit : CFG.ATTACKS_PER_TURN,
       phase: 'play', winner: 0, endReason: '', scores: null, decorSeed: seed,
       cells: {}, pois: [], players: [null, null, null], blocked: {}, paintBuf: [], paintedThisCard: null, events: [], log: [],
+      // D-068: free step per turn, walls on hex edges, swamps, summoned units
+      stepUsed: false, walls: {}, swamps: {}, summons: [], nextSummonId: 1,
     };
     for (let c = 0; c < s.cols; c++) for (let r = 0; r < hex.rowsInCol(c, s.rows); r++) {
       s.cells[K(c, r)] = { col: c, row: r, owner: 0, bonus: 0, poi: -1, paintedAt: -1 };
@@ -119,8 +127,10 @@ window.HB = window.HB || {};
   function paint(s, p, c, via) {
     const cell = cellAt(s, c);
     if (!cell) return false;
+    if (via === 'walk') killSummonsAt(s, p, c); // D-068: a warband walking onto an enemy summon kills it, no retaliation
     if (via !== 'walk' && occupant(s, c)) return false; // D-017: a hex under a warband is only repainted by walking onto it
     if (cell.owner === p.id) return false;
+    if (isFortifiedAgainst(s, cell, p.id)) return false; // D-068: Fortify
     const from = cell.owner;
     cell.owner = p.id; cell.bonus = 0; cell.paintedAt = s.turnIndex;
     p.gained++;
@@ -148,19 +158,19 @@ window.HB = window.HB || {};
         comp.push(c); compOf[K(c.col, c.row)] = comp;
         for (let d = 0; d < 6; d++) {
           const n = hex.neighbor(c.col, c.row, d), nk = K(n.col, n.row);
-          if (!exists(s, n) || seen.has(nk) || own(nk)) continue;
+          if (!exists(s, n) || seen.has(nk) || own(nk) || walled(s, c, n)) continue; // D-068: walls split areas
           seen.add(nk); queue.push(s.cells[nk]);
         }
       }
       comps.push(comp);
     }
-    // D-060: the open field is wherever the enemy warband stands or can step next. If that is a pocket of at most
+    // D-060: the open field is wherever the enemy warband stands or can step next (not across a wall, D-068). If that is a pocket of at most
     // CFG.HOLD_POCKET_MAX hexes (a tight ring, a corner, a small trap), the areas just beyond its walls stay open too —
     // so trapping the warband gives siege damage (D-054), not the rest of the map.
     const ew = enemyOf(s, p.id).warband, open = new Set();
     const mark = c => { const comp = compOf[K(c.col, c.row)]; if (comp) open.add(comp); };
     mark(ew);
-    for (let d = 0; d < 6; d++) mark(hex.neighbor(ew.col, ew.row, d));
+    for (let d = 0; d < 6; d++) { const n = hex.neighbor(ew.col, ew.row, d); if (exists(s, n) && !walled(s, ew, n)) mark(n); }
     let pocket = 0; for (const comp of open) pocket += comp.length;
     if (pocket <= CFG.HOLD_POCKET_MAX) {
       const inner = [ew]; for (const comp of open) for (const c of comp) inner.push(c);
@@ -214,12 +224,13 @@ window.HB = window.HB || {};
       for (const t of [2, -2]) { const n = hex.neighbor(c.col, c.row, hex.turn(stepDir, t)); if (exists(s, n)) paint(s, p, n, 'split'); }
     }
   }
-  // Walks along absolute directions, stopping at the first illegal step (D-008).
+  // Walks along absolute directions, stopping at the first illegal step (D-008), at a wall, or in a swamp (D-068).
   function moveAlong(s, p, dirs, def) {
     const w = p.warband, path = [];
     let lastDir = -1, clashed = false;
     for (const d of dirs) {
       const n = hex.neighbor(w.col, w.row, d);
+      if (exists(s, n) && walled(s, w, n)) break;
       if (exists(s, n) && isEnemyCell(s, p.id, n) && attackAllowed(s)) { // D-042: stepping onto the enemy = attack
         if (path.length) s.events.push({ type: 'move', player: p.id, path: path.slice() });
         flushPaint(s, p);
@@ -231,6 +242,7 @@ window.HB = window.HB || {};
       w.col = n.col; w.row = n.row; lastDir = d;
       path.push({ col: n.col, row: n.row });
       enterCell(s, p, n, d, def);
+      if (isSwamp(s, n)) break; // D-068: Quagmire — the warband gets stuck
     }
     if (!clashed && path.length) s.events.push({ type: 'move', player: p.id, path });
     if (!clashed && def && def.ahead && lastDir >= 0) { // Dash: claim the next cell(s) in the direction of travel without moving
@@ -243,11 +255,81 @@ window.HB = window.HB || {};
     let cur = { col: p.warband.col, row: p.warband.row }; const path = [];
     for (const d of dirs) {
       const n = hex.neighbor(cur.col, cur.row, d);
+      if (exists(s, n) && walled(s, cur, n)) break;
       if (exists(s, n) && isEnemyCell(s, p.id, n) && attackAllowed(s)) { path.push({ col: n.col, row: n.row, attack: true }); break; }
       if (!canEnter(s, n)) break;
       path.push(n); cur = n;
+      if (isSwamp(s, n)) break;
     }
     return path;
+  }
+  // ---------------------------------------------------------------- free step (D-068)
+  // Once per turn a warband may take one step to a neighbouring hex without a card (an attack if the enemy stands there).
+  function stepOptions(s) {
+    if (s.phase !== 'play' || s.stepUsed) return [];
+    const p = s.players[s.current], w = p.warband, out = [];
+    for (let d = 0; d < 6; d++) {
+      const path = previewPath(s, p, [d]);
+      if (path.length) out.push({ key: 's' + d, dir: d, path, end: path[0], label: HB.cards.DIR_LABEL[d] });
+    }
+    return out;
+  }
+  function freeStep(s, dir) {
+    const opt = stepOptions(s).find(o => o.dir === dir);
+    if (!opt) return false;
+    const p = s.players[s.current];
+    s.stepUsed = true;
+    s.events.push({ type: 'step', player: p.id });
+    log(s, `${p.name} step ${opt.label}.`);
+    s.paintedThisCard = [];
+    moveAlong(s, p, [dir], null);
+    if (s.phase === 'play') enclosure(s, p);
+    flushPaint(s, p);
+    siegeCheck(s, p);
+    s.paintedThisCard = null;
+    checkDomination(s, p);
+    return true;
+  }
+
+  // ---------------------------------------------------------------- summons (D-068)
+  function killSummonsAt(s, p, c) {
+    for (let i = s.summons.length - 1; i >= 0; i--) {
+      const u = s.summons[i];
+      if (u.col !== c.col || u.row !== c.row || u.owner === p.id) continue;
+      s.summons.splice(i, 1);
+      s.events.push({ type: 'summonKilled', id: u.id, owner: u.owner, kind: u.kind, by: p.id, col: u.col, row: u.row });
+      log(s, `${p.name} trample ${s.players[u.owner].name}'s ${u.kind}.`);
+    }
+  }
+  const summonCanEnter = (s, from, c) => exists(s, c) && !walled(s, from, c) && !occupant(s, c) && !isBlocked(s, c) && !summonAt(s, c);
+  // At the start of its owner's turn every summon steps to a neighbouring hex — preferring enemy, then neutral hexes,
+  // drifting away from its own warband — and captures it. It leaves when its steps run out.
+  function summonsAct(s, pid) {
+    const p = s.players[pid];
+    let moved = false;
+    for (const u of s.summons.filter(x => x.owner === pid)) {
+      let best = null, bs = -Infinity;
+      for (let d = 0; d < 6; d++) {
+        const n = hex.neighbor(u.col, u.row, d);
+        if (!summonCanEnter(s, u, n)) continue;
+        const cell = cellAt(s, n);
+        const gain = cell.owner === pid || isFortifiedAgainst(s, cell, pid) ? 0 : cell.owner ? 3 : 2;
+        const sc = gain + 0.3 * hex.distance(n, p.warband) + rand(s) * 0.5;
+        if (sc > bs) { bs = sc; best = n; }
+      }
+      if (best) {
+        const from = { col: u.col, row: u.row };
+        u.col = best.col; u.row = best.row; moved = true;
+        s.events.push({ type: 'summonMove', id: u.id, owner: pid, from, to: { col: best.col, row: best.row } });
+        paint(s, p, best, 'summon');
+      }
+      u.acts--;
+      if (u.acts <= 0) {
+        s.summons.splice(s.summons.indexOf(u), 1);
+        s.events.push({ type: 'summonGone', id: u.id, owner: pid, kind: u.kind, col: u.col, row: u.row });
+      }
+    }
+    if (moved && s.phase === 'play') { enclosure(s, p); flushPaint(s, p); checkDomination(s, p); }
   }
 
   // ---------------------------------------------------------------- combat (D-039)
@@ -296,9 +378,9 @@ window.HB = window.HB || {};
       // the defender falls back away from the attacker; if that hex is taken, to the free neighbour farthest from the attacker
       const dir = hex.dirBetween(from, at);
       let tgt = hex.neighbor(at.col, at.row, dir);
-      if (!canEnter(s, tgt)) {
+      if (!canEnter(s, tgt) || walled(s, at, tgt)) {
         tgt = null; let bd = -1;
-        for (let d6 = 0; d6 < 6; d6++) { const n = hex.neighbor(at.col, at.row, d6); if (!canEnter(s, n)) continue; const dist = hex.distance(n, from); if (dist > bd) { bd = dist; tgt = n; } }
+        for (let d6 = 0; d6 < 6; d6++) { const n = hex.neighbor(at.col, at.row, d6); if (!canEnter(s, n) || walled(s, at, n)) continue; const dist = hex.distance(n, from); if (dist > bd) { bd = dist; tgt = n; } }
       }
       if (tgt) {
         result = 'defenderRetreats'; defenderTo = tgt; attackerTo = at;
@@ -355,6 +437,28 @@ window.HB = window.HB || {};
         const opts = [];
         for (let d = 0; d < 6; d++) { const n = hex.neighbor(w.col, w.row, d); if (exists(s, n)) opts.push({ key: 'c' + K(n.col, n.row), cell: n, label: hex.DIR_NAMES[d] }); }
         return { ok: true, options: opts };
+      }
+      // D-068: field cards
+      case 'palisade': case 'scorch': {
+        const opts = [];
+        for (let d = 0; d < 6; d++) {
+          const n = hex.neighbor(w.col, w.row, d);
+          if (!exists(s, n)) continue;
+          const o = { key: (def.kind === 'palisade' ? 'w' : 'r') + d, dir: d, cell: n, label: HB.cards.DIR_LABEL[d] };
+          if (def.kind === 'scorch') { o.cells = []; let c = w; for (let i = 0; i < def.range; i++) { c = hex.neighbor(c.col, c.row, d); if (!exists(s, c)) break; o.cells.push(c); } }
+          opts.push(o);
+        }
+        return { ok: opts.length > 0, options: opts };
+      }
+      case 'summon': {
+        const free = [];
+        for (let d = 0; d < 6; d++) { const n = hex.neighbor(w.col, w.row, d); if (summonCanEnter(s, w, n)) free.push({ key: 'c' + K(n.col, n.row), cell: n, label: HB.cards.DIR_LABEL[d] }); }
+        return def.target ? { ok: free.length > 0, options: free } : { ok: free.length > 0 };
+      }
+      case 'swamp': {
+        const opts = [];
+        for (const k in s.cells) { const c = s.cells[k], dist = hex.distance(c, w); if (dist >= 1 && dist <= 2 && !occupant(s, c)) opts.push({ key: 'q' + k, cell: { col: c.col, row: c.row }, label: k }); }
+        return { ok: opts.length > 0, options: opts };
       }
       case 'volley': case 'catapult': return { ok: hex.distance(w, e.warband) <= def.range };
       case 'prayer': return { ok: p.discard.length > 0 };
@@ -417,6 +521,64 @@ window.HB = window.HB || {};
         s.events.push({ type: 'bonus', player: p.id, cells });
         log(s, `${p.name}: ${def.title} — +${cells.length} territory points.`); break;
       }
+      // ---- D-068: field cards
+      case 'palisade': { // a wall one hex ahead: along the three far edges of the chosen neighbouring hex
+        const edges = [], front = choice.cell;
+        for (const t of [-1, 0, 1]) {
+          const n = hex.neighbor(front.col, front.row, hex.turn(choice.dir, t));
+          if (!exists(s, n)) continue; // the map edge is already a border
+          const a = { col: front.col, row: front.row }, b = { col: n.col, row: n.row };
+          s.walls[edgeKey(a, b)] = { owner: p.id, until: T + 2 * def.rounds, a, b };
+          edges.push({ a, b });
+        }
+        s.events.push({ type: 'walls', player: p.id, edges });
+        log(s, `${p.name}: ${def.title} — ${edges.length} walls ${choice.label}.`);
+        enclosure(s, p); break;
+      }
+      case 'summon': {
+        let spots = [];
+        if (choice && choice.cell) spots = [choice.cell];
+        else { // Outriders: the free neighbours worth the most, spread as far apart as possible
+          const free = [];
+          for (let d = 0; d < 6; d++) { const n = hex.neighbor(w.col, w.row, d); if (summonCanEnter(s, w, n)) free.push(n); }
+          const gain = c => { const cell = cellAt(s, c); return cell.owner === p.id ? 0 : cell.owner ? 2 : 1; };
+          free.sort((a, b) => gain(b) - gain(a) || rand(s) - 0.5);
+          if (free.length) spots.push(free[0]);
+          if (def.count > 1 && free.length > 1) spots.push(free.slice(1).sort((a, b) => hex.distance(b, free[0]) - hex.distance(a, free[0]))[0]);
+        }
+        const kind = def.count > 1 ? 'rider' : 'militiaman';
+        for (const c of spots) {
+          const u = { id: s.nextSummonId++, owner: p.id, col: c.col, row: c.row, acts: def.acts, kind };
+          s.summons.push(u);
+          s.events.push({ type: 'summon', player: p.id, id: u.id, col: c.col, row: c.row, kind, from: { col: w.col, row: w.row } });
+          paint(s, p, c, 'summon');
+        }
+        log(s, `${p.name}: ${def.title} — ${spots.length} ${kind}${spots.length > 1 ? 's' : ''} summoned.`);
+        enclosure(s, p); break;
+      }
+      case 'fortify': {
+        const cells = [];
+        for (const k in s.cells) { const c = s.cells[k]; if (c.owner === p.id && hex.distance(c, w) <= 1) { c.fortOwner = p.id; c.fortUntil = T + 2 * def.rounds; cells.push({ col: c.col, row: c.row }); } }
+        s.events.push({ type: 'fortify', player: p.id, cells });
+        log(s, `${p.name}: ${def.title} — ${cells.length} hexes fortified.`); break;
+      }
+      case 'scorch': {
+        const burnt = [];
+        for (const c of choice.cells) {
+          const cell = cellAt(s, c);
+          if (!cell || occupant(s, c) || cell.poi >= 0 || cell.owner !== e.id || isFortifiedAgainst(s, cell, p.id)) continue;
+          burnt.push({ col: cell.col, row: cell.row, from: cell.owner });
+          cell.owner = 0; cell.bonus = 0;
+        }
+        s.events.push({ type: 'scorch', player: p.id, cells: burnt, line: choice.cells });
+        log(s, `${p.name}: ${def.title} — ${burnt.length} enemy hexes burnt.`);
+        enclosure(s, p); break;
+      }
+      case 'swamp': {
+        s.swamps[K(choice.cell.col, choice.cell.row)] = T + 2 * def.rounds;
+        s.events.push({ type: 'swamp', player: p.id, col: choice.cell.col, row: choice.cell.row });
+        log(s, `${p.name}: ${def.title} at ${choice.cell.col},${choice.cell.row}.`); break;
+      }
     }
   }
 
@@ -473,11 +635,15 @@ window.HB = window.HB || {};
     s.turnIndex++;
     if (s.turnIndex >= s.roundLimit * 2) { territoryVictory(s); return; }
     s.current = 3 - s.current;
-    s.playedThisTurn = 0; s.attacksThisTurn = 0;
+    s.playedThisTurn = 0; s.attacksThisTurn = 0; s.stepUsed = false;
     if (s.turnIndex % 2 === 0) for (const pid of [1, 2]) { const q = s.players[pid]; q.gainedLastRound = q.gained; q.gained = 0; }
+    // expired walls and swamps are dropped so the state stays small
+    for (const k in s.walls) if (!active(s, s.walls[k].until)) delete s.walls[k];
+    for (const k in s.swamps) if (!active(s, s.swamps[k])) delete s.swamps[k];
     const np = s.players[s.current];
     draw(s, np, CFG.HAND_SIZE);
     s.events.push({ type: 'turn', player: np.id, round: round(s) });
+    summonsAct(s, np.id); // D-068: summons act at the start of their owner's turn
   }
   const round = s => Math.min(s.roundLimit, Math.floor(s.turnIndex / 2) + 1);
 
@@ -536,5 +702,6 @@ window.HB = window.HB || {};
   function clone(s) { const e = s.events, l = s.log; s.events = []; s.log = []; const c = JSON.parse(JSON.stringify(s)); s.events = e; s.log = l; return c; }
 
   HB.rules = { createGame, playCard, endTurn, passTurn, getPlay, takeEvents, clone, territory, cellCount, poiCount, totalCells, poiCardId,
-    scoreboard, round, occupant, isBlocked, active, rand, baseDamage, forecast };
+    scoreboard, round, occupant, isBlocked, active, rand, baseDamage, forecast,
+    stepOptions, freeStep, walled, isSwamp, isFortifiedAgainst }; // D-068
 })();

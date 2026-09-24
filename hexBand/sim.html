@@ -49,6 +49,7 @@
     while (s.phase === 'play' && guard++ < 2000) {
       const mv = HB.ai.choose(s);
       if (mv.end) HB.rules.endTurn(s);
+      else if (mv.step != null) { if (!HB.rules.freeStep(s, mv.step)) HB.rules.endTurn(s); }
       else if (mv.pass) { r.passes++; HB.rules.passTurn(s, mv.uid); }
       else { r.cards++; HB.rules.playCard(s, mv.uid, mv.choice); }
       for (const e of HB.rules.takeEvents(s)) {

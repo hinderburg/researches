@@ -37,6 +37,13 @@ window.HB = window.HB || {};
     scout_draw: wrap(cards + `<path d="M25 3 L29 7 M29 3 L25 7" stroke-width="2"/>`, '+'),
     banner: wrap(flag, '+1'),
     blink: wrap(`<path d="M16 27 V22 M16 18 V14 M16 10 V7 M10 13 L16 7 L22 13"/>`),
+    // D-068: field cards
+    palisade: wrap(`<path d="M4 27 H28"/><path d="M7 27 V11 L9 8 L11 11 V27 M14 27 V9 L16 6 L18 9 V27 M21 27 V11 L23 8 L25 11 V27"/><path d="M5 18 H27" stroke-width="2"/>`, '3'),
+    levy: wrap(`<circle cx="13" cy="8" r="3.5"/><path d="M7 26 C7 19 9 14 13 14 C17 14 19 19 19 26"/><path d="M23 28 L24 4 M21.5 8 L24 3 L26.5 8"/>`, '2'),
+    outriders: wrap(`<path d="M3 22 C5 17 10 16 15 17 L20 13 L23 15 L20 18 C20 22 16 23 12 23 L8 23 Z"/><path d="M7 23 V28 M16 23 V28"/><circle cx="12" cy="9" r="3"/><path d="M12 12 V17"/><path d="M24 6 H30 M27 3 L30 6 L27 9" stroke-width="2"/>`, '×2'),
+    fortify: wrap(hexagon(16, 17, 11) + `<path d="M9 17 L14 22 L23 12"/>` + `<path d="M5 6 H9 M13 4 H19 M23 6 H27" stroke-width="2"/>`),
+    scorch: wrap(`<path d="M16 29 C9 27 7 21 10 15 C11 19 13 20 14 19 C12 13 15 7 20 4 C19 9 23 12 23 18 C25 16 25 14 25 13 C28 19 25 27 16 29 Z"/>`, '3'),
+    quagmire: wrap(`<path d="M3 20 C7 17 10 23 14 20 C18 17 21 23 25 20 C27 19 28 19 29 20"/><path d="M3 26 C7 23 10 29 14 26 C18 23 21 29 25 26 C27 25 28 25 29 26"/><path d="M9 17 V6 M13 16 V9 M20 17 V5"/><ellipse cx="9" cy="6" rx="1.6" ry="3" fill="currentColor"/><ellipse cx="20" cy="5" rx="1.6" ry="3" fill="currentColor"/>`),
     // D-059: citadel cards
     muster: wrap(minions, '+7'),
     heavy_charge: wrap(star(8), '5'),

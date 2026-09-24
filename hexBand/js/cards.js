@@ -5,7 +5,6 @@ window.HB = window.HB || {};
 (function () {
   const CARDS = {
     // ---- base pool
-    advance:            { id: 'advance', title: 'March', type: 'Movement', kind: 'move', pattern: [0], text: 'One step in any direction.' },
     double_advance:     { id: 'double_advance', title: 'Double March', type: 'Movement', kind: 'move', pattern: [0, 0], text: 'Two steps in a straight line, any direction.' },
     hook:               { id: 'hook', title: 'Hook', type: 'Maneuver', kind: 'move', pattern: [0, 1], mirror: true, text: 'Two steps with a 60° turn (either way).' },
     zigzag:             { id: 'zigzag', title: 'Zigzag', type: 'Maneuver', kind: 'move', pattern: [0, 2], mirror: true, text: 'Two steps with a 120° turn: a jag to either side.' },
@@ -21,6 +20,13 @@ window.HB = window.HB || {};
     flank_claim:        { id: 'flank_claim', title: 'Flank Claim', type: 'Territory', kind: 'flank_claim', target: 'axis', text: 'Capture two adjacent hexes on one line through your warband, on opposite sides.' },
     volley:             { id: 'volley', title: 'Volley', type: 'Combat', kind: 'volley', range: 2, text: 'Strike the enemy warband up to 2 hexes away. No retaliation.' },
     warband_reinforcements:{ id: 'warband_reinforcements', title: 'Reinforcements', type: 'Reinforcement', kind: 'reinforce', amount: 6, text: '+6 minions.' },
+    // ---- field pool (D-068): cards that change the board itself — walls on hex edges, summons, fortified, burnt and swampy ground
+    palisade:           { id: 'palisade', title: 'Palisade', type: 'Field', kind: 'palisade', target: 'adjacent', rounds: 3, text: 'Build a wall one hex ahead of your warband, along the three far edges of the chosen neighbouring hex. Warbands and summons cannot cross it, and it closes enclosures like a border. Lasts 3 rounds.' },
+    levy:               { id: 'levy', title: 'Levy', type: 'Summon', kind: 'summon', target: 'adjacent', count: 1, acts: 2, text: 'Summon a militiaman on an adjacent hex; he captures it, then at the start of your next 2 turns steps to a neighbouring hex and captures it too. An enemy warband that walks onto him kills him.' },
+    outriders:          { id: 'outriders', title: 'Outriders', type: 'Summon', kind: 'summon', count: 2, acts: 1, text: 'Two riders appear on free hexes next to your warband and capture them; at the start of your next turn each rides on and captures one more hex. An enemy warband kills them by walking onto them.' },
+    fortify:            { id: 'fortify', title: 'Fortify', type: 'Field', kind: 'fortify', rounds: 2, text: 'Your hexes around (and under) the warband cannot be captured or burnt by the enemy for 2 rounds.' },
+    scorch:             { id: 'scorch', title: 'Scorch', type: 'Field', kind: 'scorch', target: 'adjacent', range: 3, text: 'Burn a line of 3 hexes from your warband: enemy hexes on it turn neutral. Outposts and fortified hexes resist.' },
+    quagmire:           { id: 'quagmire', title: 'Quagmire', type: 'Field', kind: 'swamp', target: 'cell', rounds: 2, text: 'Turn a hex up to 2 away into a swamp for 2 rounds: a warband that enters it stops there.' },
     // ---- POI cards (all with an immediate, visible effect — D-041)
     recruitment:        { id: 'recruitment', title: 'Recruitment', type: 'Reinforcement', kind: 'reinforce', amount: 6, poi: true, text: '+6 minions.' },
     cordon:             { id: 'cordon', title: 'Cordon', type: 'Territory', kind: 'cordon', poi: true, text: 'Capture every hex around your warband.' },
@@ -36,9 +42,11 @@ window.HB = window.HB || {};
     trebuchet:          { id: 'trebuchet', title: 'Trebuchet', type: 'Combat', kind: 'catapult', range: 3, damage: 4, poi: true, text: '4 damage to the enemy warband up to 3 hexes away.' },
     war_horn:           { id: 'war_horn', title: 'War Horn', type: 'Combat', kind: 'buff_next', bonus: 3, poi: true, text: '+3 to your next strike.' },
   };
-  const BASE_POOL = ['advance', 'double_advance', 'hook', 'zigzag', 'around', 'rally', 'battle_cry', 'reinforced_formation'];
+  // D-068: March is gone — every warband has one free step per turn instead
+  const BASE_POOL = ['double_advance', 'hook', 'zigzag', 'around', 'rally', 'battle_cry', 'reinforced_formation'];
   const ADVANCED_POOL = ['forced_march', 'long_hook', 'split_march', 'dash', 'flank_claim', 'volley', 'warband_reinforcements'];
-  const DECK_POOL = BASE_POOL.concat(ADVANCED_POOL);
+  const FIELD_POOL = ['palisade', 'levy', 'outriders', 'fortify', 'scorch', 'quagmire'];
+  const DECK_POOL = BASE_POOL.concat(ADVANCED_POOL, FIELD_POOL);
   // absolute directions for logs / labels: 0 N, 1 NE, 2 SE, 3 S, 4 SW, 5 NW
   const DIR_LABEL = ['up', 'up-right', 'down-right', 'down', 'down-left', 'up-left'];
   const AXIS_LABEL = ['vertical', 'diagonal ↗', 'diagonal ↘'];
@@ -61,11 +69,12 @@ window.HB = window.HB || {};
   const tierOf = id => CITADEL_POOL.includes(id) ? 'citadel' : (CARDS[id] && CARDS[id].poi) ? 'outpost' : '';
 
   const PRESETS = {
-    balanced:  { title: 'Balanced', cards: ['advance', 'double_advance', 'hook', 'zigzag', 'around', 'rally', 'battle_cry', 'reinforced_formation'], pois: ['shrine', 'watchtower'] },
-    expansion: { title: 'Expansion', cards: ['advance', 'double_advance', 'hook', 'zigzag', 'around', 'split_march', 'forced_march', 'dash'], pois: ['war_banner', 'portal'] },
-    duel:      { title: 'Duel', cards: ['advance', 'double_advance', 'hook', 'volley', 'battle_cry', 'reinforced_formation', 'rally', 'warband_reinforcements'], pois: ['mine', 'workshop'] },
-    swarm:     { title: 'Swarm', cards: ['advance', 'double_advance', 'hook', 'around', 'rally', 'warband_reinforcements', 'battle_cry', 'flank_claim'], pois: ['village', 'war_banner'] },
+    balanced:  { title: 'Balanced', cards: ['double_advance', 'hook', 'zigzag', 'around', 'rally', 'battle_cry', 'reinforced_formation', 'levy'], pois: ['shrine', 'watchtower'] },
+    expansion: { title: 'Expansion', cards: ['double_advance', 'hook', 'zigzag', 'around', 'split_march', 'forced_march', 'dash', 'outriders'], pois: ['war_banner', 'portal'] },
+    duel:      { title: 'Duel', cards: ['double_advance', 'hook', 'volley', 'battle_cry', 'reinforced_formation', 'rally', 'warband_reinforcements', 'palisade'], pois: ['mine', 'workshop'] },
+    swarm:     { title: 'Swarm', cards: ['double_advance', 'hook', 'around', 'rally', 'warband_reinforcements', 'battle_cry', 'flank_claim', 'levy'], pois: ['village', 'war_banner'] },
+    warden:    { title: 'Warden', cards: ['double_advance', 'hook', 'around', 'palisade', 'fortify', 'scorch', 'quagmire', 'outriders'], pois: ['shrine', 'watchtower'] },
   };
 
-  HB.cards = { CARDS, BASE_POOL, ADVANCED_POOL, DECK_POOL, POIS, POI_POOL, CITADEL_POOL, CITADEL_DEFAULT, tierOf, PRESETS, DIR_LABEL, AXIS_LABEL };
+  HB.cards = { CARDS, BASE_POOL, ADVANCED_POOL, FIELD_POOL, DECK_POOL, POIS, POI_POOL, CITADEL_POOL, CITADEL_DEFAULT, tierOf, PRESETS, DIR_LABEL, AXIS_LABEL };
 })();

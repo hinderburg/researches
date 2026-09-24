@@ -11,6 +11,8 @@ window.HB = window.HB || {};
   const easeOutBack = u => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(u - 1, 3) + c1 * Math.pow(u - 1, 2); };
   const liftCurve = k => k < 0.28 ? easeOutBack(k / 0.28) : k < 0.5 ? 1 : (u => 1 - (u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2))((k - 0.5) / 0.5);
   const TILE_THICK = 0.14; // D-064: side face of a tile block, in hex sizes
+  // D-068: walls live on the edge between two hexes, keyed like rules.js does
+  const wallKey = (a, b) => { const ka = hex.key(a.col, a.row), kb = hex.key(b.col, b.row); return ka < kb ? ka + '|' + kb : kb + '|' + ka; };
   const mix = (a, b, t) => { const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16), ch = sh => Math.round(((pa >> sh) & 255) * (1 - t) + ((pb >> sh) & 255) * t); return `rgb(${ch(16)},${ch(8)},${ch(0)})`; };
 
   class Renderer {
@@ -23,11 +25,14 @@ window.HB = window.HB || {};
       this.reveal = {}; this.pop = {}; this.flip = {}; this.build = {}; this.settle = {}; this.bump = { 1: 0, 2: 0 }; this.badgePop = {};
       // D-064: match intro state — hidden warbands, rising banners, counting minions
       this.hideWb = {}; this.raise = {}; this.countAnim = {}; this.order = [];
+      // D-068: field animation state — wall raising, summon slides, hidden new summons, ghosts of dead summons, step marker
+      this.wallAnim = {}; this.summonAnim = {}; this.summonHide = {}; this.ghosts = {}; this.stepHint = null;
       requestAnimationFrame(t => this.frame(t));
     }
     setState(s) {
       this.s = s; this.highlights = []; this.texts = []; this.flash = {}; this.timeline = []; this.slide = { 1: null, 2: null }; this.reveal = {}; this.pop = {}; this.flip = {}; this.build = {}; this.fx = []; this.bump = { 1: 0, 2: 0 }; this.badgePop = {};
       this.hideWb = {}; this.raise = {}; this.countAnim = {};
+      this.wallAnim = {}; this.summonAnim = {}; this.summonHide = {}; this.ghosts = {}; this.stepHint = null;
       // D-064: tiles are drawn as blocks top to bottom, so a lower tile's face covers the side of the tile above it
       this.order = Object.values(s.cells).sort((a, b) => (a.row + 0.5 * (a.col & 1)) - (b.row + 0.5 * (b.col & 1)) || a.col - b.col);
       this.buildDecor();
@@ -150,7 +155,13 @@ window.HB = window.HB || {};
         if (pp && (pp.col !== w.col || pp.row !== w.row)) this.slide[pid] = { path: [{ col: pp.col, row: pp.row }], t0: performance.now(), per: 1, start: this.cellXY(pp.col, pp.row), hold: true };
       }
       // D-055: captured hexes keep their old colour until their own pop-up in the animation
-      for (const ev of events) if (ev.type === 'paint' || ev.type === 'fill') for (const c of ev.cells) this.reveal[hex.key(c.col, c.row)] = c.from || 0;
+      for (const ev of events) if (ev.type === 'paint' || ev.type === 'fill' || ev.type === 'scorch') for (const c of ev.cells) this.reveal[hex.key(c.col, c.row)] = c.from || 0;
+      // D-068: new walls and summons stay hidden until their own moment in the animation
+      for (const ev of events) {
+        if (ev.type === 'walls') for (const e of ev.edges) this.wallAnim[wallKey(e.a, e.b)] = Infinity;
+        if (ev.type === 'summon') this.summonHide[ev.id] = true;
+        if (ev.type === 'summonMove') this.summonAnim[ev.id] = { from: ev.from, to: ev.to, t0: Infinity, dur: 320 }; // stays put until its turn in the timeline
+      }
       for (const ev of events) {
         const light = ev.player ? COL[ev.player + 'Light'] : '#fff';
         switch (ev.type) {
@@ -264,6 +275,56 @@ window.HB = window.HB || {};
             t += 900;
             break;
           }
+          // ---- D-068: field cards and summons
+          case 'walls': {
+            const S = this.size;
+            this.schedule(t, () => {
+              for (const e of ev.edges) { this.wallAnim[wallKey(e.a, e.b)] = performance.now(); const a = this.cellXY(e.a.col, e.a.row), b = this.cellXY(e.b.col, e.b.row); this.spawnDust((a.x + b.x) / 2, (a.y + b.y) / 2 - S * 0.3, 3); }
+              const e0 = ev.edges[Math.floor(ev.edges.length / 2)];
+              if (e0) this.addText(e0.a.col, e0.a.row, 'PALISADE', '#e8c48a', { dy: -S * 1.2, big: true, dur: 1300 });
+            });
+            t += 450;
+            break;
+          }
+          case 'summon': {
+            this.schedule(t, () => { delete this.summonHide[ev.id]; this.summonAnim[ev.id] = { from: ev.from, to: { col: ev.col, row: ev.row }, t0: performance.now(), dur: 320, spawn: true }; });
+            t += 340;
+            break;
+          }
+          case 'summonMove':
+            this.schedule(t, () => { this.summonAnim[ev.id] = { from: ev.from, to: ev.to, t0: performance.now(), dur: 320 }; });
+            t += 340;
+            break;
+          case 'summonGone': { // its last step is done — it waves and leaves in a puff of dust
+            const g = { id: ev.id, owner: ev.owner, col: ev.col, row: ev.row, kind: ev.kind || 'militiaman', acts: 0 };
+            this.ghosts[ev.id] = g;
+            this.schedule(t + 150, () => { const p = this.cellXY(g.col, g.row); this.spawnDust(p.x, p.y - this.size * 0.2, 5); delete this.ghosts[ev.id]; });
+            t += 200;
+            break;
+          }
+          case 'summonKilled': { // trampled by the enemy warband — stays until the warband gets there, then a puff and a skull
+            const g = { id: ev.id, owner: ev.owner, col: ev.col, row: ev.row, kind: ev.kind || 'militiaman', acts: 0 };
+            this.ghosts[ev.id] = g;
+            this.schedule(t + 260, () => { const p = this.cellXY(g.col, g.row); this.spawnFight(p.x, p.y); this.addText(g.col, g.row, 'TRAMPLED', '#ffb3a8', { dy: -this.size * 1.1, big: true, dur: 1200 }); delete this.ghosts[ev.id]; });
+            break;
+          }
+          case 'fortify':
+            this.schedule(t, () => { ev.cells.forEach(c => this.flashCell(c.col, c.row, '#f3ecdc', 700)); const w = this.s.players[ev.player].warband; this.addText(w.col, w.row, 'FORTIFIED', '#f3ecdc', { dy: -this.size * 1.9, big: true, dur: 1400 }); });
+            t += 450;
+            break;
+          case 'scorch': {
+            this.schedule(t, () => {
+              ev.line.forEach((c, i) => this.schedule(i * 90, () => { this.flashCell(c.col, c.row, '#ff9a3a', 600); const p = this.cellXY(c.col, c.row); this.spawnFight(p.x, p.y); }));
+              ev.cells.forEach(c => this.schedule(120, () => this.flipCell(c.col, c.row, c.from, 0)));
+              const w = this.s.players[ev.player].warband; this.addText(w.col, w.row, 'SCORCH!', '#ffb347', { dy: -this.size * 1.9, big: true, dur: 1300 });
+            });
+            t += 900;
+            break;
+          }
+          case 'swamp':
+            this.schedule(t, () => { this.flashCell(ev.col, ev.row, '#7c9a4a', 800); this.addText(ev.col, ev.row, 'QUAGMIRE', '#b7d68a', { dy: -this.size * 0.9, big: true, dur: 1300 }); });
+            t += 350;
+            break;
           case 'gameover': t += 400; break;
         }
       }
@@ -408,9 +469,11 @@ window.HB = window.HB || {};
           this.drawSettlement(ctx, p.x + st.dx * S, p.y + st.dy * S - lift, S * 0.5 * st.sc * sc, owner, st.flip);
         }
       }
+      this.drawField(ctx, now); // D-068: walls, swamps, fortified hexes
       // highlights
       const pulse = 0.55 + 0.45 * Math.sin(now / 180);
       for (const h of this.highlights) {
+        if (h.kind === 'wall') { this.drawWall(ctx, h.a, h.b, 1, 0, now, true); continue; } // D-068: Palisade preview
         const p = this.cellXY(h.col, h.row);
         if (h.kind === 'path') {
           const atk = h.attack; // D-042: the last step onto the enemy is an attack — red
@@ -435,7 +498,9 @@ window.HB = window.HB || {};
       for (const poi of s.pois) this.drawOutpost(ctx, poi, now);
       // warbands: draw the upper one first so overlapping banners read correctly
       const order = [1, 2].sort((a, b) => s.players[a].warband.row - s.players[b].warband.row);
+      this.drawSummons(ctx, now); // D-068
       for (const pid of order) this.drawWarband(ctx, s.players[pid], now);
+      this.drawStepHint(ctx, now); // D-068: free-step marker
       // battle fx
       for (let i = this.fx.length - 1; i >= 0; i--) {
         const f = this.fx[i], k = (now - f.t0) / f.dur;
@@ -522,6 +587,120 @@ window.HB = window.HB || {};
         ctx.fillStyle = light; ctx.beginPath(); ctx.moveTo(0, -h * 1.4); ctx.lineTo(w * 0.3, -h * 1.3); ctx.lineTo(0, -h * 1.2); ctx.closePath(); ctx.fill();
       }
       ctx.restore();
+    }
+    // ---- D-068: field objects ------------------------------------------------------------------------------
+    drawField(ctx, now) {
+      const s = this.s, S = this.size;
+      for (const k in s.swamps || {}) { // Quagmire: murky water with ripples and reeds
+        if (!R.active(s, s.swamps[k])) continue;
+        const c = s.cells[k], p = this.cellXY(c.col, c.row);
+        ctx.fillStyle = 'rgba(70,86,44,0.9)'; ctx.beginPath(); ctx.ellipse(p.x, p.y + S * 0.05, S * 0.66, S * 0.44, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(160,184,110,0.55)'; ctx.lineWidth = 1.5;
+        for (let i = 0; i < 2; i++) { const r = ((now / 1400 + i * 0.5) % 1); ctx.globalAlpha = 1 - r; ctx.beginPath(); ctx.ellipse(p.x, p.y + S * 0.05, S * 0.18 + S * 0.4 * r, S * 0.1 + S * 0.26 * r, 0, 0, Math.PI * 2); ctx.stroke(); }
+        ctx.globalAlpha = 1;
+        for (const [dx, h] of [[-0.35, 0.42], [-0.25, 0.3], [0.38, 0.36]]) {
+          const rx = p.x + dx * S, ry = p.y + S * 0.12;
+          ctx.strokeStyle = '#4f6a2a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx + S * 0.03, ry - S * h); ctx.stroke();
+          ctx.fillStyle = '#6b4a22'; ctx.beginPath(); ctx.ellipse(rx + S * 0.03, ry - S * h, S * 0.035, S * 0.08, 0, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      for (const k in s.cells) { // Fortify: a ring of stones on the hex rim
+        const c = s.cells[k];
+        if (!c.fortOwner || !R.active(s, c.fortUntil || -1)) continue;
+        const p = this.cellXY(c.col, c.row);
+        ctx.setLineDash([]); ctx.strokeStyle = 'rgba(50,40,30,0.55)'; ctx.lineWidth = S * 0.14; this.hexPath(ctx, p.x, p.y, S * 0.14); ctx.stroke();
+        ctx.setLineDash([S * 0.17, S * 0.06]); ctx.strokeStyle = '#ddd5c4'; ctx.lineWidth = S * 0.1; this.hexPath(ctx, p.x, p.y, S * 0.14); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      for (const key in s.walls || {}) { // Palisade: stakes rising along the edge
+        const w = s.walls[key];
+        if (!R.active(s, w.until)) continue;
+        const a0 = this.wallAnim[key];
+        let k = 1;
+        if (a0 !== undefined) { if (now < a0) continue; k = Math.min(1, (now - a0) / 380); k = k < 1 ? easeOutBack(k) : 1; }
+        this.drawWall(ctx, w.a, w.b, k, w.owner, now, false);
+      }
+    }
+    drawWall(ctx, a, b, k, owner, now, preview) {
+      const S = this.size, d = hex.dirBetween(a, b);
+      if (d < 0) return;
+      const [i, j] = EDGE[d], p = this.cellXY(a.col, a.row), cs = hex.corners(p.x, p.y, S, 1.5), P = cs[i], Q = cs[j];
+      if (preview) {
+        ctx.strokeStyle = `rgba(255,214,140,${0.55 + 0.35 * Math.sin(now / 180)})`; ctx.lineWidth = S * 0.16; ctx.lineCap = 'round'; ctx.setLineDash([S * 0.12, S * 0.1]);
+        ctx.beginPath(); ctx.moveTo(P.x, P.y); ctx.lineTo(Q.x, Q.y); ctx.stroke(); ctx.setLineDash([]); ctx.lineCap = 'butt';
+        return;
+      }
+      ctx.strokeStyle = '#4a2f14'; ctx.lineWidth = S * 0.1; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(P.x, P.y); ctx.lineTo(Q.x, Q.y); ctx.stroke(); ctx.lineCap = 'butt';
+      const n = 4, h = S * 0.36 * k, sw = S * 0.1;
+      for (let m = 0; m < n; m++) {
+        const t = (m + 0.5) / n, x = P.x + (Q.x - P.x) * t, y = P.y + (Q.y - P.y) * t;
+        ctx.fillStyle = '#b37c3c'; ctx.strokeStyle = '#4a2f14'; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(x - sw / 2, y); ctx.lineTo(x - sw / 2, y - h); ctx.lineTo(x, y - h - sw * 0.9 * k); ctx.lineTo(x + sw / 2, y - h); ctx.lineTo(x + sw / 2, y); ctx.closePath(); ctx.fill(); ctx.stroke();
+      }
+      if (k > 0.3) { // a band in the owner's colour ties the stakes together
+        ctx.strokeStyle = COL[owner] || '#8a6b3a'; ctx.lineWidth = S * 0.06;
+        ctx.beginPath(); ctx.moveTo(P.x, P.y - h * 0.5); ctx.lineTo(Q.x, Q.y - h * 0.5); ctx.stroke();
+      }
+    }
+    drawSummons(ctx, now) {
+      const S = this.size, list = (this.s.summons || []).filter(u => !this.summonHide[u.id]).concat(Object.values(this.ghosts));
+      for (const u of list) {
+        let pos = this.cellXY(u.col, u.row), hop = 0;
+        const an = this.summonAnim[u.id];
+        if (an) {
+          const k = (now - an.t0) / an.dur;
+          if (k >= 1) delete this.summonAnim[u.id];
+          else {
+            const kk = Math.max(0, k), a = this.cellXY(an.from.col, an.from.row), b = this.cellXY(an.to.col, an.to.row);
+            pos = { x: a.x + (b.x - a.x) * kk, y: a.y + (b.y - a.y) * kk }; hop = Math.sin(kk * Math.PI) * S * 0.25;
+          }
+        }
+        const x = pos.x, y = pos.y + S * 0.12 - hop, r = S * 0.17, color = COL[u.owner], light = COL[u.owner + 'Light'], dark = COL[u.owner + 'Dark'];
+        ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(pos.x, pos.y + S * 0.3, S * 0.3, S * 0.1, 0, 0, Math.PI * 2); ctx.fill();
+        if (u.kind === 'rider') { // a small horse under the rider
+          ctx.fillStyle = '#7a5230'; ctx.strokeStyle = '#3b2512'; ctx.lineWidth = 1.2;
+          ctx.beginPath(); ctx.ellipse(x, y + r * 0.9, r * 1.5, r * 0.7, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.ellipse(x + r * 1.45, y + r * 0.2, r * 0.45, r * 0.3, -0.6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          ctx.strokeStyle = '#3b2512'; ctx.lineWidth = 2; for (const lx of [-0.9, -0.4, 0.5, 1.0]) { ctx.beginPath(); ctx.moveTo(x + lx * r, y + r * 1.4); ctx.lineTo(x + lx * r, y + r * 2.1); ctx.stroke(); }
+        } else { // a spear
+          ctx.strokeStyle = '#4a3218'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + r * 0.9, y + r * 0.6); ctx.lineTo(x + r * 1.3, y - r * 2.4); ctx.stroke();
+          ctx.fillStyle = '#d8dbe3'; ctx.beginPath(); ctx.moveTo(x + r * 1.33, y - r * 2.9); ctx.lineTo(x + r * 1.1, y - r * 2.3); ctx.lineTo(x + r * 1.55, y - r * 2.3); ctx.closePath(); ctx.fill();
+        }
+        const by = u.kind === 'rider' ? y - r * 0.2 : y;
+        ctx.fillStyle = color; ctx.strokeStyle = dark; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.ellipse(x, by, r * 1.05, r * 0.9, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = light; ctx.beginPath(); ctx.arc(x, by - r * 1.1, r * 0.85, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = dark; ctx.beginPath(); ctx.arc(x, by - r * 1.2, r * 0.9, Math.PI, 0); ctx.closePath(); ctx.fill();
+        for (let i = 0; i < u.acts; i++) { // pips: captures still to come
+          const px = x - (u.acts - 1) * S * 0.08 + i * S * 0.16, py = by - r * 2.6;
+          ctx.fillStyle = '#fff'; ctx.strokeStyle = dark; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(px, py, S * 0.06, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        }
+      }
+    }
+    // D-068: the free step — a boot badge by the current warband (crossed out once used) and chevrons towards every
+    // hex it can step to while the human player may take it
+    drawStepHint(ctx, now) {
+      const h = this.stepHint, s = this.s;
+      if (!h || !s || s.phase !== 'play' || this.hideWb[h.pid]) return;
+      const S = this.size, p = s.players[h.pid], pos = this.warbandPos(p, now), pulse = 0.5 + 0.5 * Math.sin(now / 200);
+      if (!h.used && h.targets.length && !this.highlights.length && !this.dragging) {
+        for (const t of h.targets) {
+          const c = this.cellXY(t.col, t.row), dx = c.x - pos.x, dy = c.y - pos.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+          const cx = pos.x + dx * 0.6, cy = pos.y + dy * 0.6, tip = { x: cx + ux * S * 0.14, y: cy + uy * S * 0.14 };
+          const b1 = { x: cx - ux * S * 0.1 - uy * S * 0.16, y: cy - uy * S * 0.1 + ux * S * 0.16 }, b2 = { x: cx - ux * S * 0.1 + uy * S * 0.16, y: cy - uy * S * 0.1 - ux * S * 0.16 };
+          ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+          ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(b1.x, b1.y); ctx.lineTo(tip.x, tip.y); ctx.lineTo(b2.x, b2.y); ctx.stroke();
+          ctx.strokeStyle = t.attack ? `rgba(255,110,90,${0.6 + 0.4 * pulse})` : `rgba(255,255,255,${0.6 + 0.4 * pulse})`; ctx.lineWidth = 3.5;
+          ctx.beginPath(); ctx.moveTo(b1.x, b1.y); ctx.lineTo(tip.x, tip.y); ctx.lineTo(b2.x, b2.y); ctx.stroke();
+          ctx.lineCap = 'butt';
+        }
+      }
+      const bx = pos.x - S * 0.66, by = pos.y + S * 0.38, r = S * 0.2;
+      ctx.fillStyle = h.used ? '#8a8378' : '#f7ead0'; ctx.strokeStyle = h.used ? '#5a544a' : COL[p.id]; ctx.lineWidth = h.used ? 2 : 2.5 + (h.targets.length ? pulse : 0);
+      ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = h.used ? '#5a544a' : '#5a3a1a';
+      ctx.beginPath(); ctx.moveTo(bx - r * 0.38, by - r * 0.55); ctx.lineTo(bx - r * 0.38, by + r * 0.3); ctx.lineTo(bx + r * 0.55, by + r * 0.3); ctx.lineTo(bx + r * 0.55, by + r * 0.05); ctx.lineTo(bx + r * 0.05, by - r * 0.08); ctx.lineTo(bx + r * 0.05, by - r * 0.55); ctx.closePath(); ctx.fill();
+      if (h.used) { ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(bx - r * 0.72, by + r * 0.72); ctx.lineTo(bx + r * 0.72, by - r * 0.72); ctx.stroke(); }
     }
     drawRock(ctx, x, y, r) {
       ctx.fillStyle = '#8f9199'; ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.7, 0, 0, Math.PI * 2); ctx.fill();

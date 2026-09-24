@@ -5,11 +5,21 @@ window.HB = window.HB || {};
   const R = HB.rules, hex = HB.hex, CFG = HB.CONFIG, CARDS = HB.cards.CARDS, POIS = HB.cards.POIS, PRESETS = HB.cards.PRESETS;
   const $ = sel => document.querySelector(sel);
   const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
-  const KIND_CLASS = { move: 'k-move', blink: 'k-move', reinforce: 'k-reinf', buff_next: 'k-combat', explosive: 'k-combat', volley: 'k-combat', catapult: 'k-combat', formation: 'k-def', flank_claim: 'k-terr', cordon: 'k-terr', banner: 'k-terr', prayer: 'k-util', scout_draw: 'k-util' };
+  const KIND_CLASS = { move: 'k-move', blink: 'k-move', reinforce: 'k-reinf', buff_next: 'k-combat', explosive: 'k-combat', volley: 'k-combat', catapult: 'k-combat', formation: 'k-def', flank_claim: 'k-terr', cordon: 'k-terr', banner: 'k-terr', prayer: 'k-util', scout_draw: 'k-util', palisade: 'k-def', fortify: 'k-def', summon: 'k-summon', scorch: 'k-combat', swamp: 'k-terr' };
   // D-061: three visual tiers — plain deck cards, outpost cards (bronze frame), the citadel card (gold ornament)
   const cardHTML = defId => { const d = CARDS[defId], tier = HB.cards.tierOf(defId); return `<div class="card-icon">${HB.icons.svg(defId)}</div><div class="card-name">${d.title}</div>${tier === 'citadel' ? '<div class="card-poi">CITADEL</div>' : ''}`; };
   const cardClass = defId => { const tier = HB.cards.tierOf(defId); return 'card ' + (KIND_CLASS[CARDS[defId].kind] || '') + (tier ? ' tier-' + tier : ''); };
   const rectOf = e => e.getBoundingClientRect();
+  // D-068: highlights for cards aimed at a hex — every legal hex, the chosen one, Scorch's line, Palisade's three walls
+  function cellTargetHighlights(hl, play, opt, def, s) {
+    for (const o of play.options) hl.push({ col: o.cell.col, row: o.cell.row, kind: 'target', strong: o === opt });
+    if (!opt) return;
+    if (opt.cells) opt.cells.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: i + 1, strong: true }));
+    if (def.kind === 'palisade') for (const t of [-1, 0, 1]) {
+      const m = hex.neighbor(opt.cell.col, opt.cell.row, hex.turn(opt.dir, t));
+      if (hex.exists(m.col, m.row, s.cols, s.rows)) hl.push({ kind: 'wall', a: opt.cell, b: m });
+    }
+  }
 
   const UI = {
     state: null, renderer: null, busy: false, opts: null, drag: null, sel: null, lastActor: null, handoverPending: false, lastEvents: [], pendingIncoming: new Set(),
@@ -59,7 +69,7 @@ window.HB = window.HB || {};
       const tap = this.setup.control === 'tap';
       const ov = this.overlay(`<div class="intro">
         <h2>HEXBand — how it works</h2>
-        <div class="intro-item">${ic('hook')}<div><b>Move with cards.</b> ${tap ? 'Tap a card — every hex it can take your warband to lights up; tap the one you want and the warband moves at once.' : 'Drag a card onto the board and release it where the warband should go; it moves at once.'} The card sets the shape of the route, you choose the direction. Play as many cards per turn as you like, at least one, then press End Turn. The control scheme (drag / tap) can be changed in Settings.</div></div>
+        <div class="intro-item">${ic('hook')}<div><b>Move with cards.</b> ${tap ? 'Tap a card — every hex it can take your warband to lights up; tap the one you want and the warband moves at once.' : 'Drag a card onto the board and release it where the warband should go; it moves at once.'} The card sets the shape of the route, you choose the direction. Once per turn your warband can also take one <b>free step</b>: tap a marked hex next to it (or drag from the warband). Play as many cards per turn as you like, at least one, then press End Turn. The control scheme (drag / tap) can be changed in Settings.</div></div>
         <div class="intro-item">${ic('ring')}<div><b>Claim territory.</b> Every hex you walk through becomes yours. Enclose an area with your hexes (or with your hexes and the map edge) and everything inside becomes yours too, enemy hexes included — unless the enemy warband stands there. Score = your hexes.</div></div>
         <div class="intro-item">${ic('recruitment')}<div><b>Outposts.</b> Your two outposts flank your start and are yours from the beginning: their cards are shuffled into your deck. Walk through an enemy outpost or enclose it — its card flies straight into your hand and works instantly; lose an outpost and you lose its card. The neutral Citadel in the middle holds a stronger card.</div></div>
         <div class="intro-item">${ic('battle_cry')}<div><b>Fight.</b> To attack, run a card's route onto the enemy's hex (it turns red) — the game shows a forecast: how much each warband loses and who falls back. More minions hit harder, but cards let a smaller army win the exchange.</div></div>
@@ -89,7 +99,7 @@ window.HB = window.HB || {};
       const grid = el('div', 'pick-grid');
       for (const id of HB.cards.DECK_POOL) {
         const d = CARDS[id], on = sel.cards.includes(id);
-        const c = el('div', 'pick' + (on ? ' on' : '') + (HB.cards.ADVANCED_POOL.includes(id) ? ' adv' : ''), `<div class="pick-icon">${HB.icons.svg(id)}</div><div class="pick-name">${d.title}</div><div class="pick-type">${d.type}</div><div class="pick-text">${d.text}</div>`);
+        const c = el('div', 'pick' + (on ? ' on' : '') + (HB.cards.ADVANCED_POOL.includes(id) ? ' adv' : HB.cards.FIELD_POOL.includes(id) ? ' field' : ''), `<div class="pick-icon">${HB.icons.svg(id)}</div><div class="pick-name">${d.title}</div><div class="pick-type">${d.type}</div><div class="pick-text">${d.text}</div>`);
         c.addEventListener('click', () => {
           if (on) sel.cards = sel.cards.filter(x => x !== id); else if (sel.cards.length < CFG.DECK_SIZE) sel.cards.push(id); else return;
           this.renderBuilder(pid); this.validateSetup();
@@ -134,6 +144,7 @@ window.HB = window.HB || {};
       if (!this.renderer) {
         this.renderer = new HB.Renderer($('#board'));
         $('#board').addEventListener('click', e => this.onCanvasClick(e));
+        this.bindStep();
         window.addEventListener('resize', () => this.layout());
         if (window.ResizeObserver) new ResizeObserver(() => this.layout()).observe($('#board-wrap'));
         $('#btn-quit').addEventListener('click', () => this.toSetup());
@@ -214,6 +225,7 @@ window.HB = window.HB || {};
       this.renderer.prevPos = this.positions();
       this.lastActor = s.current;
       if (move.end) R.endTurn(s);
+      else if (move.step != null) { if (!R.freeStep(s, move.step) && !R.endTurn(s)) { s.playedThisTurn = 1; R.endTurn(s); } } // D-068
       else if (move.pass) { if (!R.passTurn(s, move.uid)) { s.playedThisTurn = 1; R.endTurn(s); } }
       else if (!R.playCard(s, move.uid, move.choice)) { if (!R.endTurn(s)) { s.playedThisTurn = 1; R.endTurn(s); } }
       this.afterAction();
@@ -279,6 +291,9 @@ window.HB = window.HB || {};
       $('#pile-discard').classList.toggle('empty', p.discard.length === 0);
       const last = p.discard[p.discard.length - 1];
       $('#pile-discard').innerHTML = last ? `<div class="pile-face">${HB.icons.svg(last.def)}</div>` : '';
+      // D-068: the free-step marker around the current warband; the chevrons only while the human can take it
+      const canStep = !busy && this.stepAvailable();
+      this.renderer.stepHint = s.phase === 'play' ? { pid: s.current, used: s.stepUsed, targets: canStep ? R.stepOptions(s).map(o => ({ col: o.end.col, row: o.end.row, attack: !!o.path[0].attack })) : [] } : null;
       $('#status-line').textContent = busy ? (!mine && s.phase === 'play' ? `${this.current().name}'s turn…` : '') : this.statusText(p);
       $('#btn-pass').hidden = busy || s.playedThisTurn > 0 || playable.some(x => x);
       // a full hand (outpost card arrived) leaves no slot for the end-turn button — show a fallback under the hand
@@ -288,7 +303,8 @@ window.HB = window.HB || {};
       const s = this.state, st = p.status, out = [];
       if (st.attackBonus) out.push(`Battle Cry +${st.attackBonus}`);
       if (R.active(s, st.formationUntil)) out.push('Formation −2');
-      return out.length ? 'Effects: ' + out.join(', ') : '';
+      const step = s.stepUsed ? 'Free step used.' : 'Free step: tap a marked hex next to your warband.';
+      return (out.length ? 'Effects: ' + out.join(', ') + ' · ' : '') + step;
     },
     // flying card between two screen rects (played card → discard, deck → slot, discard → deck)
     fly(fromRect, toRect, html, cls, dur) {
@@ -421,11 +437,11 @@ window.HB = window.HB || {};
         const opt = play.options.find(o => o.side === side) || play.options[0];
         dg.choice = opt; dg.valid = true;
         this.showDesc(`${dg.def.title}: ${opt.label}`, dg.def.text);
-      } else if (kind === 'explosive') {
+      } else if (play.options && play.options[0] && play.options[0].cell) { // D-068: any card aimed at a hex
         const cell = dg.over ? rd.cellFromPointer(e.clientX, e.clientY) : null;
         const opt = cell && play.options.find(o => o.cell.col === cell.col && o.cell.row === cell.row);
         dg.choice = opt || null; dg.valid = !!opt;
-        for (const o of play.options) hl.push({ col: o.cell.col, row: o.cell.row, kind: 'target', strong: o === opt });
+        cellTargetHighlights(hl, play, opt, dg.def, s);
       } else {
         dg.valid = true;
         if (play.path) play.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: i + 1, strong: dg.over, attack: !!c.attack }));
@@ -502,11 +518,11 @@ window.HB = window.HB || {};
       } else if (play.options && play.options[0] && play.options[0].side != null) {
         if (has) { const wx = rd.warbandScreenX(p.id), side = clientX < wx ? -1 : 1; const opt = play.options.find(o => o.side === side) || play.options[0]; sel.choice = opt; sel.valid = true; }
         for (let d = 0; d < 6; d++) { const n = hex.neighbor(p.warband.col, p.warband.row, d); if (hex.exists(n.col, n.row, this.state.cols, this.state.rows)) hl.push({ col: n.col, row: n.row, kind: 'target', strong: false }); }
-      } else if (kind === 'explosive') {
+      } else if (play.options && play.options[0] && play.options[0].cell) { // D-068: any card aimed at a hex
         const cell = has ? rd.cellFromPointer(clientX, clientY) : null;
         const opt = cell && play.options.find(o => o.cell.col === cell.col && o.cell.row === cell.row);
         if (opt) { sel.choice = opt; sel.valid = true; }
-        for (const o of play.options) hl.push({ col: o.cell.col, row: o.cell.row, kind: 'target', strong: o === opt });
+        cellTargetHighlights(hl, play, opt, sel.def, this.state);
       } else { sel.valid = true; }
       rd.highlights = hl;
       this.updateForecast({ valid: sel.valid, choice: sel.choice, over: has, def: sel.def });
@@ -535,12 +551,55 @@ window.HB = window.HB || {};
       this.lastActor = s.current;
       if (R.endTurn(s)) this.afterAction();
     },
+    // ------------------------------------------------------------ free step (D-068)
+    // Once per turn: tap a highlighted hex next to the warband, or drag from the warband onto it.
+    stepAvailable() {
+      const s = this.state;
+      return !!s && s.phase === 'play' && !this.busy && !this.handoverPending && !this.sel && !this.drag
+        && s.current === this.handPlayer().id && !s.players[s.current].bot && !s.stepUsed;
+    },
+    stepOptionAt(clientX, clientY) {
+      const cell = this.renderer.cellFromPointer(clientX, clientY);
+      return cell ? R.stepOptions(this.state).find(o => o.end.col === cell.col && o.end.row === cell.row) || null : null;
+    },
+    bindStep() {
+      const board = $('#board');
+      board.addEventListener('pointerdown', e => {
+        this.stepPress = null;
+        if (!this.stepAvailable()) return;
+        const cell = this.renderer.cellFromPointer(e.clientX, e.clientY), w = this.state.players[this.state.current].warband;
+        if (cell && cell.col === w.col && cell.row === w.row) { this.stepPress = { id: e.pointerId }; try { board.setPointerCapture(e.pointerId); } catch (err) {} }
+      });
+      board.addEventListener('pointermove', e => {
+        if (!this.stepPress || e.pointerId !== this.stepPress.id) return;
+        const opt = this.stepOptionAt(e.clientX, e.clientY), rd = this.renderer;
+        rd.highlights = opt ? [{ col: opt.end.col, row: opt.end.row, kind: 'path', label: 1, strong: true, attack: !!opt.path[0].attack }] : [];
+        rd.pathFrom = opt ? { col: this.state.players[this.state.current].warband.col, row: this.state.players[this.state.current].warband.row } : null;
+        rd.forecast = null;
+        if (opt && opt.path[0].attack) { const s = this.state, p = s.players[s.current]; rd.forecast = Object.assign({ a: p.id, d: 3 - p.id }, R.forecast(s, p, s.players[3 - p.id], 'clash')); }
+      });
+      board.addEventListener('pointerup', e => {
+        if (!this.stepPress || e.pointerId !== this.stepPress.id) return;
+        this.stepPress = null;
+        const rd = this.renderer; rd.highlights = []; rd.pathFrom = null; rd.forecast = null;
+        const opt = this.stepOptionAt(e.clientX, e.clientY);
+        if (opt) { this.skipClick = true; this.commitStep(opt.dir); }
+      });
+    },
+    commitStep(dir) {
+      const s = this.state;
+      this.renderer.prevPos = this.positions();
+      this.lastActor = s.current;
+      if (R.freeStep(s, dir)) this.afterAction(); else this.refresh();
+    },
     onCanvasClick(e) {
       const s = this.state; if (!s || this.drag) return;
+      if (this.skipClick) { this.skipClick = false; return; }
       if (this.sel) { // tap mode: a tap on the board plays the selected card at that target
         if (this.previewAt(e.clientX, e.clientY)) this.commitSel(this.cardCenter(this.sel.uid));
         return;
       }
+      if (this.stepAvailable()) { const opt = this.stepOptionAt(e.clientX, e.clientY); if (opt) { this.commitStep(opt.dir); return; } }
       const cell = this.renderer.cellFromPointer(e.clientX, e.clientY);
       if (!cell) return;
       const c = s.cells[hex.key(cell.col, cell.row)];
@@ -589,6 +648,8 @@ window.HB = window.HB || {};
         <p><b>Turn.</b> At the start of your turn you draw up to 4 cards (when the deck runs out, the discard pile is shuffled into it). ${tap
           ? 'To play a card, tap it: a description panel appears over the hand and every target lights up on the board. Tap the hex you want — the warband acts at once and the card goes to the discard pile. A card without a target (Rally, Battle Cry…) is played by tapping the board or tapping the card again. Changed your mind — tap the description panel and the card stays in your hand.'
           : 'To play a card, drag it onto the board: the route is previewed, the warband acts as soon as you release the card, and the card goes to the discard pile. Release it over the hand and it returns.'} Play as many cards per turn as you like, at least one; after the first card an End Turn button appears in the rightmost slot. The control scheme can be switched in Settings → Controls.</p>
+        <p><b>Free step.</b> Once per turn your warband may take one step to a neighbouring hex without a card: tap a hex marked with a chevron next to it, or drag from the warband onto it. The boot badge by the warband shows whether the step is still available. Stepping onto the enemy is an attack. The free step does not count as the card you must play each turn.</p>
+        <p><b>Field cards.</b> Palisade builds a wall one hex ahead — warbands and summons cannot cross it, and it closes enclosures like a border. Levy and Outriders summon units that capture a hex each turn on their own for 1–2 turns; an enemy warband that walks onto them kills them. Fortify makes your hexes around the warband impossible to capture or burn for 2 rounds. Scorch turns enemy hexes in a line of 3 neutral. Quagmire turns a hex into a swamp that stops any warband entering it.</p>
         <p><b>Directions.</b> A movement card sets only the shape and length of the route (straight, hook, zigzag, half-ring). Where to go is your choice: every possible end of the route is highlighted, and the one closest to where you release or tap is used. For Wide March the side is left or right of the warband.</p>
         <p><b>Territory.</b> Hexes you walk through take your colour. Any area bounded by your hexes — or by your hexes and the map edge — becomes entirely yours, enemy hexes included, unless the enemy warband stands in it or can step into it: the warband holds the ground around it. Ringing the warband completely deals siege damage instead (one minion per ring hex painted by that card). <b>Outposts</b>: each player picks two; they flank the start zone and are captured from the beginning, their cards shuffled into the deck. An outpost changes hands by walking through its hex or enclosing it; the card floating above it flies straight into the captor's hand (onto the deck if the hand is full), and the previous owner loses that card. Every outpost card works instantly: Recruitment +6, Cordon captures the hexes around the warband, Explosive Charge hits an adjacent hex, Prayer returns the top discard card, Catapult hits at up to 3 hexes, Scouting refills the hand, Banner makes your hexes around the warband worth +1, Blink jumps over a hex. The neutral <b>Citadel</b> in the middle holds a stronger card (Muster +7, Heavy Charge 5, Trebuchet 4 at 3 hexes, War Horn +3); Settings choose whether it is always Muster (default), one random card for the match, or a new one after each capture.</p>
         <p><b>Combat.</b> Warbands never fight on their own: to attack, run a movement card's route onto the enemy's hex — that step is highlighted red with a sword and the move ends there. While you aim, both warbands show their predicted losses and this panel says who falls back. Your warband charges the enemy's hex and both strike at once. Strength grows with the number of minions, but slower than the number itself (24 minions — about 5 damage, 12 — about 3, 6 — about 2); Battle Cry adds +2 to your next strike, Formation reduces every incoming strike by 2. After the exchange the warband with fewer minions falls back one hex (the attacker to where it came from; the defender away from the attacker, and then the attacker takes its hex); on equal numbers the attacker falls back. Volley and Catapult strike from a distance with no retaliation.</p>

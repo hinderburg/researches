@@ -59,6 +59,7 @@ select, input[type=text] { background: var(--panel2); color: var(--text); border
 .pick { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 8px 10px; cursor: pointer; min-height: 74px; }
 .pick.on { border-color: var(--accent); background: #3d3216; }
 .pick.adv .pick-type::after { content: " · advanced"; color: var(--accent); }
+.pick.field .pick-type::after { content: " · field"; color: #8fd0a0; } /* D-068 */
 .pick-icon { float: right; margin: -2px -2px 0 6px; color: var(--accent); }
 .pick-icon svg { width: 28px; height: 28px; display: block; }
 .pick-name { font-weight: 700; font-size: 14px; }
@@ -112,6 +113,7 @@ select, input[type=text] { background: var(--panel2); color: var(--text); border
 .card.k-def { border-color: #4b8a4a; } .card.k-def .card-name { background: #3d7a3c; }
 .card.k-terr { border-color: #7a5aa8; } .card.k-terr .card-name { background: #66489a; }
 .card.k-util { border-color: #6b5a3a; } .card.k-util .card-name { background: #5a4a30; }
+.card.k-summon { border-color: #2f8f86; } .card.k-summon .card-name { background: #23766e; } /* D-068: summons */
 .card-icon { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; color: var(--ink); width: 100%; }
 .card-icon svg { width: 44px; height: 44px; display: block; }
 .card-name { width: 100%; text-align: center; font-weight: 800; font-size: 10px; line-height: 1.1; color: #fff; padding: 4px 2px; text-shadow: 0 1px 0 rgba(0,0,0,.4); }
@@ -134,7 +136,8 @@ select, input[type=text] { background: var(--panel2); color: var(--text); border
 .fly-card { position: fixed; left: 0; top: 0; z-index: 60; pointer-events: none; border-radius: 8px; border: 2px solid var(--paper-edge); background: linear-gradient(var(--paper), var(--paper2)); color: var(--ink); display: flex; flex-direction: column; align-items: center; overflow: hidden; box-shadow: 0 8px 18px rgba(0,0,0,.5); }
 .fly-card .card-icon svg { width: 36px; height: 36px; }
 .fly-card .card-name { font-size: 9px; padding: 3px 2px; background: #5a4a30; }
-.fly-card.k-move .card-name { background: #2f5ea3; } .fly-card.k-combat .card-name { background: #a3352c; } .fly-card.k-reinf .card-name { background: #b57f10; } .fly-card.k-def .card-name { background: #3d7a3c; } .fly-card.k-terr .card-name { background: #66489a; }
+.fly-card.k-move .card-name { background: #2f5ea3; } .fly-card.k-combat .card-name { background: #a3352c; } .fly-card.k-reinf .card-name { background: #b57f10; } .fly-card.k-def .card-name { background: #3d7a3c; } .fly-card.k-terr .card-name { background: #66489a; } .fly-card.k-summon .card-name { background: #23766e; }
+.fly-card.k-summon .card-name { background: #23766e; } .fly-card.k-util .card-name { background: #5a4a30; }
 .fly-card.stack { border-color: #c99a5b; }
 #status-row { display: flex; align-items: center; justify-content: center; gap: 8px; height: 22px; overflow: hidden; }
 .btn.end-fb { background: repeating-linear-gradient(135deg, #b8433a 0 6px, #a3352c 6px 12px); color: #fff; border-color: #ffd766; padding: 1px 10px; }
