@@ -16,13 +16,13 @@ window.HB = window.HB || {};
   const ICONS = {
     advance: wrap(feet),
     double_advance: wrap(chevrons(2), '2'),
-    forced_march: wrap(chevrons(3), '3'),
+    forced_march: wrap(chevrons(2) + `<path d="M22 4 L28 10 M24 10 L28 10 L28 6" stroke-width="2"/>`, '+2'), // D-072: Charge
     hook: wrap(`<path d="M10 27 V13 L22 6"/><path d="M15 4 L23 5.5 L21 13"/>`, '2'),
-    long_hook: wrap(`<path d="M10 28 V10 L22 4"/><path d="M15 2.5 L23 3.5 L21 11"/>`, '3'),
+    long_hook: wrap(`<path d="M8 28 V15 L18 9"/><path d="M12 7.5 L19 8.5 L17 15"/>` + hexagon(25, 5, 3.6), '2'),
     zigzag: wrap(`<path d="M8 27 L14 12 L20 22 L26 7"/><path d="M19 8 L26 6 L27 13"/>`, '2'),
-    around: wrap(`<path d="M8 26 V14 A8 8 0 0 1 24 14 V19"/><path d="M19 15 L24 20 L29 15"/>`, '3'),
+    around: wrap(`<path d="M8 27 V16 A8 8 0 0 1 22 12"/><path d="M16 9 L22 12 L18 17"/>` + hexagon(17, 21, 3.4), '2'),
     split_march: wrap(`<path d="M16 26 V7 M10 13 L16 7 L22 13"/>` + hexagon(6, 22, 4) + hexagon(26, 22, 4), '1'),
-    dash: wrap(`<path d="M16 28 V12 M10 18 L16 12 L22 18"/>` + hexagon(16, 6, 4.5), '2'),
+    dash: wrap(`<path d="M16 29 V21 M11 25 L16 20 L21 25"/>` + hexagon(16, 14, 3.6) + hexagon(16, 5, 3.6), '1'),
     flank_claim: wrap(hexagon(16, 16, 4) + hexagon(5.5, 16, 4.5) + hexagon(26.5, 16, 4.5) + `<path d="M9.5 16 H12 M20 16 H22.5" stroke-dasharray="1.5 1.5"/>`),
     volley: wrap(`<path d="M5 27 C8 14 18 8 27 5"/><path d="M20 5 L27 5 L27 12"/><path d="M12 24 L16 20 M14 27 L18 23" stroke-width="2"/>`, '2'),
     rally: wrap(minions, '+4'),
@@ -37,6 +37,18 @@ window.HB = window.HB || {};
     scout_draw: wrap(cards + `<path d="M25 3 L29 7 M29 3 L25 7" stroke-width="2"/>`, '+'),
     banner: wrap(flag, '+1'),
     blink: wrap(`<path d="M16 27 V22 M16 18 V14 M16 10 V7 M10 13 L16 7 L22 13"/>`),
+    // D-068: field cards
+    palisade: wrap(`<path d="M4 27 H28"/><path d="M7 27 V11 L9 8 L11 11 V27 M14 27 V9 L16 6 L18 9 V27 M21 27 V11 L23 8 L25 11 V27"/><path d="M5 18 H27" stroke-width="2"/>`, '3'),
+    levy: wrap(`<circle cx="13" cy="8" r="3.5"/><path d="M7 26 C7 19 9 14 13 14 C17 14 19 19 19 26"/><path d="M23 28 L24 4 M21.5 8 L24 3 L26.5 8"/>`, '2'),
+    outriders: wrap(`<path d="M3 22 C5 17 10 16 15 17 L20 13 L23 15 L20 18 C20 22 16 23 12 23 L8 23 Z"/><path d="M7 23 V28 M16 23 V28"/><circle cx="12" cy="9" r="3"/><path d="M12 12 V17"/><path d="M24 6 H30 M27 3 L30 6 L27 9" stroke-width="2"/>`, '×2'),
+    fortify: wrap(hexagon(16, 17, 11) + `<path d="M9 17 L14 22 L23 12"/>` + `<path d="M5 6 H9 M13 4 H19 M23 6 H27" stroke-width="2"/>`),
+    scorch: wrap(`<path d="M16 29 C9 27 7 21 10 15 C11 19 13 20 14 19 C12 13 15 7 20 4 C19 9 23 12 23 18 C25 16 25 14 25 13 C28 19 25 27 16 29 Z"/>`, '3'),
+    quagmire: wrap(`<path d="M3 20 C7 17 10 23 14 20 C18 17 21 23 25 20 C27 19 28 19 29 20"/><path d="M3 26 C7 23 10 29 14 26 C18 23 21 29 25 26 C27 25 28 25 29 26"/><path d="M9 17 V6 M13 16 V9 M20 17 V5"/><ellipse cx="9" cy="6" rx="1.6" ry="3" fill="currentColor"/><ellipse cx="20" cy="5" rx="1.6" ry="3" fill="currentColor"/>`),
+    // D-059: citadel cards
+    muster: wrap(minions, '+7'),
+    heavy_charge: wrap(star(8), '5'),
+    trebuchet: wrap(`<path d="M6 26 H26 M9 26 L20 8 M14 26 L20 8"/><circle cx="22" cy="6" r="3.5"/><path d="M4 12 C10 6 18 4 26 4" stroke-dasharray="2 2"/>`, '4'),
+    war_horn: wrap(sword, '+3'),
   };
   const fallback = wrap('<circle cx="16" cy="16" r="10"/>');
   const imgCache = {};
