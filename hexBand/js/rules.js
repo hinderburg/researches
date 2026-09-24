@@ -165,7 +165,8 @@ window.HB = window.HB || {};
       comps.push(comp);
     }
     // D-060: the open field is wherever the enemy warband stands or can step next (not across a wall, D-068). If that is a pocket of at most
-    // CFG.HOLD_POCKET_MAX hexes (a tight ring, a corner, a small trap), the areas just beyond its walls stay open too —
+    // CFG.HOLD_POCKET_MAX hexes (a tight ring, a corner, a small trap), a big field (more than HOLD_POCKET_MAX hexes) just
+    // beyond its walls stays open too — small pockets there are still filled (D-069) —
     // so trapping the warband gives siege damage (D-054), not the rest of the map.
     const ew = enemyOf(s, p.id).warband, open = new Set();
     const mark = c => { const comp = compOf[K(c.col, c.row)]; if (comp) open.add(comp); };
@@ -177,7 +178,7 @@ window.HB = window.HB || {};
       for (const c of inner) for (let d = 0; d < 6; d++) {
         const n = hex.neighbor(c.col, c.row, d);
         if (!exists(s, n) || !own(K(n.col, n.row))) continue;
-        for (let e = 0; e < 6; e++) mark(hex.neighbor(n.col, n.row, e));
+        for (let e = 0; e < 6; e++) { const m = hex.neighbor(n.col, n.row, e), comp = compOf[K(m.col, m.row)]; if (comp && comp.length > CFG.HOLD_POCKET_MAX) open.add(comp); } // D-069: a big field only, small pockets are still filled
       }
     }
     let filled = 0;
