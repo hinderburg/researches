@@ -16,13 +16,13 @@ window.HB = window.HB || {};
   const ICONS = {
     advance: wrap(feet),
     double_advance: wrap(chevrons(2), '2'),
-    forced_march: wrap(chevrons(3), '3'),
+    forced_march: wrap(chevrons(2) + `<path d="M22 4 L28 10 M24 10 L28 10 L28 6" stroke-width="2"/>`, '+2'), // D-072: Charge
     hook: wrap(`<path d="M10 27 V13 L22 6"/><path d="M15 4 L23 5.5 L21 13"/>`, '2'),
-    long_hook: wrap(`<path d="M10 28 V10 L22 4"/><path d="M15 2.5 L23 3.5 L21 11"/>`, '3'),
+    long_hook: wrap(`<path d="M8 28 V15 L18 9"/><path d="M12 7.5 L19 8.5 L17 15"/>` + hexagon(25, 5, 3.6), '2'),
     zigzag: wrap(`<path d="M8 27 L14 12 L20 22 L26 7"/><path d="M19 8 L26 6 L27 13"/>`, '2'),
-    around: wrap(`<path d="M8 26 V14 A8 8 0 0 1 24 14 V19"/><path d="M19 15 L24 20 L29 15"/>`, '3'),
+    around: wrap(`<path d="M8 27 V16 A8 8 0 0 1 22 12"/><path d="M16 9 L22 12 L18 17"/>` + hexagon(17, 21, 3.4), '2'),
     split_march: wrap(`<path d="M16 26 V7 M10 13 L16 7 L22 13"/>` + hexagon(6, 22, 4) + hexagon(26, 22, 4), '1'),
-    dash: wrap(`<path d="M16 28 V12 M10 18 L16 12 L22 18"/>` + hexagon(16, 6, 4.5), '2'),
+    dash: wrap(`<path d="M16 29 V21 M11 25 L16 20 L21 25"/>` + hexagon(16, 14, 3.6) + hexagon(16, 5, 3.6), '1'),
     flank_claim: wrap(hexagon(16, 16, 4) + hexagon(5.5, 16, 4.5) + hexagon(26.5, 16, 4.5) + `<path d="M9.5 16 H12 M20 16 H22.5" stroke-dasharray="1.5 1.5"/>`),
     volley: wrap(`<path d="M5 27 C8 14 18 8 27 5"/><path d="M20 5 L27 5 L27 12"/><path d="M12 24 L16 20 M14 27 L18 23" stroke-width="2"/>`, '2'),
     rally: wrap(minions, '+4'),

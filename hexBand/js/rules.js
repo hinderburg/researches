@@ -164,23 +164,13 @@ window.HB = window.HB || {};
       }
       comps.push(comp);
     }
-    // D-060: the open field is wherever the enemy warband stands or can step next (not across a wall, D-068). If that is a pocket of at most
-    // CFG.HOLD_POCKET_MAX hexes (a tight ring, a corner, a small trap), a big field (more than HOLD_POCKET_MAX hexes) just
-    // beyond its walls stays open too — small pockets there are still filled (D-069) —
-    // so trapping the warband gives siege damage (D-054), not the rest of the map.
+    // D-060 / D-071: the open field is only where the enemy warband stands or can step next (not across a wall, D-068).
+    // Every other area not owned by p — neutral or enemy, at the edge or not, big or small — is filled. (The D-060/D-069
+    // exception that kept areas beyond a trapped warband's wall open is gone: closing a ring can now win the map.)
     const ew = enemyOf(s, p.id).warband, open = new Set();
     const mark = c => { const comp = compOf[K(c.col, c.row)]; if (comp) open.add(comp); };
     mark(ew);
     for (let d = 0; d < 6; d++) { const n = hex.neighbor(ew.col, ew.row, d); if (exists(s, n) && !walled(s, ew, n)) mark(n); }
-    let pocket = 0; for (const comp of open) pocket += comp.length;
-    if (pocket <= CFG.HOLD_POCKET_MAX) {
-      const inner = [ew]; for (const comp of open) for (const c of comp) inner.push(c);
-      for (const c of inner) for (let d = 0; d < 6; d++) {
-        const n = hex.neighbor(c.col, c.row, d);
-        if (!exists(s, n) || !own(K(n.col, n.row))) continue;
-        for (let e = 0; e < 6; e++) { const m = hex.neighbor(n.col, n.row, e), comp = compOf[K(m.col, m.row)]; if (comp && comp.length > CFG.HOLD_POCKET_MAX) open.add(comp); } // D-069: a big field only, small pockets are still filled
-      }
-    }
     let filled = 0;
     for (const comp of comps) {
       if (open.has(comp)) continue;
@@ -227,7 +217,7 @@ window.HB = window.HB || {};
   }
   // Walks along absolute directions, stopping at the first illegal step (D-008), at a wall, or in a swamp (D-068).
   function moveAlong(s, p, dirs, def) {
-    const w = p.warband, path = [];
+    const w = p.warband, path = [], start = { col: w.col, row: w.row };
     let lastDir = -1, clashed = false;
     for (const d of dirs) {
       const n = hex.neighbor(w.col, w.row, d);
@@ -235,6 +225,7 @@ window.HB = window.HB || {};
       if (exists(s, n) && isEnemyCell(s, p.id, n) && attackAllowed(s)) { // D-042: stepping onto the enemy = attack
         if (path.length) s.events.push({ type: 'move', player: p.id, path: path.slice() });
         flushPaint(s, p);
+        if (def && def.charge) p.status.attackBonus += def.charge; // D-072: Charge — the bonus is consumed by this clash
         clash(s, p, enemyOf(s, p.id));
         clashed = true;
         break;
@@ -246,6 +237,10 @@ window.HB = window.HB || {};
       if (isSwamp(s, n)) break; // D-068: Quagmire — the warband gets stuck
     }
     if (!clashed && path.length) s.events.push({ type: 'move', player: p.id, path });
+    if (!clashed && def && def.curl && path.length === dirs.length) { // D-072: Around — the hex it curls round is captured too
+      const c = hex.neighbor(start.col, start.row, dirs[1]);
+      if (exists(s, c) && !occupant(s, c)) paint(s, p, c, 'split');
+    }
     if (!clashed && def && def.ahead && lastDir >= 0) { // Dash: claim the next cell(s) in the direction of travel without moving
       let c = { col: w.col, row: w.row };
       for (let i = 0; i < def.ahead; i++) { c = hex.neighbor(c.col, c.row, lastDir); if (!exists(s, c) || occupant(s, c)) break; paint(s, p, c, 'split'); }
@@ -344,13 +339,13 @@ window.HB = window.HB || {};
     return { value: v, notes };
   }
   // D-047: what an attack would do, without touching the state — shown to the player while choosing an attacking route
-  function forecast(s, a, d, kind) {
+  function forecast(s, a, d, kind, bonus) { // bonus: an extra flat strike bonus from the card itself (Charge, D-072)
     const aw = a.warband, dw = d.warband;
     if (kind === 'volley' || kind === 'catapult') {
       const dmg = kind === 'volley' ? applyDamage(strikeValue(s, a, d, false).value) : CARDS.catapult.damage;
       return { kind, dmgToDef: dmg, dmgToAtt: 0, aAfter: aw.minions, dAfter: Math.max(0, dw.minions - dmg), result: dw.minions - dmg <= 0 ? 'eliminated' : 'ranged' };
     }
-    const dmgToDef = applyDamage(strikeValue(s, a, d, false).value), dmgToAtt = applyDamage(strikeValue(s, d, a, false).value);
+    const dmgToDef = applyDamage(strikeValue(s, a, d, false).value + (bonus || 0)), dmgToAtt = applyDamage(strikeValue(s, d, a, false).value);
     const aAfter = Math.max(0, aw.minions - dmgToAtt), dAfter = Math.max(0, dw.minions - dmgToDef);
     const result = aAfter <= 0 || dAfter <= 0 ? 'eliminated' : aAfter > dAfter ? 'defenderRetreats' : 'attackerRetreats';
     return { kind: 'clash', dmgToDef, dmgToAtt, aAfter, dAfter, result };

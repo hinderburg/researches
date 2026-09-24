@@ -8,15 +8,15 @@ window.HB = window.HB || {};
     double_advance:     { id: 'double_advance', title: 'Double March', type: 'Movement', kind: 'move', pattern: [0, 0], text: 'Two steps in a straight line, any direction.' },
     hook:               { id: 'hook', title: 'Hook', type: 'Maneuver', kind: 'move', pattern: [0, 1], mirror: true, text: 'Two steps with a 60° turn (either way).' },
     zigzag:             { id: 'zigzag', title: 'Zigzag', type: 'Maneuver', kind: 'move', pattern: [0, 2], mirror: true, text: 'Two steps with a 120° turn: a jag to either side.' },
-    around:             { id: 'around', title: 'Around', type: 'Maneuver', kind: 'move', pattern: [0, 1, 2], mirror: true, text: 'Three steps in a half-ring around a neighbouring hex.' },
+    around:             { id: 'around', title: 'Around', type: 'Maneuver', kind: 'move', pattern: [0, 1], mirror: true, curl: true, text: 'Two steps curling round a neighbouring hex; that hex is captured too.' },
     rally:              { id: 'rally', title: 'Rally', type: 'Reinforcement', kind: 'reinforce', amount: 4, text: '+4 minions.' },
     battle_cry:         { id: 'battle_cry', title: 'Battle Cry', type: 'Combat', kind: 'buff_next', bonus: 2, text: 'Your next strike deals +2 damage.' },
     reinforced_formation:{ id: 'reinforced_formation', title: 'Formation', type: 'Defense', kind: 'formation', text: 'Until your next turn every strike against you deals 2 less (never below 1).' },
     // ---- advanced pool
-    forced_march:       { id: 'forced_march', title: 'Forced March', type: 'Movement', kind: 'move', pattern: [0, 0, 0], text: 'Three steps in a straight line, any direction.' },
-    long_hook:          { id: 'long_hook', title: 'Long Hook', type: 'Maneuver', kind: 'move', pattern: [0, 0, 1], mirror: true, text: 'Two steps straight, then one step with a 60° turn.' },
+    forced_march:       { id: 'forced_march', title: 'Charge', type: 'Movement', kind: 'move', pattern: [0, 0], charge: 2, text: 'Two steps in a straight line; if the move ends in an attack, the strike deals +2.' },
+    long_hook:          { id: 'long_hook', title: 'Long Hook', type: 'Maneuver', kind: 'move', pattern: [0, 1], mirror: true, ahead: 1, text: 'Two steps with a 60° turn; the next hex ahead is captured as well.' },
     split_march:        { id: 'split_march', title: 'Wide March', type: 'Territory', kind: 'move', pattern: [0], wide: true, text: 'One step in any direction; the two hexes flanking the step are captured too.' },
-    dash:               { id: 'dash', title: 'Dash', type: 'Territory', kind: 'move', pattern: [0, 0], ahead: 1, text: 'Two steps straight; the next hex ahead is captured as well.' },
+    dash:               { id: 'dash', title: 'Dash', type: 'Territory', kind: 'move', pattern: [0], ahead: 2, text: 'One step; the next two hexes ahead are captured as well.' },
     flank_claim:        { id: 'flank_claim', title: 'Flank Claim', type: 'Territory', kind: 'flank_claim', target: 'axis', text: 'Capture two adjacent hexes on one line through your warband, on opposite sides.' },
     volley:             { id: 'volley', title: 'Volley', type: 'Combat', kind: 'volley', range: 2, text: 'Strike the enemy warband up to 2 hexes away. No retaliation.' },
     warband_reinforcements:{ id: 'warband_reinforcements', title: 'Reinforcements', type: 'Reinforcement', kind: 'reinforce', amount: 6, text: '+6 minions.' },
@@ -70,8 +70,8 @@ window.HB = window.HB || {};
 
   // D-070: three archetypes that play very differently. `tag` is the one-line pitch shown on the main-menu button.
   const PRESETS = {
-    landgrab: { title: 'Land Grab', icon: 'forced_march', tag: 'Run wide, close big loops, win on territory.',
-      cards: ['forced_march', 'long_hook', 'around', 'dash', 'split_march', 'flank_claim', 'outriders', 'levy'], pois: ['watchtower', 'scout_camp'] },
+    landgrab: { title: 'Land Grab', icon: 'dash', tag: 'Run wide, close big loops, win on territory.',
+      cards: ['double_advance', 'long_hook', 'around', 'dash', 'split_march', 'flank_claim', 'outriders', 'levy'], pois: ['watchtower', 'scout_camp'] },
     warlord:  { title: 'Warlord', icon: 'battle_cry', tag: 'Grow the horde, hit hard, destroy the enemy warband.',
       cards: ['double_advance', 'hook', 'battle_cry', 'volley', 'rally', 'warband_reinforcements', 'reinforced_formation', 'forced_march'], pois: ['mine', 'workshop'] },
     warden:   { title: 'Warden', icon: 'palisade', tag: 'Wall them off, burn their land, keep yours safe.',
