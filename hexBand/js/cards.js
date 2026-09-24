@@ -24,7 +24,7 @@ window.HB = window.HB || {};
     palisade:           { id: 'palisade', title: 'Palisade', type: 'Field', kind: 'palisade', target: 'adjacent', rounds: 3, text: 'Build a wall one hex ahead of your warband, along the three far edges of the chosen neighbouring hex. Warbands and summons cannot cross it, and it closes enclosures like a border. Lasts 3 rounds.' },
     levy:               { id: 'levy', title: 'Levy', type: 'Summon', kind: 'summon', target: 'adjacent', count: 1, acts: 2, text: 'Summon a militiaman on an adjacent hex; he captures it, then at the start of your next 2 turns steps to a neighbouring hex and captures it too. An enemy warband that walks onto him kills him.' },
     outriders:          { id: 'outriders', title: 'Outriders', type: 'Summon', kind: 'summon', count: 2, acts: 1, text: 'Two riders appear on free hexes next to your warband and capture them; at the start of your next turn each rides on and captures one more hex. An enemy warband kills them by walking onto them.' },
-    fortify:            { id: 'fortify', title: 'Fortify', type: 'Field', kind: 'fortify', rounds: 2, text: 'Your hexes around (and under) the warband cannot be captured or burnt by the enemy for 2 rounds.' },
+    fortify:            { id: 'fortify', title: 'Fortify', type: 'Field', kind: 'fortify', rounds: 2, radius: 2, text: 'Your hexes within 2 of the warband cannot be captured or burnt by the enemy for 2 rounds.' },
     scorch:             { id: 'scorch', title: 'Scorch', type: 'Field', kind: 'scorch', target: 'adjacent', range: 3, text: 'Burn a line of 3 hexes from your warband: enemy hexes on it turn neutral. Outposts and fortified hexes resist.' },
     quagmire:           { id: 'quagmire', title: 'Quagmire', type: 'Field', kind: 'swamp', target: 'cell', rounds: 2, text: 'Turn a hex up to 2 away into a swamp for 2 rounds: a warband that enters it stops there.' },
     // ---- POI cards (all with an immediate, visible effect — D-041)
@@ -68,12 +68,14 @@ window.HB = window.HB || {};
   // D-061: three visual tiers of cards — plain deck cards, outpost cards, the citadel card
   const tierOf = id => CITADEL_POOL.includes(id) ? 'citadel' : (CARDS[id] && CARDS[id].poi) ? 'outpost' : '';
 
+  // D-070: three archetypes that play very differently. `tag` is the one-line pitch shown on the main-menu button.
   const PRESETS = {
-    balanced:  { title: 'Balanced', cards: ['double_advance', 'hook', 'zigzag', 'around', 'rally', 'battle_cry', 'reinforced_formation', 'levy'], pois: ['shrine', 'watchtower'] },
-    expansion: { title: 'Expansion', cards: ['double_advance', 'hook', 'zigzag', 'around', 'split_march', 'forced_march', 'dash', 'outriders'], pois: ['war_banner', 'portal'] },
-    duel:      { title: 'Duel', cards: ['double_advance', 'hook', 'volley', 'battle_cry', 'reinforced_formation', 'rally', 'warband_reinforcements', 'palisade'], pois: ['mine', 'workshop'] },
-    swarm:     { title: 'Swarm', cards: ['double_advance', 'hook', 'around', 'rally', 'warband_reinforcements', 'battle_cry', 'flank_claim', 'levy'], pois: ['village', 'war_banner'] },
-    warden:    { title: 'Warden', cards: ['double_advance', 'hook', 'around', 'palisade', 'fortify', 'scorch', 'quagmire', 'outriders'], pois: ['shrine', 'watchtower'] },
+    landgrab: { title: 'Land Grab', icon: 'forced_march', tag: 'Run wide, close big loops, win on territory.',
+      cards: ['forced_march', 'long_hook', 'around', 'dash', 'split_march', 'flank_claim', 'outriders', 'levy'], pois: ['watchtower', 'scout_camp'] },
+    warlord:  { title: 'Warlord', icon: 'battle_cry', tag: 'Grow the horde, hit hard, destroy the enemy warband.',
+      cards: ['double_advance', 'hook', 'battle_cry', 'volley', 'rally', 'warband_reinforcements', 'reinforced_formation', 'forced_march'], pois: ['mine', 'workshop'] },
+    warden:   { title: 'Warden', icon: 'palisade', tag: 'Wall them off, burn their land, keep yours safe.',
+      cards: ['double_advance', 'hook', 'around', 'palisade', 'fortify', 'scorch', 'levy', 'reinforced_formation'], pois: ['watchtower', 'village'] },
   };
 
   HB.cards = { CARDS, BASE_POOL, ADVANCED_POOL, FIELD_POOL, DECK_POOL, POIS, POI_POOL, CITADEL_POOL, CITADEL_DEFAULT, tierOf, PRESETS, DIR_LABEL, AXIS_LABEL };

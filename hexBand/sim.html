@@ -39,7 +39,7 @@
   const P = HB.cards.PRESETS, keys = Object.keys(P), $ = s => document.querySelector(s);
   $('#ver').textContent = 'v' + HB.CONFIG.VERSION;
   for (const id of ['#a', '#b']) for (const k of keys) { const o = document.createElement('option'); o.value = k; o.textContent = P[k].title; $(id).appendChild(o); }
-  $('#b').value = 'duel';
+  $('#b').value = keys[1] || keys[0];
 
   function runOne(a, b, seed, rounds, attackLimit) {
     const s = HB.rules.createGame({ seed, roundLimit: rounds, attackLimit, players: { 1: { deck: P[a].cards, pois: P[a].pois, bot: true }, 2: { deck: P[b].cards, pois: P[b].pois, bot: true } } });

@@ -559,7 +559,7 @@ window.HB = window.HB || {};
       }
       case 'fortify': {
         const cells = [];
-        for (const k in s.cells) { const c = s.cells[k]; if (c.owner === p.id && hex.distance(c, w) <= 1) { c.fortOwner = p.id; c.fortUntil = T + 2 * def.rounds; cells.push({ col: c.col, row: c.row }); } }
+        for (const k in s.cells) { const c = s.cells[k]; if (c.owner === p.id && hex.distance(c, w) <= (def.radius || 1)) { c.fortOwner = p.id; c.fortUntil = T + 2 * def.rounds; cells.push({ col: c.col, row: c.row }); } }
         s.events.push({ type: 'fortify', player: p.id, cells });
         log(s, `${p.name}: ${def.title} — ${cells.length} hexes fortified.`); break;
       }

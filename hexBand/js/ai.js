@@ -7,7 +7,7 @@ window.HB = window.HB || {};
 (function () {
   const R = HB.rules, hex = HB.hex, CARDS = HB.cards.CARDS;
 
-  const W = { territory: 1.0, minions: 1.2, poi: 3.0, summon: 1.2, poiPull: 0.5, threat: 1.0, opportunity: 0.5, noise: 0.3, minGain: 0.3, cardCost: 0.3, aggression: 5 };
+  const W = { territory: 1.0, minions: 1.2, poi: 3.0, summon: 1.2, fort: 0.25, poiPull: 0.5, threat: 1.0, opportunity: 0.5, noise: 0.3, minGain: 0.3, cardCost: 0.3, aggression: 5 };
   // search parameters: sequence depth, beam width, how many finished sequences get the opponent-reply check,
   // and how much the reply weighs against the position right after our turn
   const SEARCH = { depth: 4, beam: 12, finals: 10, reply: 0.6, replyDepth: 1 };
@@ -28,6 +28,8 @@ window.HB = window.HB || {};
     if (nearest < 99) score -= W.poiPull * nearest;
     // D-068: a summon is worth the hexes it will still capture
     for (const u of s.summons) score += (u.owner === me ? 1 : -1) * W.summon * u.acts;
+    // D-070: a fortified hex cannot be lost — worth a little on top of its territory point
+    for (const k in s.cells) { const c = s.cells[k]; if (c.fortOwner && c.owner === c.fortOwner && R.active(s, c.fortUntil || -1)) score += (c.owner === me ? 1 : -1) * W.fort; }
     return score;
   }
 

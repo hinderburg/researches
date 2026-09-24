@@ -21,6 +21,8 @@
       <div class="win"><div class="win-pic"><canvas id="pic-dom"></canvas></div><div class="win-text"><b>Capture the whole map</b><span>Paint hexes by moving and close enclosures. When the entire map is yours, you win at once.</span></div></div>
       <div class="win"><div class="win-pic"><canvas id="pic-terr"></canvas><div class="win-badge">Round 10 / 10</div></div><div class="win-text"><b>Hold more territory at the end</b><span>After the last round the player who captured more hexes wins.</span></div></div>
     </div>
+    <h3>Your army</h3>
+    <div class="preset-pick" id="menu-presets"></div>
     <div class="menu-actions">
       <button class="btn primary big" id="btn-play">Play</button>
       <button class="btn big" id="btn-settings">Settings</button>
@@ -53,10 +55,9 @@
         <div id="bot-preset-row" class="field">
           <label for="sel-bot-preset">Bot deck</label>
           <select id="sel-bot-preset">
-            <option value="balanced">Balanced</option>
-            <option value="expansion">Expansion</option>
-            <option value="duel">Duel</option>
-            <option value="swarm">Swarm</option>
+            <option value="random">Random army (default)</option>
+            <option value="landgrab">Land Grab</option>
+            <option value="warlord">Warlord</option>
             <option value="warden">Warden</option>
           </select>
         </div>

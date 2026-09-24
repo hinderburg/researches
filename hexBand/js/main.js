@@ -10,6 +10,9 @@ window.HB = window.HB || {};
   const cardHTML = defId => { const d = CARDS[defId], tier = HB.cards.tierOf(defId); return `<div class="card-icon">${HB.icons.svg(defId)}</div><div class="card-name">${d.title}</div>${tier === 'citadel' ? '<div class="card-poi">CITADEL</div>' : ''}`; };
   const cardClass = defId => { const tier = HB.cards.tierOf(defId); return 'card ' + (KIND_CLASS[CARDS[defId].kind] || '') + (tier ? ' tier-' + tier : ''); };
   const rectOf = e => e.getBoundingClientRect();
+  // D-070: which preset a deck selection matches exactly (same cards and outposts), or null for a custom deck
+  const sameSet = (a, b) => a.length === b.length && a.every(x => b.includes(x));
+  const presetOf = sel => { for (const k in PRESETS) if (sameSet(sel.cards, PRESETS[k].cards) && sameSet(sel.pois, PRESETS[k].pois)) return k; return null; };
   // D-068: highlights for cards aimed at a hex — every legal hex, the chosen one, Scorch's line, Palisade's three walls
   function cellTargetHighlights(hl, play, opt, def, s) {
     for (const o of play.options) hl.push({ col: o.cell.col, row: o.cell.row, kind: 'target', strong: o === opt });
@@ -25,7 +28,7 @@ window.HB = window.HB || {};
     state: null, renderer: null, busy: false, opts: null, drag: null, sel: null, lastActor: null, handoverPending: false, lastEvents: [], pendingIncoming: new Set(),
     // whose hand the bottom panel shows: the human in bot mode, the current player in hotseat (D-044)
     handPlayer() { const s = this.state; return this.opts && this.opts.players[2].bot ? s.players[1] : s.players[s.current]; },
-    setup: { mode: 'bot', rounds: CFG.ROUND_LIMIT, seed: '', p: { 1: null, 2: null }, botPreset: 'balanced', botLevel: 'hard', control: 'drag', citadel: CFG.CITADEL_MODE },
+    setup: { mode: 'bot', rounds: CFG.ROUND_LIMIT, seed: '', p: { 1: null, 2: null }, preset: 'landgrab', botPreset: 'random', botLevel: 'hard', control: 'drag', citadel: CFG.CITADEL_MODE },
     // D-048: input scheme — 'drag' (drag the card onto the board) or 'tap' (tap the card, then tap the target)
     setControl(mode) {
       this.setup.control = mode === 'tap' ? 'tap' : 'drag';
@@ -38,8 +41,10 @@ window.HB = window.HB || {};
     // ------------------------------------------------------------ settings screen
     initSetup() {
       const S = this.setup;
-      S.p[1] = { cards: PRESETS.balanced.cards.slice(), pois: PRESETS.balanced.pois.slice() };
-      S.p[2] = { cards: PRESETS.duel.cards.slice(), pois: PRESETS.duel.pois.slice() };
+      // D-070: the player's army preset is remembered in the browser and picked on the main menu or in the builder
+      try { const pr = localStorage.getItem('hexband.preset'); if (PRESETS[pr]) S.preset = pr; } catch (e) {}
+      S.p[1] = { cards: PRESETS[S.preset].cards.slice(), pois: PRESETS[S.preset].pois.slice() };
+      S.p[2] = { cards: PRESETS.warlord.cards.slice(), pois: PRESETS.warlord.pois.slice() };
       $('#setup-version').textContent = 'v' + CFG.VERSION;
       document.querySelectorAll('input[name=mode]').forEach(r => r.addEventListener('change', () => { S.mode = r.value; this.renderSetup(); }));
       $('#sel-rounds').value = String(S.rounds);
@@ -90,8 +95,9 @@ window.HB = window.HB || {};
       root.appendChild(el('h3', null, pid === 1 ? 'Blue (you)' : 'Red'));
       const presets = el('div', 'presets');
       for (const key in PRESETS) {
-        const b = el('button', 'chip', PRESETS[key].title);
-        b.addEventListener('click', () => { sel.cards = PRESETS[key].cards.slice(); sel.pois = PRESETS[key].pois.slice(); this.renderBuilder(pid); this.validateSetup(); });
+        const b = el('button', 'chip' + (presetOf(sel) === key ? ' on' : ''), PRESETS[key].title);
+        b.title = PRESETS[key].tag;
+        b.addEventListener('click', () => { if (pid === 1) this.choosePreset(key); else { sel.cards = PRESETS[key].cards.slice(); sel.pois = PRESETS[key].pois.slice(); this.renderBuilder(pid); this.validateSetup(); } });
         presets.appendChild(b);
       }
       root.appendChild(presets);
@@ -124,15 +130,18 @@ window.HB = window.HB || {};
       const S = this.setup;
       const okP = p => p.cards.length === CFG.DECK_SIZE && p.pois.length === CFG.POI_PICKS;
       const ok = okP(S.p[1]) && (S.mode === 'bot' || okP(S.p[2]));
-      $('#btn-start').disabled = !ok;
+      $('#btn-start').disabled = !ok; $('#btn-play').disabled = !ok; // an unfinished custom deck cannot start a match
       $('#setup-hint').textContent = ok ? '' : `Pick exactly ${CFG.DECK_SIZE} cards and ${CFG.POI_PICKS} outposts for each player.`;
+      if ($('#menu-presets')) this.renderMenuPresets();
     },
     startFromSetup() {
       const S = this.setup;
-      const p2 = S.mode === 'bot' ? { deck: PRESETS[S.botPreset].cards.slice(), pois: PRESETS[S.botPreset].pois.slice(), bot: true, botLevel: S.botLevel, name: 'Red (bot)' }
-        : { deck: S.p[2].cards, pois: S.p[2].pois, bot: false, name: 'Red' };
+      // D-070: by default the bot gets a random army preset each match
+      const keys = Object.keys(PRESETS), botKey = S.botPreset === 'random' || !PRESETS[S.botPreset] ? keys[Math.floor(Math.random() * keys.length)] : S.botPreset;
+      const p2 = S.mode === 'bot' ? { deck: PRESETS[botKey].cards.slice(), pois: PRESETS[botKey].pois.slice(), bot: true, botLevel: S.botLevel, name: 'Red (bot)', preset: botKey }
+        : { deck: S.p[2].cards, pois: S.p[2].pois, bot: false, name: 'Red', preset: presetOf(S.p[2]) };
       const seed = S.seed.trim() ? (parseInt(S.seed, 10) || hashStr(S.seed)) : (Math.random() * 0xffffffff) >>> 0;
-      this.opts = { seed, roundLimit: S.rounds, attackLimit: S.attacks != null ? S.attacks : CFG.ATTACKS_PER_TURN, citadelMode: S.citadel, players: { 1: { deck: S.p[1].cards, pois: S.p[1].pois, bot: false, name: 'Blue' }, 2: p2 } };
+      this.opts = { seed, roundLimit: S.rounds, attackLimit: S.attacks != null ? S.attacks : CFG.ATTACKS_PER_TURN, citadelMode: S.citadel, players: { 1: { deck: S.p[1].cards, pois: S.p[1].pois, bot: false, name: 'Blue', preset: presetOf(S.p[1]) }, 2: p2 } };
       this.startGame(this.opts);
     },
 
@@ -160,13 +169,39 @@ window.HB = window.HB || {};
       this.layout();
       // D-064: match intro — recruits arrive, banners rise, start zones flip; the first turn begins when it is over
       const intro = this.renderer.playIntro();
+      // D-070: each army announces its preset as its banner goes up
+      for (const pid of [1, 2]) {
+        const key = opts.players[pid].preset, rd = this.renderer, w = this.state.players[pid].warband;
+        if (!key || !PRESETS[key]) continue;
+        rd.schedule(1100 + (pid - 1) * 1000, () => rd.addText(w.col, w.row, PRESETS[key].title.toUpperCase(), pid === 1 ? '#bfe0ff' : '#ffc4ba', { dy: pid === 1 ? -rd.size * 2.3 : rd.size * 1.1, big: true, dur: 2400 }));
+        this.appendLog([`${this.state.players[pid].name}: ${PRESETS[key].title} army.`]);
+      }
       this.busy = true;
       this.refresh();
       setTimeout(() => { this.busy = false; this.refresh(); this.nextTurn(); }, intro + 100);
     },
     toSetup() { this.showMenu(); },
     // ------------------------------------------------------------ main menu (D-051): win conditions with live scenes, Play, Settings
+    // D-070: army presets — the same three buttons on the main menu and in the builder
+    choosePreset(key) {
+      const S = this.setup;
+      S.preset = key; S.p[1] = { cards: PRESETS[key].cards.slice(), pois: PRESETS[key].pois.slice() };
+      try { localStorage.setItem('hexband.preset', key); } catch (e) {}
+      this.renderMenuPresets(); this.renderBuilder(1); this.validateSetup();
+    },
+    renderMenuPresets() {
+      const root = $('#menu-presets'); root.innerHTML = '';
+      const cur = presetOf(this.setup.p[1]);
+      for (const key in PRESETS) {
+        const pr = PRESETS[key];
+        const b = el('button', 'preset-btn' + (cur === key ? ' on' : ''), `<span class="preset-icon">${HB.icons.svg(pr.icon)}</span><b>${pr.title}</b><span>${pr.tag}</span>`);
+        b.addEventListener('click', () => this.choosePreset(key));
+        root.appendChild(b);
+      }
+      if (!cur) root.appendChild(el('p', 'muted preset-custom', 'Custom deck from Settings'));
+    },
     initMenu() {
+      this.renderMenuPresets();
       $('#btn-play').addEventListener('click', () => this.startFromSetup());
       $('#btn-settings').addEventListener('click', () => this.showSetup());
       $('#btn-back').addEventListener('click', () => this.showMenu());
@@ -649,7 +684,7 @@ window.HB = window.HB || {};
           ? 'To play a card, tap it: a description panel appears over the hand and every target lights up on the board. Tap the hex you want — the warband acts at once and the card goes to the discard pile. A card without a target (Rally, Battle Cry…) is played by tapping the board or tapping the card again. Changed your mind — tap the description panel and the card stays in your hand.'
           : 'To play a card, drag it onto the board: the route is previewed, the warband acts as soon as you release the card, and the card goes to the discard pile. Release it over the hand and it returns.'} Play as many cards per turn as you like, at least one; after the first card an End Turn button appears in the rightmost slot. The control scheme can be switched in Settings → Controls.</p>
         <p><b>Free step.</b> Once per turn your warband may take one step to a neighbouring hex without a card: tap a hex marked with a chevron next to it, or drag from the warband onto it. The boot badge by the warband shows whether the step is still available. Stepping onto the enemy is an attack. The free step does not count as the card you must play each turn.</p>
-        <p><b>Field cards.</b> Palisade builds a wall one hex ahead — warbands and summons cannot cross it, and it closes enclosures like a border. Levy and Outriders summon units that capture a hex each turn on their own for 1–2 turns; an enemy warband that walks onto them kills them. Fortify makes your hexes around the warband impossible to capture or burn for 2 rounds. Scorch turns enemy hexes in a line of 3 neutral. Quagmire turns a hex into a swamp that stops any warband entering it.</p>
+        <p><b>Field cards.</b> Palisade builds a wall one hex ahead — warbands and summons cannot cross it, and it closes enclosures like a border. Levy and Outriders summon units that capture a hex each turn on their own for 1–2 turns; an enemy warband that walks onto them kills them. Fortify makes your hexes within 2 of the warband impossible to capture or burn for 2 rounds. Scorch turns enemy hexes in a line of 3 neutral. Quagmire turns a hex into a swamp that stops any warband entering it.</p>
         <p><b>Directions.</b> A movement card sets only the shape and length of the route (straight, hook, zigzag, half-ring). Where to go is your choice: every possible end of the route is highlighted, and the one closest to where you release or tap is used. For Wide March the side is left or right of the warband.</p>
         <p><b>Territory.</b> Hexes you walk through take your colour. Any area bounded by your hexes — or by your hexes and the map edge — becomes entirely yours, enemy hexes included, unless the enemy warband stands in it or can step into it: the warband holds the ground around it. Ringing the warband completely deals siege damage instead (one minion per ring hex painted by that card). <b>Outposts</b>: each player picks two; they flank the start zone and are captured from the beginning, their cards shuffled into the deck. An outpost changes hands by walking through its hex or enclosing it; the card floating above it flies straight into the captor's hand (onto the deck if the hand is full), and the previous owner loses that card. Every outpost card works instantly: Recruitment +6, Cordon captures the hexes around the warband, Explosive Charge hits an adjacent hex, Prayer returns the top discard card, Catapult hits at up to 3 hexes, Scouting refills the hand, Banner makes your hexes around the warband worth +1, Blink jumps over a hex. The neutral <b>Citadel</b> in the middle holds a stronger card (Muster +7, Heavy Charge 5, Trebuchet 4 at 3 hexes, War Horn +3); Settings choose whether it is always Muster (default), one random card for the match, or a new one after each capture.</p>
         <p><b>Combat.</b> Warbands never fight on their own: to attack, run a movement card's route onto the enemy's hex — that step is highlighted red with a sword and the move ends there. While you aim, both warbands show their predicted losses and this panel says who falls back. Your warband charges the enemy's hex and both strike at once. Strength grows with the number of minions, but slower than the number itself (24 minions — about 5 damage, 12 — about 3, 6 — about 2); Battle Cry adds +2 to your next strike, Formation reduces every incoming strike by 2. After the exchange the warband with fewer minions falls back one hex (the attacker to where it came from; the defender away from the attacker, and then the attacker takes its hex); on equal numbers the attacker falls back. Volley and Catapult strike from a distance with no retaliation.</p>
