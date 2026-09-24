@@ -70,9 +70,9 @@ window.HB = window.HB || {};
 
   // D-070: three archetypes that play very differently. `tag` is the one-line pitch shown on the main-menu button.
   const PRESETS = {
-    landgrab: { title: 'Land Grab', icon: 'dash', tag: 'Run wide, close big loops, win on territory.',
-      cards: ['double_advance', 'long_hook', 'around', 'dash', 'split_march', 'flank_claim', 'outriders', 'levy'], pois: ['watchtower', 'scout_camp'] },
-    warlord:  { title: 'Warlord', icon: 'battle_cry', tag: 'Grow the horde, hit hard, destroy the enemy warband.',
+    landgrab: { title: 'Land Grab', icon: 'long_hook', tag: 'Run wide, close big loops, win on territory.',
+      cards: ['double_advance', 'long_hook', 'around', 'banner', 'reinforced_formation', 'flank_claim', 'outriders', 'levy'], pois: ['watchtower', 'scout_camp'] },
+    warlord:  { title: 'Warlord', icon: 'battle_cry', tag: 'Grow the horde, crush their warband, storm their castle.',
       cards: ['double_advance', 'hook', 'battle_cry', 'volley', 'rally', 'warband_reinforcements', 'reinforced_formation', 'forced_march'], pois: ['mine', 'workshop'] },
     warden:   { title: 'Warden', icon: 'palisade', tag: 'Wall them off, burn their land, keep yours safe.',
       cards: ['double_advance', 'hook', 'around', 'palisade', 'fortify', 'scorch', 'levy', 'reinforced_formation'], pois: ['watchtower', 'village'] },

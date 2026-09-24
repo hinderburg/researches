@@ -6,6 +6,15 @@
 
 Ничего.
 
+## [0.27.0-it2] — 2026-09-25 · ветка `iteration2`
+
+### Изменено
+- **Land Grab слабее** (D-082): Dash → Banner, Wide March → Formation. В колоде 3 карты движения вместо 5 (как у Warlord и Warden) плюс Flank Claim и призванные. Пиктограмма армии в меню — Long Hook.
+- Девиз Warlord: «Grow the horde, crush their warband, storm their castle.»
+
+### Баланс (замер, Normal, три набора сидов по 27 партий)
+- Land Grab 50 / 61 / 56 % (было ~70 %), Warlord 50 / 44 / 50 %, Warden 50 / 44 / 44 %.
+
 ## [0.26.0-it2] — 2026-09-25 · ветка `iteration2`
 
 ### Изменено
