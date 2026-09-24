@@ -1,7 +1,7 @@
 // HEXBand prototype — tunables. See docs/DECISIONS.md for the reasoning behind each value.
 window.HB = window.HB || {};
 HB.CONFIG = {
-  VERSION: '0.23.0-it2',
+  VERSION: '0.24.0-it2',
   COLS: 7,               // flat-top hex columns; odd columns are shifted down and hold one cell less (see D-002)
   ROWS: 11,              // rows in even columns; odd columns have ROWS-1
   HAND_SIZE: 4,
@@ -11,7 +11,7 @@ HB.CONFIG = {
   ROUND_LIMIT: 10,       // GDD §23: 10 rounds per player for the first prototype
   START_MINIONS: 24,     // iteration2: overridden by the army strength below (16 + 4 per outpost + 6 for the citadel = 24 at the start)
   // D-074 (iteration2): castles. Defence = base + 1 per owned hex (castle hex excluded) + 2 per outpost + 4 for the citadel.
-  CASTLE_BASE: 16, CASTLE_PER_HEX: 1, CASTLE_PER_POI: 2, CASTLE_PER_CITADEL: 4,
+  CASTLE_BASE: 20, CASTLE_PER_HEX: 1, CASTLE_PER_POI: 2, CASTLE_PER_CITADEL: 4,
   // D-075: army strength when the warband is (re)raised in its castle
   ARMY_BASE: 16, ARMY_PER_POI: 4, ARMY_PER_CITADEL: 6,
   // D-047: a warband's strike = DAMAGE_BASE × (minions / DAMAGE_REF) ^ DAMAGE_EXP, kept fractional until dealt
