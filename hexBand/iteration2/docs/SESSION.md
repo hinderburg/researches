@@ -1,6 +1,6 @@
 # HEXBand — история сессии и принятия решений
 
-> Два рабочих дня, 22–23 сентября 2026. Один дизайнер, один ассистент-разработчик (Claude). От markdown-документа с концептом до играбельного веб-прототипа версии 0.21.0 с двумя схемами ввода, ботом, симуляцией баланса и полной документацией. Файл пополняется после каждой итерации.
+> Рабочие дни 22–25 сентября 2026. Один дизайнер, один ассистент-разработчик (Claude). От markdown-документа с концептом до играбельного веб-прототипа версии 0.21.0 с двумя схемами ввода, ботом, симуляцией баланса и полной документацией. Файл пополняется после каждой итерации.
 >
 > Этот файл — нарратив: что просили, что сделали, что увидели, что решили. Формальные записи — в [DECISIONS.md](DECISIONS.md) (ссылки D-xxx), по версиям — в [CHANGELOG.md](CHANGELOG.md), текущие правила — в [GDD-current.md](GDD-current.md), исходный концепт — в [GDD.md](GDD.md).
 
@@ -11,10 +11,10 @@
 | Что | Где |
 |---|---|
 | Играбельная сборка | https://hinderburg.github.io/researches/hexBand/ |
-| Архив ветки iteration2 (кнопки вместо перетаскивания; слита в основную) | https://hinderburg.github.io/researches/hexBand/iteration2/ |
+| Ветка iteration2 (замки, возрождение отряда, заливка без края; с 0.22.0-it2 — вместо старого архива «кнопок») | https://hinderburg.github.io/researches/hexBand/iteration2/ |
 | Документация онлайн | https://hinderburg.github.io/researches/hexBand/docs/ |
 | Симуляция баланса | https://hinderburg.github.io/researches/hexBand/sim.html |
-| Исходники (приватный репозиторий) | github.com/hinderburg/hexBand, ветка `master` |
+| Исходники (приватный репозиторий) | github.com/hinderburg/hexBand, ветки `master` и `iteration2` |
 | Сборки (публичный репозиторий, GitHub Pages с корня `main`) | github.com/hinderburg/researches, папка `hexBand/` |
 
 Технологии: чистый HTML/CSS/JS без сборки и зависимостей (D-001), Canvas 2D, классические `<script>`. Локальный сервер для отладки — `tools/serve.ps1` (на машине нет Node и Python).
