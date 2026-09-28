@@ -35,7 +35,7 @@ window.HB = window.HB || {};
     setState(s) {
       this.s = s; this.highlights = []; this.texts = []; this.flash = {}; this.timeline = []; this.slide = { 1: null, 2: null }; this.reveal = {}; this.pop = {}; this.flip = {}; this.build = {}; this.fx = []; this.bump = { 1: 0, 2: 0 }; this.badgePop = {};
       this.hideWb = {}; this.raise = {}; this.countAnim = {};
-      this.zoom = 1; this.cam = { x: 0, y: 0 }; this.panTween = null; // D-083: a new match starts with the whole board in view
+      this.zoom = 1; this.cam = { x: 0, y: 0 }; this.panTween = null; this.camTween = null; this.turnBanner = null; // D-083: a new match starts with the whole board in view
       this.wallAnim = {}; this.summonAnim = {}; this.summonHide = {}; this.ghosts = {}; this.stepHint = null;
       this.castleShown = {}; this.castleRise = {}; this.castleGone = {}; this.castleShake = { 1: 0, 2: 0 }; this.ghostWb = {}; this.crowdN = {}; this.bigBump = {}; this.castleDust = {}; this.minShown = {}; this.bigText = null;
       this.view = null; this.squadAnim = {}; this.squadBump = {}; this.towerPulse = {}; this.heroFall = {}; this.heroRise = {}; this.warCryPulse = {};
@@ -195,12 +195,44 @@ window.HB = window.HB || {};
     maxZoom() { return Math.max(1, 64 / Math.max(10, this.size || 30)); } // up to ~64 px hexes on any screen
     applyCamera() {
       if (!this.cssSize || !this.boardPx) return;
-      this.zoom = Math.min(this.maxZoom(), Math.max(1, this.zoom || 1)); this.cam = this.cam || { x: 0, y: 0 };
-      const z = this.zoom, { w, h } = this.cssSize, S = this.size, b = this.boardPx;
+      this.zoom = Math.min(this.maxZoom(), Math.max(1, this.zoom || 1));
+      this.cam = this.clampCam(this.zoom, this.cam || { x: 0, y: 0 });
+    }
+    clampCam(z, cam) {
+      const { w, h } = this.cssSize, S = this.size, b = this.boardPx;
       const clamp = (v, lo, hi) => lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v));
       // world extent incl. margins for banners above row 0 and plaques below the last row
       const x0 = this.offset.x - S * 0.3, x1 = this.offset.x + b.w + S * 0.3, y0 = this.offset.y - S * 1.3, y1 = this.offset.y + b.h + S * 1.1;
-      this.cam = z <= 1.001 ? { x: 0, y: 0 } : { x: clamp(this.cam.x, w - x1 * z, -x0 * z), y: clamp(this.cam.y, h - y1 * z, -y0 * z) };
+      return z <= 1.001 ? { x: 0, y: 0 } : { x: clamp(cam.x, w - x1 * z, -x0 * z), y: clamp(cam.y, h - y1 * z, -y0 * z) };
+    }
+    // D-086: a camera glide — the zoom and the world point in the middle of the screen move together, eased in and out.
+    // c: the world point to bring to the centre (null — the whole board)
+    camTo(z, c, dur) {
+      if (!this.cssSize || !this.boardPx) return 0;
+      const { w, h } = this.cssSize;
+      z = Math.min(this.maxZoom(), Math.max(1, z));
+      const cam = this.clampCam(z, c ? { x: w / 2 - c.x * z, y: h / 2 - c.y * z } : { x: 0, y: 0 });
+      const c1 = { x: (w / 2 - cam.x) / z, y: (h / 2 - cam.y) / z }, c0 = this.toWorld(w / 2, h / 2), z0 = this.zoom || 1;
+      this.panTween = null;
+      if (Math.abs(z - z0) < 1e-3 && Math.hypot(c1.x - c0.x, c1.y - c0.y) < 1) { this.camTween = null; return 0; }
+      this.camTween = { z0, z1: z, c0, c1, t0: performance.now(), dur: dur || 600 };
+      return this.camTween.dur;
+    }
+    // the +/− buttons: an eased zoom that keeps the point (lx, ly) of the screen in place
+    zoomAtEased(lx, ly, factor, dur) {
+      if (!this.cssSize) return;
+      const z = Math.min(this.maxZoom(), Math.max(1, (this.zoom || 1) * factor)), wp = this.toWorld(lx, ly), { w, h } = this.cssSize;
+      this.camTo(z, { x: wp.x + (w / 2 - lx) / z, y: wp.y + (h / 2 - ly) / z }, dur || 320);
+    }
+    // D-086: frame a set of hexes (plus room for banners above them), as close as the screen allows
+    focusCells(cells, dur) {
+      if (!this.cssSize || !cells.length) return 0;
+      const S = this.size, { w, h } = this.cssSize;
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const c of cells) { const p = this.cellXY(c.col, c.row); x0 = Math.min(x0, p.x - S); x1 = Math.max(x1, p.x + S); y0 = Math.min(y0, p.y - S * 0.87); y1 = Math.max(y1, p.y + S * 0.87); }
+      y0 -= S * 0.6; // the Overlord's banner stands above his hex
+      const z = Math.min(w / (x1 - x0), h / (y1 - y0));
+      return this.camTo(z, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, dur);
     }
     toScreen(p) { const z = this.zoom || 1, c = this.cam || { x: 0, y: 0 }; return { x: p.x * z + c.x, y: p.y * z + c.y }; }
     toWorld(lx, ly) { const z = this.zoom || 1, c = this.cam || { x: 0, y: 0 }; return { x: (lx - c.x) / z, y: (ly - c.y) / z }; }
@@ -210,13 +242,13 @@ window.HB = window.HB || {};
       if (Math.abs(z - (this.zoom || 1)) < 1e-4) return;
       const wp = this.toWorld(lx, ly); // keep the world point under the cursor in place
       this.zoom = z; this.cam = { x: lx - wp.x * z, y: ly - wp.y * z };
-      this.panTween = null; this.applyCamera();
+      this.panTween = null; this.camTween = null; this.applyCamera();
     }
-    panBy(dx, dy) { this.cam = { x: this.cam.x + dx, y: this.cam.y + dy }; this.panTween = null; this.applyCamera(); }
-    resetCamera() { this.zoom = 1; this.cam = { x: 0, y: 0 }; this.panTween = null; this.applyCamera(); }
+    panBy(dx, dy) { this.cam = { x: this.cam.x + dx, y: this.cam.y + dy }; this.panTween = null; this.camTween = null; this.applyCamera(); }
+    resetCamera() { this.zoom = 1; this.cam = { x: 0, y: 0 }; this.panTween = null; this.camTween = null; this.applyCamera(); }
     // zoomed in, the camera glides to keep the action in view (a bot's move off screen, a clash, a castle)
     ensureVisible(col, row) {
-      if (!this.cssSize || (this.zoom || 1) <= 1.01) return;
+      if (!this.cssSize || (this.zoom || 1) <= 1.01 || this.camTween) return;
       const p = this.toScreen(this.cellXY(col, row)), { w, h } = this.cssSize, m = this.size * this.zoom * 1.5;
       if (p.x > m && p.x < w - m && p.y > m * 1.3 && p.y < h - m) return;
       this.panTween = { from: { x: this.cam.x, y: this.cam.y }, to: { x: this.cam.x + (w / 2 - p.x), y: this.cam.y + (h / 2 - p.y) }, t0: performance.now(), dur: 380 };
@@ -273,8 +305,13 @@ window.HB = window.HB || {};
       }
       // D-085 (V4): counts on the board stay as they were before the action until each event changes them
       if (this.isV4 && this.isV4()) this.view = this.prevView ? JSON.parse(JSON.stringify(this.prevView)) : this.snapshotView(this.s);
+      // D-086: the start of a V4 turn — the camera pulls back, the turn banner comes in, and every group that has to move
+      // (sorties, returns, the pits) moves at the same time: events run on lanes, one per group, instead of one by one
+      let lanes = null;
       for (const ev of events) {
-        if (this.v4Handles && this.v4Handles(ev)) { t = this.applyV4(ev, t); continue; }
+        if (ev.type === 'turn' && this.isV4 && this.isV4()) { t = this.turnStartV4(ev, t); lanes = { t0: t, by: {}, last: null, end: t }; this.quick = true; continue; }
+        if (lanes) t = this.laneStart(lanes, ev);
+        if (this.v4Handles && this.v4Handles(ev)) { t = this.applyV4(ev, t); if (lanes) this.laneEnd(lanes, ev, t); continue; }
         const light = ev.player ? COL[ev.player + 'Light'] : '#fff';
         switch (ev.type) {
           case 'move': {
@@ -289,7 +326,7 @@ window.HB = window.HB || {};
           }
           case 'paint': { // D-065: hexes the warband passes through flip over; only the hex it stops on just pops up
             const w = this.s.players[ev.player].warband;
-            ev.cells.forEach((c, i) => this.schedule(Math.max(0, t - 190 * (ev.cells.length - i) + 60), () => {
+            ev.cells.forEach((c, i) => this.schedule(Math.max(0, t - ((this.quick && this.lastMovePer) || 190) * (ev.cells.length - i) + 60), () => {
               if (c.col === w.col && c.row === w.row) this.popCell(c.col, c.row, ev.player); else this.flipCell(c.col, c.row, c.from || 0, ev.player);
             }));
             break;
@@ -445,8 +482,9 @@ window.HB = window.HB || {};
             t = last + 800;
             break;
           }
-          case 'turn': // iteration2: the last round is announced across the board
+          case 'turn': // iteration2: the last round is announced across the board (V4: on the turn banner, D-086)
             combat = false;
+            if (this.isV4 && this.isV4()) break;
             if (ev.last && ev.roundStart) this.schedule(t, () => { this.bigText = { text: 'LAST ROUND!', color: '#ffd45a', t0: performance.now(), dur: 2200 }; });
             break;
           case 'bonus':
@@ -522,7 +560,9 @@ window.HB = window.HB || {};
             break;
           case 'gameover': t += 400; break;
         }
+        if (lanes) this.laneEnd(lanes, ev, t);
       }
+      if (lanes) { this.quick = false; t = this.turnFocusV4(lanes); }
       this.schedule(t, () => { for (const pid of [1, 2]) if (this.slide[pid] && this.slide[pid].hold) this.slide[pid] = null; this.minShown = {}; this.ghostWb = {}; this.reveal = {}; this.view = null; });
       return t;
     }
@@ -530,12 +570,29 @@ window.HB = window.HB || {};
     // ---- frame
     frame(now) {
       try {
-        for (let i = this.timeline.length - 1; i >= 0; i--) if (this.timeline[i].at <= now) { const it = this.timeline.splice(i, 1)[0]; it.fn(); }
-        const pt = this.panTween; // D-083: camera glide
-        if (pt) { const k = Math.min(1, (now - pt.t0) / pt.dur), e = 1 - Math.pow(1 - k, 3); this.cam = { x: pt.from.x + (pt.to.x - pt.from.x) * e, y: pt.from.y + (pt.to.y - pt.from.y) * e }; this.applyCamera(); if (k >= 1) this.panTween = null; }
+        this.runTimeline(now);
+        this.stepCamera(now);
         if (this.s) this.draw(now);
       } catch (e) { console.error('render', e); }
       requestAnimationFrame(t => this.frame(t));
+    }
+    // due steps run in time order (a late frame — a hidden tab — may find several due at once, D-086)
+    runTimeline(now) {
+      const due = this.timeline.filter(it => it.at <= now).sort((a, b) => a.at - b.at);
+      if (!due.length) return;
+      this.timeline = this.timeline.filter(it => it.at > now);
+      for (const it of due) it.fn();
+    }
+    stepCamera(now) {
+      const pt = this.panTween; // D-083: camera glide
+      if (pt) { const k = Math.min(1, (now - pt.t0) / pt.dur), e = 1 - Math.pow(1 - k, 3); this.cam = { x: pt.from.x + (pt.to.x - pt.from.x) * e, y: pt.from.y + (pt.to.y - pt.from.y) * e }; this.applyCamera(); if (k >= 1) this.panTween = null; }
+      const ct = this.camTween; // D-086: zoom glide, ease-in-out; the zoom changes geometrically so it feels even
+      if (ct && this.cssSize) {
+        const k = Math.min(1, Math.max(0, (now - ct.t0) / ct.dur)), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+        const z = ct.z0 * Math.pow(ct.z1 / ct.z0, e), cx = ct.c0.x + (ct.c1.x - ct.c0.x) * e, cy = ct.c0.y + (ct.c1.y - ct.c0.y) * e;
+        this.zoom = z; this.cam = { x: this.cssSize.w / 2 - cx * z, y: this.cssSize.h / 2 - cy * z }; this.applyCamera();
+        if (k >= 1) this.camTween = null;
+      }
     }
     hexPath(ctx, x, y, inset) {
       const pts = hex.corners(x, y, this.size, inset);
@@ -788,6 +845,7 @@ window.HB = window.HB || {};
         }
         ctx.globalAlpha = 1;
       }
+      if (this.drawTurnBanner) this.drawTurnBanner(ctx, now); // D-086
     }
     drawTree(ctx, x, y, h) {
       ctx.fillStyle = '#5b3a1e'; ctx.fillRect(x - h * 0.08, y, h * 0.16, h * 0.35);

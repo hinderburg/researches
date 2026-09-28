@@ -145,7 +145,7 @@ window.HB = window.HB || {};
         const tog = el('button', 'btn tiny ' + (on ? '' : 'primary'), on ? 'Remove' : 'Take');
         tog.addEventListener('click', () => {
           if (on) { delete sel.types[t]; sel.minion = sel.minion.filter(id => CARDS[id].owner !== t); }
-          else { if (nTypes >= CFG.MINION_TYPES_MAX) return; sel.types[t] = Math.max(1, Math.min(4, Math.floor((cmd - used) / d.weight))); sel.minion.push(HB.cards.MINION_CARDS(t).find(id => (CARDS[id].req || 1) <= sel.types[t]) || HB.cards.MINION_CARDS(t)[0]); }
+          else { if (nTypes >= CFG.MINION_TYPES_MAX) return; sel.types[t] = Math.max(1, Math.min(5, Math.floor((cmd - used) / d.weight))); sel.minion.push(HB.cards.MINION_CARDS(t).find(id => (CARDS[id].req || 1) <= sel.types[t]) || HB.cards.MINION_CARDS(t)[0]); }
           redraw();
         });
         head.appendChild(tog);
@@ -238,9 +238,11 @@ window.HB = window.HB || {};
         rd.schedule(1100 + (pid - 1) * 1000, () => rd.addText(w.col, w.row, PRESETS[key].title.toUpperCase(), pid === 1 ? '#bfe0ff' : '#ffc4ba', { dy: pid === 1 ? -rd.size * 2.3 : rd.size * 1.1, big: true, dur: 2400 }));
         this.appendLog([`${this.state.players[pid].name}: ${PRESETS[key].title} army.`]);
       }
+      // D-086: then the first turn opens like every other — the banner, and the camera closes in on the player to move
+      const open = this.renderer.isV4() ? this.renderer.turnOpening(intro) : intro;
       this.busy = true;
       this.refresh();
-      setTimeout(() => { this.busy = false; this.refresh(); this.nextTurn(); }, intro + 100);
+      setTimeout(() => { this.busy = false; this.refresh(); this.nextTurn(); }, open + 100);
     },
     toSetup() { this.showMenu(); },
     // ------------------------------------------------------------ main menu (D-051): win conditions with live scenes, Play, Settings
@@ -277,12 +279,12 @@ window.HB = window.HB || {};
     // a tiny hand-made Overlord board the normal renderer can draw (menu scenes, D-085)
     miniState(cols, rows, fn) {
       const pl = (id, types, col, row) => {
-        const p = { id, name: id === 1 ? 'Blue' : 'Red', types: Object.keys(types), comp: Object.assign({}, types), retinue: {}, levels: { hero: 1 }, status: { warCryUntil: -1, attackBonus: 0, formationUntil: -1 }, warband: { col, row, hp: 20, maxHp: 20, minions: 0 }, hand: [], deck: [], discard: [] };
+        const p = { id, name: id === 1 ? 'Blue' : 'Red', types: Object.keys(types), comp: Object.assign({}, types), retinue: {}, levels: { hero: 1 }, status: { warCryUntil: -1, attackBonus: 0, formationUntil: -1 }, warband: { col, row, hp: 30, maxHp: 30, minions: 0 }, hand: [], deck: [], discard: [] };
         for (const t in types) { p.retinue[t] = { n: types[t], wound: 0 }; p.levels[t] = 1; }
         return p;
       };
       const s = { variant: 'overlord', cols, rows, cells: {}, pois: [], blocked: {}, walls: {}, swamps: {}, summons: [], squads: [], castles: {}, turnIndex: 0, current: 1, phase: 'play', decorSeed: 11,
-        players: [null, pl(1, { brawler: 8, runner: 6, archer: 4 }, 1, 2), pl(2, { brute: 3, brawler: 5, archer: 4 }, 3, 0)] };
+        players: [null, pl(1, { brawler: 10, runner: 8, archer: 5 }, 1, 2), pl(2, { brute: 4, brawler: 6, archer: 5 }, 3, 0)] };
       for (let c = 0; c < cols; c++) for (let r = 0; r < hex.rowsInCol(c, rows); r++) s.cells[hex.key(c, r)] = { col: c, row: r, owner: 0, bonus: 0, poi: -1 };
       fn(s); return s;
     },
@@ -291,14 +293,14 @@ window.HB = window.HB || {};
       const castle = (s, pid, col, row) => { s.castles[pid] = { col, row }; const c = s.cells[hex.key(col, row)]; c.castle = pid; c.owner = pid; };
       // 1 · territory at the end: a split board, each Overlord in front of his castle
       const s3 = this.miniState(5, 4, s => {
-        s.players[1].warband = { col: 1, row: 2, hp: 20, maxHp: 20 }; s.players[2].warband = { col: 3, row: 1, hp: 20, maxHp: 20 };
+        s.players[1].warband = { col: 1, row: 2, hp: 30, maxHp: 30 }; s.players[2].warband = { col: 3, row: 1, hp: 30, maxHp: 30 };
         for (const k in s.cells) { const c = s.cells[k]; c.owner = c.row >= 2 || (c.row === 1 && c.col <= 2) ? 1 : (c.col === 0 && c.row === 0 ? 0 : 2); }
         castle(s, 1, 2, 3); castle(s, 2, 4, 0);
       });
       mk('#pic-terr', s3);
       // 2 · slay the Overlord: blue brawlers charge a red Overlord whose retinue is off on a sortie
       const s1 = this.miniState(5, 4, s => {
-        s.players[1].warband = { col: 0, row: 2, hp: 20, maxHp: 20 }; s.players[2].warband = { col: 3, row: 1, hp: 7, maxHp: 20 };
+        s.players[1].warband = { col: 0, row: 2, hp: 30, maxHp: 30 }; s.players[2].warband = { col: 3, row: 1, hp: 9, maxHp: 30 };
         s.players[2].retinue.brawler.n = 0; s.players[2].retinue.brute.n = 0; s.players[2].retinue.archer.n = 1;
         s.players[1].retinue.brawler.n = 0;
         s.squads.push({ id: 1, owner: 1, type: 'brawler', n: 8, col: 2, row: 1, state: 'out' });
@@ -361,7 +363,7 @@ window.HB = window.HB || {};
       const dur = this.renderer.applyEvents(events);
       this.renderer.highlights = []; this.renderer.pathFrom = null;
       this.busy = true; this.refresh();
-      setTimeout(() => { this.busy = false; this.refresh(); this.nextTurn(); }, Math.min(dur, 5000) + 150);
+      setTimeout(() => { this.busy = false; this.refresh(); this.nextTurn(); }, Math.min(dur, 8000) + 150);
     },
 
     // ------------------------------------------------------------ HUD & hand (D-037)
@@ -778,12 +780,12 @@ window.HB = window.HB || {};
       bar.addEventListener('click', e => {
         const b = e.target.closest('button'); if (!b || !this.renderer) return;
         const r = this.renderer.cssSize || { w: 0, h: 0 };
-        if (b.dataset.z === 'fit') { this.renderer.resetCamera(); return; }
+        if (b.dataset.z === 'fit') { this.renderer.camTo(1, null, 450); return; } // D-086: every zoom of the buttons is eased
         // zoom around the warband whose turn it is (clamped into the view), so it stays on screen
         let fx = r.w / 2, fy = r.h / 2;
         const s = this.state, w = s && s.players[s.current] && s.players[s.current].warband;
         if (w && !w.dead) { const p = this.renderer.screenXY(w.col, w.row); fx = Math.min(r.w - 20, Math.max(20, p.x)); fy = Math.min(r.h - 20, Math.max(20, p.y)); }
-        this.renderer.zoomAt(fx, fy, b.dataset.z === 'in' ? 1.4 : 1 / 1.4);
+        this.renderer.zoomAtEased(fx, fy, b.dataset.z === 'in' ? 1.4 : 1 / 1.4);
       });
       wrap.appendChild(bar);
     },

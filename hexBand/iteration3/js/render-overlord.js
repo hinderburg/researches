@@ -46,7 +46,9 @@ window.HB = window.HB || {};
         return t + 60;
       }
       case 'squadMove': {
-        const per = ev.back ? 150 : 175, path = ev.path.slice();
+        // D-086: at the start of a turn every group makes its way within the half second of the turn banner
+        const path = ev.path.slice(), per = this.quick ? Math.min(ev.back ? 150 : 175, 460 / path.length) : ev.back ? 150 : 175;
+        this.lastMovePer = per;
         this.schedule(t, () => {
           const sq = this.view && this.view.squads[ev.id];
           const from = sq ? { col: sq.col, row: sq.row } : path[0];
@@ -105,13 +107,14 @@ window.HB = window.HB || {};
       }
       case 'muster': {
         const c0 = this.cellXY(ev.from.col, ev.from.row), road = [c0].concat(ev.road.map(c => this.cellXY(c.col, c.row)));
-        const per = 110, dur = Math.max(400, per * (road.length - 1) + 250), m = Math.min(6, Math.max(2, Math.ceil(ev.n / 2)));
+        const m = Math.min(6, Math.max(2, Math.ceil(ev.n / 2))), gap = this.quick ? 25 : 70;
+        const dur = this.quick ? 500 - m * gap : Math.max(400, 110 * (road.length - 1) + 250); // D-086: within the turn banner
         this.schedule(t, () => {
           const now = performance.now();
-          for (let i = 0; i < m; i++) this.fx.push({ type: 'march', pid: ev.player, mtype: ev.sqType, pts: road, t0: now + i * 70, dur, seed: i });
+          for (let i = 0; i < m; i++) this.fx.push({ type: 'march', pid: ev.player, mtype: ev.sqType, pts: road, t0: now + i * gap, dur, seed: i });
           this.towerPulse[ev.player + ':' + ev.sqType] = now;
         });
-        this.schedule(t + dur + m * 70, () => {
+        this.schedule(t + dur + m * gap, () => {
           if (!this.view) return;
           if (ev.join) { this.view.ret[ev.player][ev.sqType] = (this.view.ret[ev.player][ev.sqType] || 0) + ev.n; this.bump[ev.player] = performance.now(); }
           else {
@@ -119,7 +122,7 @@ window.HB = window.HB || {};
             if (q) q.n += ev.n; else this.view.squads[ev.id] = { id: ev.id, owner: ev.player, type: ev.sqType, n: ev.n, col: ev.to.col, row: ev.to.row, state: 'wait' };
           }
         });
-        return t + Math.min(900, dur);
+        return this.quick ? t + dur + m * gap : t + Math.min(900, dur);
       }
       case 'heal': {
         this.schedule(t, () => {
@@ -181,6 +184,96 @@ window.HB = window.HB || {};
         if (a.n <= 0) { delete this.view.squads[b.id]; delete this.squadAnim[b.id]; }
       }
     }
+  };
+
+  // ---------------------------------------------------------------- the start of a turn (D-086)
+  // The camera pulls back to the whole board and the turn banner comes in (0.5 s); meanwhile every group that has to
+  // move does so at once — each group runs on its own lane of the timeline. Then the camera closes in on the player to
+  // move: every hex his cards and his free step can reach, plus one ring.
+  P.laneKeys = function (ev) {
+    const side = b => b.kind === 'hero' ? 'h' + b.pid : 'q' + b.id;
+    switch (ev.type) {
+      case 'sortie': case 'squadMove': case 'join': return ['q' + ev.id];
+      case 'fight': return [side(ev.a.before), side(ev.d.before)];
+      case 'shoot': return ['@last', side(ev.d.before)];
+      case 'muster': return ['m' + ev.player + ev.sqType];
+      case 'paint': case 'fill': case 'poi': return ['@last']; // they follow the group that just moved
+      case 'heal': return ['h' + ev.player];
+      case 'heroDown': case 'gameover': return ['@all'];
+      default: return []; // logs, draws — no time of their own
+    }
+  };
+  P.laneStart = function (L, ev) {
+    const keys = this.laneKeys(ev);
+    if (!keys.length || keys[0] === '@all') return L.end;
+    let t = L.t0;
+    for (const k of keys) { const kk = k === '@last' ? L.last : k; if (kk && L.by[kk] != null) t = Math.max(t, L.by[kk]); }
+    return t;
+  };
+  P.laneEnd = function (L, ev, t) {
+    const keys = this.laneKeys(ev);
+    for (const k of keys) { const kk = k === '@last' ? L.last : k; if (kk && kk !== '@all') L.by[kk] = t; }
+    if (keys.length && keys[0][0] !== '@') L.last = keys[0];
+    L.end = Math.max(L.end, t);
+  };
+  P.showTurnBanner = function (pid, sub) {
+    const p = this.s.players[pid];
+    this.turnBanner = { pid, text: p.bot ? 'OPPONENT TURN' : 'YOUR TURN', sub, t0: performance.now(), out: null };
+  };
+  P.turnStartV4 = function (ev, t) {
+    this.schedule(t, () => { this.camTo(1, null, 450); this.showTurnBanner(ev.player, ev.last ? 'LAST ROUND' : `ROUND ${ev.round} / ${this.s.roundLimit}`); });
+    return t;
+  };
+  P.turnFocusV4 = function (L) {
+    const at = Math.max(L.end, L.t0 + 500) + 150;
+    this.schedule(at, () => { if (this.turnBanner) this.turnBanner.out = performance.now(); if (this.s.phase === 'play') this.focusTurn(); });
+    return at + (this.s.phase === 'play' ? 700 : 0);
+  };
+  // the first turn of a match, after the intro
+  P.turnOpening = function (t) {
+    const pid = this.s.current;
+    this.schedule(t, () => { this.camTo(1, null, 450); this.showTurnBanner(pid, `ROUND 1 / ${this.s.roundLimit}`); });
+    this.schedule(t + 650, () => { if (this.turnBanner) this.turnBanner.out = performance.now(); this.focusTurn(); });
+    return t + 650 + 700;
+  };
+  P.focusTurn = function (dur) { return this.focusCells(this.turnFocusCells(this.s.current), dur || 700); };
+  P.turnFocusCells = function (pid) {
+    const s = this.s, p = s.players[pid], w = p.warband, out = new Map();
+    const add = c => { if (c && s.cells[hex.key(c.col, c.row)]) out.set(hex.key(c.col, c.row), { col: c.col, row: c.row }); };
+    if (!w.dead) add(w);
+    if (s.current === pid && s.phase === 'play') {
+      for (const o of R.stepOptions(s)) o.path.forEach(add);
+      for (const card of p.hand) {
+        const play = R.getPlay(s, card);
+        for (const o of play.options || []) { (o.path || []).forEach(add); add(o.cell); (o.cells || []).forEach(add); }
+      }
+    }
+    for (const c of [...out.values()]) for (let d = 0; d < 6; d++) add(hex.neighbor(c.col, c.row, d)); // + one ring
+    return [...out.values()];
+  };
+  // the banner: a dark ribbon unrolls across the screen, then the words pop in (0.5 s); it fades up as the camera closes in
+  P.drawTurnBanner = function (ctx, now) {
+    const b = this.turnBanner; if (!b || !this.cssSize) return;
+    const kin = Math.min(1, (now - b.t0) / 500); if (kin < 0) return;
+    const kout = b.out != null ? Math.max(0, (now - b.out) / 320) : 0;
+    if (kout >= 1) { this.turnBanner = null; return; }
+    const { w, h } = this.cssSize, cy = h * 0.4, color = COL[b.pid], light = COL[b.pid + 'Light'], dark = COL[b.pid + 'Dark'];
+    const fs = Math.max(22, Math.min(46, w / (b.text.length * 0.7))), bh = fs * 2.2;
+    const grow = easeOut(Math.min(1, kin / 0.55)), pop = kin < 0.3 ? 0 : easeOutBack(Math.min(1, (kin - 0.3) / 0.7));
+    ctx.save(); ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.globalAlpha = 1 - kout; ctx.translate(0, -kout * bh * 0.4);
+    const bw = w * grow, g = ctx.createLinearGradient(0, cy - bh / 2, 0, cy + bh / 2);
+    g.addColorStop(0, 'rgba(20,12,6,0.9)'); g.addColorStop(1, 'rgba(20,12,6,0.74)');
+    ctx.fillStyle = g; ctx.fillRect(w / 2 - bw / 2, cy - bh / 2, bw, bh);
+    ctx.fillStyle = color; ctx.fillRect(w / 2 - bw / 2, cy - bh / 2, bw, 3); ctx.fillRect(w / 2 - bw / 2, cy + bh / 2 - 3, bw, 3);
+    if (pop > 0) {
+      ctx.translate(w / 2, cy - fs * 0.18); ctx.scale(pop, pop);
+      ctx.font = `900 ${Math.round(fs)}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = Math.max(4, fs * 0.14); ctx.strokeStyle = dark; ctx.strokeText(b.text, 0, 0);
+      ctx.fillStyle = light; ctx.fillText(b.text, 0, 0);
+      if (b.sub) { ctx.font = `800 ${Math.round(fs * 0.36)}px system-ui, sans-serif`; ctx.fillStyle = b.sub === 'LAST ROUND' ? '#ffd45a' : 'rgba(255,255,255,0.78)'; ctx.fillText(b.sub, 0, fs * 0.8); }
+    }
+    ctx.restore();
   };
 
   // ---------------------------------------------------------------- intro
@@ -250,13 +343,13 @@ window.HB = window.HB || {};
   };
   const SLOTS = [[0, 0], [-0.9, 0.15], [0.9, 0.15], [-0.45, -0.75], [0.45, -0.75], [0, 0.95], [-1.35, -0.6], [1.35, -0.6]];
   // a crowd of one type: figures ∝ count (1 per 2, up to 8) round a centre, then its plaque
-  P.drawCrowd = function (ctx, pid, type, n, cx, cy, now, plaque, extra) {
+  P.drawCrowd = function (ctx, pid, type, n, cx, cy, now, plaque, extra, plaqueBelow) {
     if (n <= 0) return;
     const S = this.size, r = S * 0.12, m = Math.min(8, Math.ceil(n / 2));
     const list = SLOTS.slice(0, m).map((o, i) => ({ x: cx + o[0] * r * 2.1, y: cy + o[1] * r * 1.7, i })).sort((a, b) => a.y - b.y);
     ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(cx, cy + r * 1.2, r * (1.4 + Math.min(m, 5) * 0.35), r * 0.8, 0, 0, Math.PI * 2); ctx.fill();
     for (const f of list) this.drawMinion(ctx, f.x, f.y, r, pid, type, now, f.i + (extra || 0));
-    if (plaque) this.drawTypePlaque(ctx, pid, type, n, cx, cy - r * 3.4, plaque === 'wait');
+    if (plaque) this.drawTypePlaque(ctx, pid, type, n, cx, plaqueBelow ? cy + r * 3.1 : cy - r * 3.4, plaque === 'wait');
   };
   // emblem + number; at a distance the plaques carry the information, close up the figures do
   P.drawTypePlaque = function (ctx, pid, type, n, x, y, waiting) {
@@ -272,11 +365,11 @@ window.HB = window.HB || {};
     if (img.complete && img.naturalWidth) ctx.drawImage(img, bx + h / 2 - is / 2, y - is / 2, is, is);
     ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(txt, bx + h + S * 0.04, y + 1);
   };
-  // sectors round the Overlord: the first type in front (towards the enemy), the others behind-left / behind-right —
-  // the same order as the towers of the castle, left to right
-  P.sectorOffsets = function (pid) {
-    const S = this.size, f = pid === 1 ? -1 : 1;
-    return [{ x: 0, y: f * S * 0.62 }, { x: -S * 0.72, y: -f * S * 0.18 }, { x: S * 0.72, y: -f * S * 0.18 }];
+  // sectors round the Overlord: the first type at his feet, the others at his left and right hand — the same order as the
+  // towers of the castle (middle, left, right). D-086: he is big now (0.8 of a hex high), so no crowd stands behind him
+  P.sectorOffsets = function () {
+    const S = this.size;
+    return [{ x: 0, y: S * 0.64 }, { x: -S * 0.92, y: -S * 0.08 }, { x: S * 0.92, y: -S * 0.08 }];
   };
   P.drawOverlord = function (ctx, p, now) {
     if (this.hideWb[p.id]) return;
@@ -292,31 +385,33 @@ window.HB = window.HB || {};
     const offs = this.sectorOffsets(pid);
     const idx = p.types.map((t, i) => ({ t, i, o: offs[i] })).sort((a, b) => a.o.y - b.o.y);
     for (const e of idx) if (e.o.y <= 0) this.drawCrowd(ctx, pid, e.t, this.retShown(pid, e.t), x + e.o.x, y + e.o.y, now, true, e.i * 3);
-    // the Overlord: a big figure with a cape and a horned helm
+    // the Overlord: a big figure with a cape and a horned helm. D-086: from his feet (y + r) to the tips of the horns
+    // (y − 2.3r) he is 3.3r = 0.8 of a hex high (√3·S)
     ctx.save();
     if (fk > 0) { ctx.globalAlpha = 1 - fk; ctx.translate(x, y); ctx.rotate(fk * 1.2); ctx.translate(-x, -y); }
     if (rise < 1) { ctx.globalAlpha *= rise; y -= (1 - easeOutBack(rise)) * S * 0.6; }
-    const color = COL[pid], light = COL[pid + 'Light'], dark = COL[pid + 'Dark'], r = S * 0.26;
-    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(x, y + r * 1.1, r * 1.4, r * 0.45, 0, 0, Math.PI * 2); ctx.fill();
+    const color = COL[pid], light = COL[pid + 'Light'], dark = COL[pid + 'Dark'], r = S * 0.8 * Math.sqrt(3) / 3.3, lw = Math.max(1.6, r * 0.08);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(x, y + r * 1.05, r * 1.3, r * 0.38, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = dark; ctx.beginPath(); ctx.moveTo(x - r * 1.1, y + r * 0.9); ctx.quadraticCurveTo(x, y - r * 1.4, x + r * 1.1, y + r * 0.9); ctx.closePath(); ctx.fill(); // cape
-    ctx.fillStyle = color; ctx.strokeStyle = dark; ctx.lineWidth = 1.6;
+    ctx.fillStyle = color; ctx.strokeStyle = dark; ctx.lineWidth = lw;
     ctx.beginPath(); ctx.ellipse(x, y, r * 0.95, r * 1.0, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = light; ctx.beginPath(); ctx.moveTo(x - r * 0.5, y - r * 0.55); ctx.lineTo(x + r * 0.5, y - r * 0.55); ctx.lineTo(x, y + r * 0.35); ctx.closePath(); ctx.fill(); // collar
+    ctx.fillStyle = dark; ctx.fillRect(x - r * 0.9, y + r * 0.25, r * 1.8, r * 0.18); ctx.fillStyle = '#ffd45a'; ctx.fillRect(x - r * 0.12, y + r * 0.22, r * 0.24, r * 0.24); // belt
     ctx.fillStyle = '#e9d7b4'; ctx.beginPath(); ctx.arc(x, y - r * 1.15, r * 0.62, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#2d2a33'; ctx.beginPath(); ctx.arc(x, y - r * 1.25, r * 0.66, Math.PI, 0); ctx.closePath(); ctx.fill(); // helm
-    ctx.strokeStyle = '#efe6d2'; ctx.lineWidth = 2.2; ctx.beginPath(); ctx.moveTo(x - r * 0.55, y - r * 1.45); ctx.quadraticCurveTo(x - r * 1.0, y - r * 1.9, x - r * 0.75, y - r * 2.3); ctx.moveTo(x + r * 0.55, y - r * 1.45); ctx.quadraticCurveTo(x + r * 1.0, y - r * 1.9, x + r * 0.75, y - r * 2.3); ctx.stroke(); // horns
+    ctx.strokeStyle = '#efe6d2'; ctx.lineWidth = r * 0.16; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x - r * 0.55, y - r * 1.45); ctx.quadraticCurveTo(x - r * 1.0, y - r * 1.9, x - r * 0.75, y - r * 2.3); ctx.moveTo(x + r * 0.55, y - r * 1.45); ctx.quadraticCurveTo(x + r * 1.0, y - r * 1.9, x + r * 0.75, y - r * 2.3); ctx.stroke(); ctx.lineCap = 'butt'; // horns
     ctx.fillStyle = '#ff5a3c'; ctx.beginPath(); ctx.arc(x - r * 0.22, y - r * 1.1, r * 0.1, 0, Math.PI * 2); ctx.arc(x + r * 0.22, y - r * 1.1, r * 0.1, 0, Math.PI * 2); ctx.fill(); // eyes
-    ctx.strokeStyle = '#3b2a14'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(x + r * 1.05, y + r * 0.9); ctx.lineTo(x + r * 1.2, y - r * 2.1); ctx.stroke(); // staff
-    ctx.fillStyle = light; ctx.beginPath(); ctx.arc(x + r * 1.2, y - r * 2.25, r * 0.28, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e9d7b4'; ctx.strokeStyle = dark; ctx.lineWidth = lw * 0.8; ctx.beginPath(); ctx.arc(x + r * 1.08, y + r * 0.1, r * 0.2, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); // the hand on the banner pole
     const wc = now - (this.warCryPulse[pid] || -1e9);
-    if (R.active(this.s, p.status.warCryUntil) || wc < 600) { ctx.strokeStyle = `rgba(255,179,71,${0.55 + 0.35 * Math.sin(now / 200)})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y, r * 1.8, r * 1.5, 0, 0, Math.PI * 2); ctx.stroke(); }
+    if (R.active(this.s, p.status.warCryUntil) || wc < 600) { ctx.strokeStyle = `rgba(255,179,71,${0.55 + 0.35 * Math.sin(now / 200)})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y - r * 0.4, r * 1.7, r * 1.9, 0, 0, Math.PI * 2); ctx.stroke(); }
     ctx.restore();
-    // sectors below the Overlord are nearer to the viewer: drawn after him
-    for (const e of idx) if (e.o.y > 0) this.drawCrowd(ctx, pid, e.t, this.retShown(pid, e.t), x + e.o.x, y + e.o.y, now, true, e.i * 3);
-    if (fk > 0) return;
-    // banner with the Overlord's HP and the shield of his retinue
+    if (fk > 0) { for (const e of idx) if (e.o.y > 0) this.drawCrowd(ctx, pid, e.t, this.retShown(pid, e.t), x + e.o.x, y + e.o.y, now, true, e.i * 3, true); return; }
+    // banner with the Overlord's HP and the shield of his retinue — on a pole he holds in his right hand
     const bumpK = (now - (this.bump[pid] || -1e9)) / 380, bsc = bumpK >= 0 && bumpK < 1 ? 1 + 0.25 * Math.sin(bumpK * Math.PI) : 1;
-    const px = x + S * 0.3, top = y - S * 2.05; // the pole stands to the right, above the front sector
-    ctx.strokeStyle = '#3b2a14'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px, y - S * 0.35); ctx.lineTo(px, top); ctx.stroke();
+    const px = x + r * 1.08, top = y - S * 1.75;
+    ctx.strokeStyle = '#3b2a14'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px, y + r * 0.95); ctx.lineTo(px, top); ctx.stroke();
+    // the crowd at his feet is nearer to the viewer: drawn over him and the pole, its plaque under it
+    for (const e of idx) if (e.o.y > 0) this.drawCrowd(ctx, pid, e.t, this.retShown(pid, e.t), x + e.o.x, y + e.o.y, now, true, e.i * 3, true);
     const hp = this.hpShown(pid), txt = `❤ ${hp}`, fs = Math.round(S * 0.36);
     ctx.font = `900 ${fs}px system-ui, sans-serif`;
     const fw = Math.max(S * 0.95, ctx.measureText(txt).width + S * 0.45), fh = S * 0.5;

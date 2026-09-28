@@ -65,14 +65,14 @@ window.HB = window.HB || {};
     citadel: { title: 'Citadel', text: 'Taking it heals your Overlord by 5; while you hold it every pit sends 1 more minion per turn.' },
   };
 
-  // ---- ready-made loadouts: 3 minion types with their counts (weights within Command 18), 3 Overlord cards, 1 card per type
+  // ---- ready-made loadouts: 3 minion types with their counts (weights within Command 23), 3 Overlord cards, 1 card per type
   const LOADOUTS = {
     horde: { title: 'Horde', icon: 't_brawler', tag: 'Brawlers up front, runners for land, archers behind.',
-      types: { brawler: 8, runner: 6, archer: 4 }, hero: ['stride', 'war_cry', 'recall'], minion: ['b_charge', 'r_raid', 'a_volley'] },
+      types: { brawler: 10, runner: 8, archer: 5 }, hero: ['stride', 'war_cry', 'recall'], minion: ['b_charge', 'r_raid', 'a_volley'] },
     raiders: { title: 'Raiders', icon: 't_runner', tag: 'Fast land-grabbers who heal and come back.',
-      types: { runner: 9, brawler: 5, healer: 4 }, hero: ['detour', 'recall', 'standard'], minion: ['r_raid', 'b_breach', 'h_pilgrims'] },
+      types: { runner: 12, brawler: 6, healer: 5 }, hero: ['detour', 'recall', 'standard'], minion: ['r_raid', 'b_breach', 'h_pilgrims'] },
     siege: { title: 'Ironclad', icon: 't_brute', tag: 'Few, heavy and hard to stop.',
-      types: { brute: 3, brawler: 5, archer: 4 }, hero: ['stride', 'war_cry', 'standard'], minion: ['u_ram', 'b_breach', 'a_ambush'] },
+      types: { brute: 4, brawler: 6, archer: 5 }, hero: ['stride', 'war_cry', 'standard'], minion: ['u_ram', 'b_breach', 'a_ambush'] },
   };
 
   const DIR_LABEL = ['up', 'up-right', 'down-right', 'down', 'down-left', 'up-left'];
