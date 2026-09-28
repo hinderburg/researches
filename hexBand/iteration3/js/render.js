@@ -29,6 +29,7 @@ window.HB = window.HB || {};
       this.wallAnim = {}; this.summonAnim = {}; this.summonHide = {}; this.ghosts = {}; this.stepHint = null;
       // iteration2 (D-074, D-075): castles (shown defence, rise / fall, shake), fallen warbands, crowd sizes for fleeing
       this.castleShown = {}; this.castleRise = {}; this.castleGone = {}; this.castleShake = { 1: 0, 2: 0 }; this.ghostWb = {}; this.crowdN = {}; this.bigBump = {}; this.castleDust = {}; this.minShown = {}; this.bigText = null;
+      this.view = null; this.squadAnim = {}; this.squadBump = {}; this.towerPulse = {}; this.heroFall = {}; this.heroRise = {}; this.warCryPulse = {}; // D-085 (V4)
       requestAnimationFrame(t => this.frame(t));
     }
     setState(s) {
@@ -37,6 +38,7 @@ window.HB = window.HB || {};
       this.zoom = 1; this.cam = { x: 0, y: 0 }; this.panTween = null; // D-083: a new match starts with the whole board in view
       this.wallAnim = {}; this.summonAnim = {}; this.summonHide = {}; this.ghosts = {}; this.stepHint = null;
       this.castleShown = {}; this.castleRise = {}; this.castleGone = {}; this.castleShake = { 1: 0, 2: 0 }; this.ghostWb = {}; this.crowdN = {}; this.bigBump = {}; this.castleDust = {}; this.minShown = {}; this.bigText = null;
+      this.view = null; this.squadAnim = {}; this.squadBump = {}; this.towerPulse = {}; this.heroFall = {}; this.heroRise = {}; this.warCryPulse = {};
       // D-064: tiles are drawn as blocks top to bottom, so a lower tile's face covers the side of the tile above it
       this.order = Object.values(s.cells).sort((a, b) => (a.row + 0.5 * (a.col & 1)) - (b.row + 0.5 * (b.col & 1)) || a.col - b.col);
       this.buildDecor();
@@ -45,6 +47,7 @@ window.HB = window.HB || {};
     // the two outposts flip to the player's colour (the castle grows with them), then the warband gathers in the castle:
     // men run in from the hexes around it and, in proportion, from every outpost held
     playIntro() {
+      if (this.isV4 && this.isV4()) return this.playIntroV4(); // D-085
       const s = this.s; let t = 0, end = 0;
       for (const k in s.cells) if (s.cells[k].owner) this.reveal[k] = 0;
       for (const pid of [1, 2]) {
@@ -196,7 +199,7 @@ window.HB = window.HB || {};
       const z = this.zoom, { w, h } = this.cssSize, S = this.size, b = this.boardPx;
       const clamp = (v, lo, hi) => lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v));
       // world extent incl. margins for banners above row 0 and plaques below the last row
-      const x0 = this.offset.x - S * 0.3, x1 = this.offset.x + b.w + S * 0.3, y0 = this.offset.y - S * 1.3, y1 = this.offset.y + b.h + S * 0.5;
+      const x0 = this.offset.x - S * 0.3, x1 = this.offset.x + b.w + S * 0.3, y0 = this.offset.y - S * 1.3, y1 = this.offset.y + b.h + S * 1.1;
       this.cam = z <= 1.001 ? { x: 0, y: 0 } : { x: clamp(this.cam.x, w - x1 * z, -x0 * z), y: clamp(this.cam.y, h - y1 * z, -y0 * z) };
     }
     toScreen(p) { const z = this.zoom || 1, c = this.cam || { x: 0, y: 0 }; return { x: p.x * z + c.x, y: p.y * z + c.y }; }
@@ -268,7 +271,10 @@ window.HB = window.HB || {};
         if (ev.type === 'summon') this.summonHide[ev.id] = true;
         if (ev.type === 'summonMove') this.summonAnim[ev.id] = { from: ev.from, to: ev.to, t0: Infinity, dur: 320 }; // stays put until its turn in the timeline
       }
+      // D-085 (V4): counts on the board stay as they were before the action until each event changes them
+      if (this.isV4 && this.isV4()) this.view = this.prevView ? JSON.parse(JSON.stringify(this.prevView)) : this.snapshotView(this.s);
       for (const ev of events) {
+        if (this.v4Handles && this.v4Handles(ev)) { t = this.applyV4(ev, t); continue; }
         const light = ev.player ? COL[ev.player + 'Light'] : '#fff';
         switch (ev.type) {
           case 'move': {
@@ -517,7 +523,7 @@ window.HB = window.HB || {};
           case 'gameover': t += 400; break;
         }
       }
-      this.schedule(t, () => { for (const pid of [1, 2]) if (this.slide[pid] && this.slide[pid].hold) this.slide[pid] = null; this.minShown = {}; this.ghostWb = {}; this.reveal = {}; });
+      this.schedule(t, () => { for (const pid of [1, 2]) if (this.slide[pid] && this.slide[pid].hold) this.slide[pid] = null; this.minShown = {}; this.ghostWb = {}; this.reveal = {}; this.view = null; });
       return t;
     }
 
@@ -687,15 +693,18 @@ window.HB = window.HB || {};
         ctx.setLineDash([]);
       }
       // outposts
-      for (const poi of s.pois) this.drawOutpost(ctx, poi, now);
-      this.drawCastles(ctx, now); // iteration2 (D-074)
-      // warbands: draw the upper one first so overlapping banners read correctly
-      const rowOf = pid => { const g = this.ghostWb[pid]; return g ? g.row : s.players[pid].warband.row; };
-      const swell = pid => { const k = now - (this.bigBump[pid] || -1e9); return k >= 0 && k < 1100 ? 1 : 0; }; // a swelling banner goes on top
-      const order = [1, 2].sort((a, b) => swell(a) - swell(b) || rowOf(a) - rowOf(b));
-      this.drawSummons(ctx, now); // D-068
-      for (const pid of order) this.drawWarband(ctx, s.players[pid], now);
-      this.drawCastlePlaques(ctx, now);
+      if (this.isV4 && this.isV4()) this.drawV4(ctx, now); // D-085: points, gothic castles, squads, Overlords with retinues
+      else {
+        for (const poi of s.pois) this.drawOutpost(ctx, poi, now);
+        this.drawCastles(ctx, now); // iteration2 (D-074)
+        // warbands: draw the upper one first so overlapping banners read correctly
+        const rowOf = pid => { const g = this.ghostWb[pid]; return g ? g.row : s.players[pid].warband.row; };
+        const swell = pid => { const k = now - (this.bigBump[pid] || -1e9); return k >= 0 && k < 1100 ? 1 : 0; }; // a swelling banner goes on top
+        const order = [1, 2].sort((a, b) => swell(a) - swell(b) || rowOf(a) - rowOf(b));
+        this.drawSummons(ctx, now); // D-068
+        for (const pid of order) this.drawWarband(ctx, s.players[pid], now);
+        this.drawCastlePlaques(ctx, now);
+      }
       this.drawStepHint(ctx, now); // D-068: free-step marker
       // battle fx
       for (let i = this.fx.length - 1; i >= 0; i--) {
@@ -728,6 +737,7 @@ window.HB = window.HB || {};
           ctx.fillStyle = '#d7c6a3'; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
           ctx.fillStyle = '#efe4cc'; ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.55, 0, Math.PI * 2); ctx.fill();
           ctx.globalAlpha = 1;
+        } else if (f.type === 'march') { this.drawMarchFx(ctx, f, k); // D-085: a minion running along a road
         } else if (f.type === 'recruit' || f.type === 'flee') { // D-057: a small figure running into the crowd; iteration2: or running away from it
           const flee = f.type === 'flee', e = flee ? k : 1 - Math.pow(1 - k, 2);
           const gy = f.y0 + (f.y1 - f.y0) * e, x = f.x0 + (f.x1 - f.x0) * e, y = gy - Math.abs(Math.sin(k * Math.PI * (flee ? 5 : 4) + f.seed)) * S * 0.12;

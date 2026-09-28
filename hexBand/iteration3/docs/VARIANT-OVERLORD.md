@@ -1,6 +1,6 @@
 # HEXBand — вариант V4 «Повелитель» (Overlord + Pikmin)
 
-> Ветка `iteration3`, 2026-09-28. Проработка идеи дизайнера. Дополняет [IMPLEMENTATION-VARIANTS.md](IMPLEMENTATION-VARIANTS.md) (V1–V3, модель замка). Код не менялся.
+> Ветка `iteration3`, 2026-09-28. Проработка идеи дизайнера. Дополняет [IMPLEMENTATION-VARIANTS.md](IMPLEMENTATION-VARIANTS.md) (V1–V3, модель замка). **Реализовано в 0.30.0-it3 (D-085)** — см. [GDD-current.md](GDD-current.md).
 
 **Идея дизайнера:**
 - Главный герой медленно ходит по карте, за ним всегда бегут миньоны нескольких типов.

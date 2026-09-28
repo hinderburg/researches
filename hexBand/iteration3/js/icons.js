@@ -49,6 +49,22 @@ window.HB = window.HB || {};
     heavy_charge: wrap(star(8), '5'),
     trebuchet: wrap(`<path d="M6 26 H26 M9 26 L20 8 M14 26 L20 8"/><circle cx="22" cy="6" r="3.5"/><path d="M4 12 C10 6 18 4 26 4" stroke-dasharray="2 2"/>`, '4'),
     war_horn: wrap(sword, '+3'),
+    // ---- D-085 (V4 "Overlord"): minion type emblems and the new cards
+    t_brawler: wrap(shield + `<path d="M16 9 V23 M11 14 H21"/>`),
+    t_runner: wrap(`<path d="M6 24 C10 22 14 18 16 12 C18 18 22 22 26 24"/><path d="M9 14 C12 10 14 7 16 4 C18 7 20 10 23 14"/>`),
+    t_archer: wrap(`<path d="M9 4 C21 8 21 24 9 28"/><path d="M9 4 V28" stroke-width="1.4"/><path d="M5 16 H27 M23 12 L27 16 L23 20"/>`),
+    t_brute: wrap(`<path d="M8 27 V17 C8 12 10 10 13 10 H22 C25 10 26 12 26 15 V19 C26 22 24 24 21 24 H16 V27"/><path d="M13 10 V16 M17 10 V16 M21 10 V16"/>`),
+    t_healer: wrap(`<path d="M13 5 H19 V13 H27 V19 H19 V27 H13 V19 H5 V13 H13 Z"/>`),
+    v_recall: wrap(`<path d="M26 16 A10 10 0 1 1 16 6"/><path d="M11 3 L16 6 L12 11"/>` + minions.replace(/cx="(\d+)" cy="(\d+)" r="[\d.]+"/g, 'cx="$1" cy="$2" r="0"')),
+    v_charge: wrap(chevrons(3), '+1'),
+    v_ambush: wrap(`<path d="M8 4 C18 8 18 22 8 26"/><path d="M8 4 V26" stroke-width="1.4"/><path d="M4 15 H24 M20 11 L24 15 L20 19"/>` + chevrons(0), '+1'),
+    v_smash: wrap(star(6) + `<path d="M16 16 L24 8"/>`, '2'),
+    v_warcry: wrap(sword, '+1'),
+    v_raid: wrap(`<path d="M6 28 V18 L14 13 L22 17 L28 12"/><path d="M22 9 L28 12 L25 18"/>`, '4'),
+    v_weave: wrap(`<path d="M8 27 L14 14 L20 22 L26 9"/><path d="M19 10 L26 8 L27 15"/>`, '3'),
+    v_sweep: wrap(`<path d="M16 27 V8 M10 14 L16 8 L22 14"/>` + hexagon(6, 16, 3.6) + hexagon(26, 16, 3.6) + hexagon(6, 25, 3.6) + hexagon(26, 25, 3.6), '2'),
+    v_ram: wrap(star(8), '+2'),
+    v_call: wrap(minions, '+2'),
   };
   const fallback = wrap('<circle cx="16" cy="16" r="10"/>');
   const imgCache = {};

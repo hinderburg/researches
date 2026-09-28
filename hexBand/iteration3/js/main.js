@@ -1,19 +1,32 @@
-// UI glue: main menu (D-051), settings screen, hand with piles (D-037), drag-to-play (D-028/D-036) and tap-to-play
-// (D-046/D-048), bot turns, hotseat hand-over, results. All player-facing text is English (D-052).
+// UI glue: main menu (D-051), the camp (loadout builder, D-085), hand with piles (D-037), drag-to-play (D-028/D-036)
+// and tap-to-play (D-046/D-048), bot turns, hotseat hand-over, results. All player-facing text is English (D-052).
 window.HB = window.HB || {};
 (function () {
-  const R = HB.rules, hex = HB.hex, CFG = HB.CONFIG, CARDS = HB.cards.CARDS, POIS = HB.cards.POIS, PRESETS = HB.cards.PRESETS;
+  const R = HB.rules, hex = HB.hex, CFG = HB.CONFIG, CARDS = HB.cards.CARDS, TYPES = HB.cards.MINION_TYPES, PRESETS = HB.cards.LOADOUTS;
+  const TYPE_ORDER = HB.cards.TYPE_ORDER, HERO_POOL = HB.cards.HERO_POOL, iconOf = HB.cards.iconOf;
   const $ = sel => document.querySelector(sel);
   const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
-  const KIND_CLASS = { move: 'k-move', blink: 'k-move', reinforce: 'k-reinf', buff_next: 'k-combat', explosive: 'k-combat', volley: 'k-combat', catapult: 'k-combat', formation: 'k-def', flank_claim: 'k-terr', cordon: 'k-terr', banner: 'k-terr', prayer: 'k-util', scout_draw: 'k-util', palisade: 'k-def', fortify: 'k-def', summon: 'k-summon', scorch: 'k-combat', swamp: 'k-terr' };
-  // D-061: three visual tiers — plain deck cards, outpost cards (bronze frame), the citadel card (gold ornament)
-  const cardHTML = defId => { const d = CARDS[defId], tier = HB.cards.tierOf(defId); return `<div class="card-icon">${HB.icons.svg(defId)}</div><div class="card-name">${d.title}</div>${tier === 'citadel' ? '<div class="card-poi">CITADEL</div>' : ''}`; };
-  const cardClass = defId => { const tier = HB.cards.tierOf(defId); return 'card ' + (KIND_CLASS[CARDS[defId].kind] || '') + (tier ? ' tier-' + tier : ''); };
+  const KIND_CLASS = { hero_move: 'k-move', sortie: 'k-sortie', recall: 'k-util', war_cry: 'k-combat', fortify: 'k-def', volley: 'k-combat', scorch: 'k-combat', palisade: 'k-def', bless: 'k-reinf', call: 'k-reinf' };
+  // D-085: a minion card carries its type's emblem in the type colour; Overlord cards a crown
+  const cardHTML = defId => {
+    const d = CARDS[defId], t = TYPES[d.owner];
+    const tag = t ? `<div class="card-type" style="background:${t.color}">${HB.icons.svg('t_' + d.owner)}</div>` : '<div class="card-type hero">♛</div>';
+    return `${tag}<div class="card-icon">${HB.icons.svg(iconOf(defId))}</div><div class="card-name">${d.title}</div>`;
+  };
+  const cardClass = defId => 'card ' + (KIND_CLASS[CARDS[defId].kind] || '') + (CARDS[defId].owner === 'hero' ? ' tier-hero' : '');
   const rectOf = e => e.getBoundingClientRect();
-  // D-070: which preset a deck selection matches exactly (same cards and outposts), or null for a custom deck
+  const clone = o => JSON.parse(JSON.stringify(o));
   const sameSet = (a, b) => a.length === b.length && a.every(x => b.includes(x));
-  const presetOf = sel => { for (const k in PRESETS) if (sameSet(sel.cards, PRESETS[k].cards) && sameSet(sel.pois, PRESETS[k].pois)) return k; return null; };
-  // D-068: highlights for cards aimed at a hex — every legal hex, the chosen one, Scorch's line, Palisade's three walls
+  // which ready-made army a loadout matches exactly, or null for a custom one
+  const presetOf = sel => {
+    for (const k in PRESETS) {
+      const pr = PRESETS[k];
+      if (sameSet(Object.keys(sel.types), Object.keys(pr.types)) && Object.keys(pr.types).every(t => sel.types[t] === pr.types[t]) && sameSet(sel.hero, pr.hero) && sameSet(sel.minion, pr.minion)) return k;
+    }
+    return null;
+  };
+  const weightOf = sel => Object.keys(sel.types).reduce((a, t) => a + sel.types[t] * TYPES[t].weight, 0);
+  // D-068: highlights for cards aimed at a hex — every legal hex, the chosen one, the line of Fire Arrows, the three walls
   function cellTargetHighlights(hl, play, opt, def, s) {
     for (const o of play.options) hl.push({ col: o.cell.col, row: o.cell.row, kind: 'target', strong: o === opt });
     if (!opt) return;
@@ -23,12 +36,13 @@ window.HB = window.HB || {};
       if (hex.exists(m.col, m.row, s.cols, s.rows)) hl.push({ kind: 'wall', a: opt.cell, b: m });
     }
   }
+  const defaultLevels = () => Object.assign({ hero: 1 }, ...TYPE_ORDER.map(t => ({ [t]: 1 })));
 
   const UI = {
     state: null, renderer: null, busy: false, opts: null, drag: null, sel: null, lastActor: null, handoverPending: false, lastEvents: [], pendingIncoming: new Set(),
     // whose hand the bottom panel shows: the human in bot mode, the current player in hotseat (D-044)
     handPlayer() { const s = this.state; return this.opts && this.opts.players[2].bot ? s.players[1] : s.players[s.current]; },
-    setup: { mode: 'bot', rounds: CFG.ROUND_LIMIT, seed: '', p: { 1: null, 2: null }, preset: 'landgrab', botPreset: 'random', botLevel: 'hard', control: 'drag', citadel: CFG.CITADEL_MODE },
+    setup: { mode: 'bot', rounds: CFG.ROUND_LIMIT, seed: '', p: { 1: null, 2: null }, levels: { 1: null, 2: null }, preset: 'horde', botPreset: 'random', botLevel: 'hard', control: 'drag' },
     // D-048: input scheme — 'drag' (drag the card onto the board) or 'tap' (tap the card, then tap the target)
     setControl(mode) {
       this.setup.control = mode === 'tap' ? 'tap' : 'drag';
@@ -41,19 +55,15 @@ window.HB = window.HB || {};
     // ------------------------------------------------------------ settings screen
     initSetup() {
       const S = this.setup;
-      // D-070: the player's army preset is remembered in the browser and picked on the main menu or in the builder
-      try { const pr = localStorage.getItem('hexband.preset'); if (PRESETS[pr]) S.preset = pr; } catch (e) {}
-      S.p[1] = { cards: PRESETS[S.preset].cards.slice(), pois: PRESETS[S.preset].pois.slice() };
-      S.p[2] = { cards: PRESETS.warlord.cards.slice(), pois: PRESETS.warlord.pois.slice() };
+      try { const pr = localStorage.getItem('hexband.v4.preset'); if (PRESETS[pr]) S.preset = pr; } catch (e) {}
+      S.p[1] = clone(PRESETS[S.preset]); S.p[2] = clone(PRESETS.siege);
+      S.levels[1] = defaultLevels(); S.levels[2] = defaultLevels();
+      try { const lv = JSON.parse(localStorage.getItem('hexband.v4.levels') || 'null'); if (lv) Object.assign(S.levels[1], lv); } catch (e) {}
       $('#setup-version').textContent = 'v' + CFG.VERSION;
       document.querySelectorAll('input[name=mode]').forEach(r => r.addEventListener('change', () => { S.mode = r.value; this.renderSetup(); }));
       $('#sel-rounds').value = String(S.rounds);
       $('#sel-rounds').addEventListener('change', e => S.rounds = +e.target.value);
       $('#inp-seed').addEventListener('input', e => S.seed = e.target.value);
-      $('#sel-attacks').value = String(CFG.ATTACKS_PER_TURN);
-      $('#sel-attacks').addEventListener('change', e => S.attacks = +e.target.value);
-      $('#sel-citadel').value = S.citadel;
-      $('#sel-citadel').addEventListener('change', e => S.citadel = e.target.value);
       $('#sel-bot-preset').addEventListener('change', e => { S.botPreset = e.target.value; this.renderSetup(); });
       // D-067: bot difficulty, remembered in the browser like the control scheme
       try { const lv = localStorage.getItem('hexband.botLevel'); if (lv === 'easy' || lv === 'normal' || lv === 'hard') S.botLevel = lv; } catch (e) {}
@@ -74,12 +84,12 @@ window.HB = window.HB || {};
       const tap = this.setup.control === 'tap';
       const ov = this.overlay(`<div class="intro">
         <h2>HEXBand — how it works</h2>
-        <div class="intro-item">${ic('hook')}<div><b>Move with cards.</b> ${tap ? 'Tap a card — every hex it can take your warband to lights up; tap the one you want and the warband moves at once.' : 'Drag a card onto the board and release it where the warband should go; it moves at once.'} The card sets the shape of the route, you choose the direction. Once per turn your warband can also take one <b>free step</b>: tap a marked hex next to it, or drag from the warband in the direction you want. Play as many cards per turn as you like, at least one, then press End Turn. The control scheme (drag / tap) can be changed in Settings. The board is big: zoom with the mouse wheel or a two-finger pinch, drag the board to scroll, or use the + / − / ⤢ buttons in its corner.</div></div>
-        <div class="intro-item">${ic('ring')}<div><b>Claim territory.</b> Every hex you walk through becomes yours. Surround an area with your own hexes and everything inside becomes yours too, enemy hexes included — the map edge does not count as a wall, and an area with the enemy warband in it stays theirs. Score = your hexes.</div></div>
-        <div class="intro-item">${ic('recruitment')}<div><b>Outposts.</b> Your two outposts flank your start and are yours from the beginning: their cards are shuffled into your deck. Walk through an enemy outpost or enclose it — its card flies straight into your hand and works instantly; lose an outpost and you lose its card. The neutral Citadel in the middle holds a stronger card.</div></div>
-        <div class="intro-item">${ic('battle_cry')}<div><b>Fight.</b> To attack, run a card's route onto the enemy's hex (it turns red) — the game shows a forecast: how much each warband loses and who falls back. A warband that is wiped out is not the end: it gathers again in its castle at the start of its owner's next turn (16 men from the castle, 4 from every outpost, 6 from the Citadel).</div></div>
-        <div class="intro-item">${ic('fortify')}<div><b>Castles.</b> Each side starts in a castle. Its defence is ${CFG.CASTLE_BASE} + 1 per hex you hold + 2 per outpost + 4 for the Citadel, and it rises or sinks as your land grows or shrinks. Attack it by stepping onto it: every point of damage burns one of its owner's hexes, farthest first, and the castle strikes back at once. If the attacker still outnumbers its defence after both hits, it marches in — the castle falls and the match is over. A warband inside defends it and never falls back.</div></div>
-        <div class="intro-item">${ic('claim')}<div><b>Win.</b> Hold more territory when round ${this.setup.rounds} ends — or destroy the enemy castle.</div></div>
+        <div class="intro-item">${ic('t_brawler')}<div><b>Your Overlord and his horde.</b> You lead an Overlord with up to three kinds of minions around him. The Overlord is slow: one free step a turn (tap a marked hex or drag from him in the direction you want) plus his own cards. His minions are your strike force and his shield — any blow at the Overlord hits them first.</div></div>
+        <div class="intro-item">${ic('long_hook')}<div><b>Send them out.</b> ${tap ? 'Tap a minion card, then tap where the route should end' : 'Drag a minion card onto the board and release it where the route should end'} — all minions of that type leave the Overlord and run the route, painting hexes and fighting whatever stands in the way, then walk back. While they are away, the Overlord has less of a shield. One sortie per type at a time. Hand of 3; play at least one card a turn, then End Turn.</div></div>
+        <div class="intro-item">${ic('cordon')}<div><b>Claim territory.</b> Every hex your Overlord or minions walk through becomes yours. Surround an area with your own hexes and everything inside becomes yours too — the map edge does not count as a wall, and an area with the enemy Overlord in it stays theirs.</div></div>
+        <div class="intro-item">${ic('recruitment')}<div><b>Pits and the road.</b> Each minion type has a pit in a tower of your castle. Fallen minions return to it, and every turn it sends new ones out while you have fewer than your army size. If your own hexes connect the castle to the Overlord, they run straight to him; if not, they wait at your hex nearest to him — cut the enemy road and his reinforcements get stuck.</div></div>
+        <div class="intro-item">${ic('t_archer')}<div><b>Upgrade points.</b> In the middle of the map: each pair belongs to a minion type (+1 level to it while you hold it), the Citadel heals your Overlord and speeds up every pit. The castle itself is a passive base — nobody can take it.</div></div>
+        <div class="intro-item">${ic('battle_cry')}<div><b>Win.</b> Slay the enemy Overlord — or hold more territory when round ${this.setup.rounds} ends. The board is big: zoom with the mouse wheel or a two-finger pinch, drag it to scroll, or use + / − / ⤢.</div></div>
         <button class="btn primary" id="btn-intro-close">${manual ? 'Got it' : 'To settings'}</button></div>`);
       $('#btn-intro-close').addEventListener('click', () => { ov.hidden = true; });
     },
@@ -90,59 +100,109 @@ window.HB = window.HB || {};
       this.renderBuilder(1); if (S.mode === 'hotseat') this.renderBuilder(2);
       this.validateSetup();
     },
+    // D-085: the camp — the Overlord (level, 3 cards) and up to 3 minion types (level, how many, 1 card each). Every number
+    // shown here is the number the match uses.
     renderBuilder(pid) {
-      const S = this.setup, sel = S.p[pid], root = $('#builder-' + pid);
+      const S = this.setup, sel = S.p[pid], lv = S.levels[pid], root = $('#builder-' + pid);
+      const save = () => { if (pid === 1) try { localStorage.setItem('hexband.v4.levels', JSON.stringify(lv)); } catch (e) {} };
+      const redraw = () => { this.renderBuilder(pid); this.validateSetup(); };
       root.innerHTML = '';
-      root.appendChild(el('h3', null, pid === 1 ? 'Blue (you)' : 'Red'));
+      root.appendChild(el('h3', null, pid === 1 ? 'Blue (you) — camp' : 'Red — camp'));
       const presets = el('div', 'presets');
       for (const key in PRESETS) {
         const b = el('button', 'chip' + (presetOf(sel) === key ? ' on' : ''), PRESETS[key].title);
         b.title = PRESETS[key].tag;
-        b.addEventListener('click', () => { if (pid === 1) this.choosePreset(key); else { sel.cards = PRESETS[key].cards.slice(); sel.pois = PRESETS[key].pois.slice(); this.renderBuilder(pid); this.validateSetup(); } });
+        b.addEventListener('click', () => { if (pid === 1) this.choosePreset(key); else { S.p[2] = clone(PRESETS[key]); redraw(); } });
         presets.appendChild(b);
       }
       root.appendChild(presets);
-      root.appendChild(el('div', 'builder-label', `Deck: <b>${sel.cards.length}</b>/${CFG.DECK_SIZE}`));
-      const grid = el('div', 'pick-grid');
-      for (const id of HB.cards.DECK_POOL) {
-        const d = CARDS[id], on = sel.cards.includes(id);
-        const c = el('div', 'pick' + (on ? ' on' : '') + (HB.cards.ADVANCED_POOL.includes(id) ? ' adv' : HB.cards.FIELD_POOL.includes(id) ? ' field' : ''), `<div class="pick-icon">${HB.icons.svg(id)}</div><div class="pick-name">${d.title}</div><div class="pick-type">${d.type}</div><div class="pick-text">${d.text}</div>`);
-        c.addEventListener('click', () => {
-          if (on) sel.cards = sel.cards.filter(x => x !== id); else if (sel.cards.length < CFG.DECK_SIZE) sel.cards.push(id); else return;
-          this.renderBuilder(pid); this.validateSetup();
-        });
-        grid.appendChild(c);
+      const levelSel = (val, onChange) => { const s = el('select', 'lvl'); for (let i = 1; i <= CFG.MAX_LEVEL; i++) { const o = el('option', null, 'Lv ' + i); o.value = i; if (i === val) o.selected = true; s.appendChild(o); } s.addEventListener('change', e => onChange(+e.target.value)); return s; };
+      // the Overlord
+      const hs = R.heroStatsAt(lv.hero), cmd = hs.command, used = weightOf(sel);
+      const hero = el('div', 'camp-hero');
+      hero.appendChild(el('div', 'camp-title', `<b>Overlord</b><span>❤ ${hs.hp} HP · ⚔ ${hs.atk} Attack · ⚑ Command ${cmd} <em class="${used > cmd ? 'bad' : ''}">(${used} used)</em> · 1 free step a turn</span>`));
+      hero.querySelector('.camp-title').appendChild(levelSel(lv.hero, v => { lv.hero = v; save(); redraw(); }));
+      root.appendChild(hero);
+      root.appendChild(el('div', 'builder-label', `Overlord cards: <b>${sel.hero.length}</b>/${CFG.HERO_CARDS}`));
+      const hg = el('div', 'pick-grid');
+      for (const id of HERO_POOL) {
+        const d = CARDS[id], on = sel.hero.includes(id);
+        const c = el('div', 'pick' + (on ? ' on' : ''), `<div class="pick-icon">${HB.icons.svg(iconOf(id))}</div><div class="pick-name">${d.title}</div><div class="pick-text">${d.text}</div>`);
+        c.addEventListener('click', () => { if (on) sel.hero = sel.hero.filter(x => x !== id); else if (sel.hero.length < CFG.HERO_CARDS) sel.hero.push(id); else return; redraw(); });
+        hg.appendChild(c);
       }
-      root.appendChild(grid);
-      root.appendChild(el('div', 'builder-label', `Outposts (left and right of your start, captured from the beginning; their cards are shuffled into your deck): <b>${sel.pois.length}</b>/${CFG.POI_PICKS}`));
-      const pg = el('div', 'pick-grid pois');
-      for (const id of HB.cards.POI_POOL) {
-        const d = POIS[id], on = sel.pois.includes(id), idx = sel.pois.indexOf(id);
-        const c = el('div', 'pick' + (on ? ' on' : ''), `<div class="pick-icon">${HB.icons.svg(d.card)}</div><div class="pick-name">${on ? (idx + 1) + '. ' : ''}${d.title}</div><div class="pick-type">→ ${CARDS[d.card].title}</div><div class="pick-text">${d.text}</div>`);
-        c.addEventListener('click', () => {
-          if (on) sel.pois = sel.pois.filter(x => x !== id); else if (sel.pois.length < CFG.POI_PICKS) sel.pois.push(id); else return;
-          this.renderBuilder(pid); this.validateSetup();
+      root.appendChild(hg);
+      // minion types
+      const nTypes = Object.keys(sel.types).length;
+      root.appendChild(el('div', 'builder-label', `Minion types: <b>${nTypes}</b>/${CFG.MINION_TYPES_MAX} — each brings its own tower in your castle and one card`));
+      const tg = el('div', 'camp-types');
+      for (const t of TYPE_ORDER) {
+        const d = TYPES[t], on = t in sel.types, st = R.statsAt(t, lv[t] || 1);
+        const box = el('div', 'camp-type' + (on ? ' on' : ''));
+        box.style.setProperty('--tc', d.color);
+        const head = el('div', 'camp-type-head', `<span class="camp-emblem">${HB.icons.svg('t_' + t)}</span><b>${d.title}</b>`);
+        head.appendChild(levelSel(lv[t] || 1, v => { lv[t] = v; save(); redraw(); }));
+        const tog = el('button', 'btn tiny ' + (on ? '' : 'primary'), on ? 'Remove' : 'Take');
+        tog.addEventListener('click', () => {
+          if (on) { delete sel.types[t]; sel.minion = sel.minion.filter(id => CARDS[id].owner !== t); }
+          else { if (nTypes >= CFG.MINION_TYPES_MAX) return; sel.types[t] = Math.max(1, Math.min(4, Math.floor((cmd - used) / d.weight))); sel.minion.push(HB.cards.MINION_CARDS(t).find(id => (CARDS[id].req || 1) <= sel.types[t]) || HB.cards.MINION_CARDS(t)[0]); }
+          redraw();
         });
-        pg.appendChild(c);
+        head.appendChild(tog);
+        box.appendChild(head);
+        box.appendChild(el('div', 'camp-stats', `<span title="HP per minion">❤ ${st.hp}</span><span title="Attack per minion">⚔ ${st.atk}</span><span title="route steps per turn">➜ ${st.speed}</span><span title="hexes painted per step">▦ ${st.capture}</span><span title="hexes per turn back to the Overlord">↩ ${st.ret}</span>${st.range ? `<span title="range">◎ ${st.range}</span>` : ''}<span title="Command per minion">⚖ ${st.weight}</span><span title="minions out of the pit per turn">⛫ ${st.out}/turn</span>`));
+        box.appendChild(el('div', 'camp-trait', `<b>${d.traitTitle}.</b> ${d.traitText}`));
+        if (on) {
+          const n = sel.types[t];
+          const row = el('div', 'camp-count', '<span>Army:</span>');
+          const minus = el('button', 'btn tiny', '−'), plus = el('button', 'btn tiny', '+');
+          minus.addEventListener('click', () => { if (sel.types[t] > 1) { sel.types[t]--; redraw(); } });
+          plus.addEventListener('click', () => { if (used + d.weight <= cmd) { sel.types[t]++; redraw(); } });
+          row.appendChild(minus); row.appendChild(el('b', null, String(n))); row.appendChild(plus);
+          row.appendChild(el('span', 'muted', ` × ⚖${d.weight} = ${n * d.weight} Command`));
+          box.appendChild(row);
+          const cards = el('div', 'camp-cards');
+          for (const id of HB.cards.MINION_CARDS(t)) {
+            const cd = CARDS[id], chosen = sel.minion.includes(id), okReq = (cd.req || 1) <= n;
+            const c = el('div', 'pick small' + (chosen ? ' on' : '') + (okReq ? '' : ' locked'), `<div class="pick-icon">${HB.icons.svg(iconOf(id))}</div><div class="pick-name">${cd.title}${cd.req > 1 ? ` <em>${cd.req}+</em>` : ''}</div><div class="pick-text">${cd.text}</div>`);
+            c.addEventListener('click', () => { if (!okReq) return; sel.minion = sel.minion.filter(x => CARDS[x].owner !== t).concat([id]); redraw(); });
+            cards.appendChild(c);
+          }
+          box.appendChild(cards);
+        }
+        tg.appendChild(box);
       }
-      root.appendChild(pg);
+      root.appendChild(tg);
+    },
+    loadoutProblem(sel, lv) {
+      const types = Object.keys(sel.types), cmd = R.heroStatsAt(lv.hero).command;
+      if (sel.hero.length !== CFG.HERO_CARDS) return `pick ${CFG.HERO_CARDS} Overlord cards`;
+      if (!types.length) return 'take at least one minion type';
+      if (types.length > CFG.MINION_TYPES_MAX) return `at most ${CFG.MINION_TYPES_MAX} minion types`;
+      if (weightOf(sel) > cmd) return `the army needs ${weightOf(sel)} Command, the Overlord has ${cmd}`;
+      for (const t of types) {
+        const c = sel.minion.filter(id => CARDS[id].owner === t);
+        if (c.length !== 1) return `pick one card for ${TYPES[t].title.toLowerCase()}`;
+        if ((CARDS[c[0]].req || 1) > sel.types[t]) return `${CARDS[c[0]].title} needs ${CARDS[c[0]].req}+ ${TYPES[t].title.toLowerCase()}`;
+      }
+      return '';
     },
     validateSetup() {
       const S = this.setup;
-      const okP = p => p.cards.length === CFG.DECK_SIZE && p.pois.length === CFG.POI_PICKS;
-      const ok = okP(S.p[1]) && (S.mode === 'bot' || okP(S.p[2]));
-      $('#btn-start').disabled = !ok; $('#btn-play').disabled = !ok; // an unfinished custom deck cannot start a match
-      $('#setup-hint').textContent = ok ? '' : `Pick exactly ${CFG.DECK_SIZE} cards and ${CFG.POI_PICKS} outposts for each player.`;
+      const p1 = this.loadoutProblem(S.p[1], S.levels[1]), p2 = S.mode === 'hotseat' ? this.loadoutProblem(S.p[2], S.levels[2]) : '';
+      const ok = !p1 && !p2;
+      $('#btn-start').disabled = !ok; $('#btn-play').disabled = !ok; // an unfinished camp cannot start a match
+      $('#setup-hint').textContent = ok ? '' : (p1 ? 'Blue: ' + p1 : 'Red: ' + p2) + '.';
       if ($('#menu-presets')) this.renderMenuPresets();
     },
     startFromSetup() {
       const S = this.setup;
-      // D-070: by default the bot gets a random army preset each match
+      // D-070: by default the bot gets a random army each match; it plays at the same levels as the player (fair test)
       const keys = Object.keys(PRESETS), botKey = S.botPreset === 'random' || !PRESETS[S.botPreset] ? keys[Math.floor(Math.random() * keys.length)] : S.botPreset;
-      const p2 = S.mode === 'bot' ? { deck: PRESETS[botKey].cards.slice(), pois: PRESETS[botKey].pois.slice(), bot: true, botLevel: S.botLevel, name: 'Red (bot)', preset: botKey }
-        : { deck: S.p[2].cards, pois: S.p[2].pois, bot: false, name: 'Red', preset: presetOf(S.p[2]) };
+      const p2 = S.mode === 'bot' ? { loadout: clone(PRESETS[botKey]), levels: clone(S.levels[1]), bot: true, botLevel: S.botLevel, name: 'Red (bot)', preset: botKey }
+        : { loadout: clone(S.p[2]), levels: clone(S.levels[2]), bot: false, name: 'Red', preset: presetOf(S.p[2]) };
       const seed = S.seed.trim() ? (parseInt(S.seed, 10) || hashStr(S.seed)) : (Math.random() * 0xffffffff) >>> 0;
-      this.opts = { seed, roundLimit: S.rounds, attackLimit: S.attacks != null ? S.attacks : CFG.ATTACKS_PER_TURN, citadelMode: S.citadel, players: { 1: { deck: S.p[1].cards, pois: S.p[1].pois, bot: false, name: 'Blue', preset: presetOf(S.p[1]) }, 2: p2 } };
+      this.opts = { seed, roundLimit: S.rounds, players: { 1: { loadout: clone(S.p[1]), levels: clone(S.levels[1]), bot: false, name: 'Blue', preset: presetOf(S.p[1]) }, 2: p2 } };
       this.startGame(this.opts);
     },
 
@@ -187,8 +247,8 @@ window.HB = window.HB || {};
     // D-070: army presets — the same three buttons on the main menu and in the builder
     choosePreset(key) {
       const S = this.setup;
-      S.preset = key; S.p[1] = { cards: PRESETS[key].cards.slice(), pois: PRESETS[key].pois.slice() };
-      try { localStorage.setItem('hexband.preset', key); } catch (e) {}
+      S.preset = key; S.p[1] = clone(PRESETS[key]);
+      try { localStorage.setItem('hexband.v4.preset', key); } catch (e) {}
       this.renderMenuPresets(); this.renderBuilder(1); this.validateSetup();
     },
     renderMenuPresets() {
@@ -200,7 +260,7 @@ window.HB = window.HB || {};
         b.addEventListener('click', () => this.choosePreset(key));
         root.appendChild(b);
       }
-      if (!cur) root.appendChild(el('p', 'muted preset-custom', 'Custom deck from Settings'));
+      if (!cur) root.appendChild(el('p', 'muted preset-custom', 'Custom army from Settings'));
     },
     initMenu() {
       this.renderMenuPresets();
@@ -214,28 +274,49 @@ window.HB = window.HB || {};
     },
     showMenu() { $('#game').hidden = true; $('#setup').hidden = true; $('#overlay').hidden = true; $('#menu').hidden = false; this.state = null; this.layoutMenu(); },
     showSetup() { $('#menu').hidden = true; $('#game').hidden = true; $('#setup').hidden = false; },
-    // a tiny hand-made board state the normal renderer can draw
+    // a tiny hand-made Overlord board the normal renderer can draw (menu scenes, D-085)
     miniState(cols, rows, fn) {
-      const st = () => ({ attackBonus: 0, formationUntil: -1 });
-      const s = { cols, rows, cells: {}, pois: [], blocked: {}, turnIndex: 0, current: 1, phase: 'play', decorSeed: 11,
-        players: [null, { id: 1, warband: { col: 1, row: 1, minions: 24 }, status: st() }, { id: 2, warband: { col: 3, row: 1, minions: 24 }, status: st() }] };
+      const pl = (id, types, col, row) => {
+        const p = { id, name: id === 1 ? 'Blue' : 'Red', types: Object.keys(types), comp: Object.assign({}, types), retinue: {}, levels: { hero: 1 }, status: { warCryUntil: -1, attackBonus: 0, formationUntil: -1 }, warband: { col, row, hp: 20, maxHp: 20, minions: 0 }, hand: [], deck: [], discard: [] };
+        for (const t in types) { p.retinue[t] = { n: types[t], wound: 0 }; p.levels[t] = 1; }
+        return p;
+      };
+      const s = { variant: 'overlord', cols, rows, cells: {}, pois: [], blocked: {}, walls: {}, swamps: {}, summons: [], squads: [], castles: {}, turnIndex: 0, current: 1, phase: 'play', decorSeed: 11,
+        players: [null, pl(1, { brawler: 8, runner: 6, archer: 4 }, 1, 2), pl(2, { brute: 3, brawler: 5, archer: 4 }, 3, 0)] };
       for (let c = 0; c < cols; c++) for (let r = 0; r < hex.rowsInCol(c, rows); r++) s.cells[hex.key(c, r)] = { col: c, row: r, owner: 0, bonus: 0, poi: -1 };
       fn(s); return s;
     },
     buildMenuPics() {
       const mk = (id, s) => { const cv = $(id); if (!cv) return null; const rd = new HB.Renderer(cv); rd.setState(s); this.menuPics.push({ el: cv, rd }); return rd; };
-      const castle = (s, pid, col, row) => { s.castles = s.castles || {}; s.castles[pid] = { col, row }; s.cells[hex.key(col, row)].castle = pid; };
-      // 1 · territory at the end: a split board, each side with its castle
-      const s3 = this.miniState(5, 4, s => { s.players[1].warband = { col: 1, row: 2, minions: 18 }; s.players[2].warband = { col: 3, row: 0, minions: 14 }; for (const k in s.cells) { const c = s.cells[k]; c.owner = c.row >= 2 || (c.row === 1 && c.col <= 2) ? 1 : (c.col === 0 && c.row === 0 ? 0 : 2); } castle(s, 1, 2, 3); castle(s, 2, 4, 0); });
+      const castle = (s, pid, col, row) => { s.castles[pid] = { col, row }; const c = s.cells[hex.key(col, row)]; c.castle = pid; c.owner = pid; };
+      // 1 · territory at the end: a split board, each Overlord in front of his castle
+      const s3 = this.miniState(5, 4, s => {
+        s.players[1].warband = { col: 1, row: 2, hp: 20, maxHp: 20 }; s.players[2].warband = { col: 3, row: 1, hp: 20, maxHp: 20 };
+        for (const k in s.cells) { const c = s.cells[k]; c.owner = c.row >= 2 || (c.row === 1 && c.col <= 2) ? 1 : (c.col === 0 && c.row === 0 ? 0 : 2); }
+        castle(s, 1, 2, 3); castle(s, 2, 4, 0);
+      });
       mk('#pic-terr', s3);
-      // 2 · castle (D-076): a big blue warband hammers a small red castle, which sheds hexes with every blow
-      const s1 = this.miniState(5, 4, s => { s.players[1].warband = { col: 2, row: 1, minions: 30 }; s.players[2].warband = { col: -99, row: -99, minions: 0, dead: true }; for (const k in s.cells) { const c = s.cells[k]; c.owner = c.col <= 2 ? 1 : 2; } castle(s, 2, 3, 1); castle(s, 1, 0, 2); });
+      // 2 · slay the Overlord: blue brawlers charge a red Overlord whose retinue is off on a sortie
+      const s1 = this.miniState(5, 4, s => {
+        s.players[1].warband = { col: 0, row: 2, hp: 20, maxHp: 20 }; s.players[2].warband = { col: 3, row: 1, hp: 7, maxHp: 20 };
+        s.players[2].retinue.brawler.n = 0; s.players[2].retinue.brute.n = 0; s.players[2].retinue.archer.n = 1;
+        s.players[1].retinue.brawler.n = 0;
+        s.squads.push({ id: 1, owner: 1, type: 'brawler', n: 8, col: 2, row: 1, state: 'out' });
+        s.squads.push({ id: 2, owner: 2, type: 'brawler', n: 5, col: 4, row: 3, state: 'return' });
+        for (const k in s.cells) { const c = s.cells[k]; c.owner = c.col <= 2 ? 1 : 2; }
+        castle(s, 2, 4, 0); castle(s, 1, 0, 3);
+      });
       const r1 = mk('#pic-castle', s1);
-      if (r1) setInterval(() => { if ($('#menu').hidden) return; const p = r1.cellXY(3, 1); r1.spawnFight(p.x, p.y); r1.castleShake[2] = performance.now(); r1.addText(3, 1, '−5', '#ff6b6b', { dy: -r1.size * 0.9, big: true }); }, 1700);
+      if (r1) setInterval(() => { if ($('#menu').hidden) return; const p = r1.cellXY(3, 1); r1.spawnFight(p.x, p.y); r1.shake[2] = performance.now(); r1.addText(3, 1, '−5 ❤', '#ff6b6b', { dy: -r1.size * 0.9, big: true }); }, 1700);
       this.layoutMenu();
     },
     layoutMenu() { for (const m of this.menuPics) { const r = rectOf(m.el.parentElement); if (r.width > 0) m.rd.resize(Math.floor(r.width), Math.floor(r.height)); } },
-    positions() { const s = this.state, at = pid => { const w = s.players[pid].warband; return { col: w.col, row: w.row, minions: w.minions, dead: !!w.dead }; }; return { 1: at(1), 2: at(2) }; },
+    // before every action: where the Overlords stand, and (D-085) the board's counts the animation starts from
+    positions() {
+      const s = this.state, at = pid => { const w = s.players[pid].warband; return { col: w.col, row: w.row, minions: w.minions, dead: !!w.dead }; };
+      if (this.renderer && this.renderer.snapshotView) this.renderer.prevView = this.renderer.snapshotView(s);
+      return { 1: at(1), 2: at(2) };
+    },
     layout() {
       const wrap = $('#board-wrap'); if (!this.renderer || !this.state) return;
       const r = rectOf(wrap);
@@ -293,6 +374,7 @@ window.HB = window.HB || {};
         $(`#hud-${pid} .hud-terr`).textContent = sc[pid].territory;
         $(`#hud-${pid} .hud-pct`).textContent = '(' + Math.round(sc[pid].cells / total * 100) + '%)';
         $(`#hud-${pid} .hud-min`).textContent = p.warband.minions;
+        $(`#hud-${pid} .hud-hp`).textContent = p.warband.hp; // D-085: the Overlord's HP
         $(`#hud-${pid} .hud-poi`).textContent = sc[pid].pois;
         $(`#hud-${pid}`).classList.toggle('active', s.current === pid && s.phase === 'play');
       }
@@ -301,13 +383,15 @@ window.HB = window.HB || {};
       const p = this.handPlayer(), mine = s.current === p.id;
       const busy = this.busy || !mine || s.phase !== 'play' || this.handoverPending;
       const hideHand = this.handoverPending;
-      const hand = $('#hand'); hand.innerHTML = '';
+      const hand = $("#hand"); hand.innerHTML = ""; hand.style.gridTemplateColumns = `repeat(${CFG.HAND_SIZE}, minmax(0, 1fr))`;
       const playable = p.hand.map(card => mine && R.getPlay(s, card).ok);
       for (let i = 0; i < CFG.HAND_SIZE; i++) {
         const slot = el('div', 'slot');
         const card = p.hand[i];
         if (card) {
           const c = el('div', cardClass(card.def) + (playable[i] ? '' : ' disabled'), cardHTML(card.def));
+          const why = !playable[i] && mine ? R.getPlay(s, card).why : null; // D-085: why a minion card is dimmed
+          if (why === 'out') c.appendChild(el('div', 'card-away', 'on a sortie')); else if (why === 'none') c.appendChild(el('div', 'card-away', 'none left'));
           c.dataset.uid = card.uid;
           if (hideHand) c.classList.add('hidden-card');
           if (this.pendingIncoming.has(card.uid)) c.classList.add('incoming');
@@ -335,11 +419,12 @@ window.HB = window.HB || {};
       $('#btn-end-fb').hidden = busy || s.playedThisTurn < 1 || p.hand.length < CFG.HAND_SIZE;
     },
     statusText(p) {
-      const s = this.state, st = p.status, out = [];
-      if (st.attackBonus) out.push(`Battle Cry +${st.attackBonus}`);
-      if (R.active(s, st.formationUntil)) out.push('Formation −2');
-      const step = s.stepUsed ? 'Free step used.' : 'Free step: tap a marked hex or drag from your warband.';
-      return (out.length ? 'Effects: ' + out.join(', ') + ' · ' : '') + step;
+      const s = this.state, out = [];
+      if (R.active(s, p.status.warCryUntil)) out.push('War Cry +1');
+      const th = R.heroThreat(s, p.id); // D-085: warn when the enemy could break through the shield next turn
+      if (th.threat > th.shield) out.push(`⚠ the enemy could hit your Overlord for ${th.threat} against a shield of ${th.shield}`);
+      const step = s.stepUsed ? 'Free step used.' : 'Free step: tap a marked hex or drag from your Overlord.';
+      return (out.length ? out.join(' · ') + ' · ' : '') + step;
     },
     // flying card between two screen rects (played card → discard, deck → slot, discard → deck)
     fly(fromRect, toRect, html, cls, dur) {
@@ -410,25 +495,27 @@ window.HB = window.HB || {};
       $('#card-desc').innerHTML = `<div class="desc-body"><b>${title}</b><span>${text}</span><div class="desc-forecast" hidden></div></div><div class="desc-cancel">${hint}</div>`;
       $('#card-desc').hidden = false;
     },
-    // D-047: battle forecast while an attacking route (or a ranged card) is being aimed — shared by both input schemes
+    // D-047 / D-085: the forecast while a card is aimed — the move is played on a copy of the match, so it is always true:
+    // enemy and own losses, both Overlords' HP, a win. Shared by both input schemes and by the free-step gesture.
+    forecastText(o, s) {
+      if (!o) return null;
+      const lostE = o.enemyArmy[0] - o.enemyArmy[1], lostM = o.myArmy[0] - o.myArmy[1], hE = o.enemyHero[0] - o.enemyHero[1], hM = o.myHero[0] - o.myHero[1];
+      if (o.won) return { text: 'The enemy Overlord falls!', win: true, long: '<b>Forecast:</b> the enemy Overlord falls — you win.' };
+      if (!lostE && !lostM && !hE && !hM) return null;
+      const parts = [];
+      if (lostE || hE) parts.push(`enemy −${lostE}${hE ? ` ❤${o.enemyHero[0]}→${o.enemyHero[1]}` : ''}`);
+      if (lostM || hM) parts.push(`you −${lostM}${hM ? ` ❤${o.myHero[0]}→${o.myHero[1]}` : ''}`);
+      return { text: parts.join(' · '), bad: lostM + hM > lostE + hE, long: `<b>Forecast:</b> ${parts.join(', ')}.` + (o.lost ? ' Your Overlord would fall!' : '') };
+    },
     updateForecast(ctx) {
-      const s = this.state, p = this.current(), enemy = s.players[3 - p.id], kind = ctx.def.kind, rd = this.renderer;
-      let fc = null;
-      const lastAttack = ctx.choice && ctx.choice.path ? ctx.choice.path.find(c => c.attack) : null;
-      if (ctx.valid && lastAttack) fc = R.forecast(s, p, enemy, 'clash', ctx.def.charge || 0, lastAttack);
-      else if (ctx.valid && ctx.choice && (kind === 'volley' || kind === 'catapult')) fc = R.forecast(s, p, enemy, kind, kind === 'catapult' ? ctx.def.damage : 0, null, ctx.choice.target);
-      rd.forecast = fc ? Object.assign({ a: p.id, d: enemy.id }, fc) : null;
+      const s = this.state, rd = this.renderer;
+      let f = null;
+      if (ctx.valid && ctx.choice && ctx.uid != null) f = this.forecastText(R.forecastPlay(s, ctx.uid, ctx.choice), s);
+      const cell = ctx.choice ? (ctx.choice.end || ctx.choice.cell) : null;
+      rd.forecast = f && cell ? Object.assign({ cell }, f) : null;
       const fcEl = $('#card-desc .desc-forecast');
       if (!fcEl) return;
-      if (fc && fc.kind === 'castle') { // D-074: an attack on the castle itself
-        fcEl.innerHTML = `<b>Castle forecast:</b> −${fc.dmgToDef} territory, defence ${fc.defBefore} → ${fc.defAfter}` + (fc.ranged ? ' — a ranged hit cannot take the castle' : `; the castle strikes back: you −${fc.dmgToAtt} (${p.warband.minions} → ${fc.aAfter})` + (fc.falls ? ` — ${fc.aAfter} > ${fc.defAfter}: the castle falls and you win` : fc.aAfter <= 0 ? ' — your warband is destroyed' : ` — ${fc.aAfter} is not above ${fc.defAfter}: the castle holds`));
-        fcEl.hidden = false;
-      } else if (fc) {
-        const outcome = { castleHold: 'the enemy holds its castle — you fall back', defenderRetreats: 'the enemy falls back, you take its hex', attackerRetreats: fc.aAfter === fc.dAfter ? 'equal numbers — you fall back' : 'you fall back', ranged: 'no retaliation',
-          eliminated: fc.dAfter <= 0 && fc.aAfter <= 0 ? 'both warbands fall and gather again in their castles' : fc.dAfter <= 0 ? 'the enemy warband falls (it gathers again in its castle next turn)' : 'your warband falls (it gathers again in your castle)' }[fc.result];
-        fcEl.innerHTML = `<b>Battle forecast:</b> you −${fc.dmgToAtt} (${p.warband.minions} → ${fc.aAfter}), enemy −${fc.dmgToDef} (${enemy.warband.minions} → ${fc.dAfter}) — ${outcome}`;
-        fcEl.hidden = false;
-      } else fcEl.hidden = true;
+      if (f) { fcEl.innerHTML = f.long; fcEl.hidden = false; } else fcEl.hidden = true;
     },
     startDrag(e, uid, cardEl) {
       const s = this.state, p = this.handPlayer();
@@ -486,7 +573,7 @@ window.HB = window.HB || {};
         if (play.path) play.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: i + 1, strong: dg.over, attack: !!c.attack }));
       }
       rd.highlights = hl;
-      this.updateForecast({ valid: dg.valid, choice: dg.choice, over: dg.over, def: dg.def });
+      this.updateForecast({ valid: dg.valid, choice: dg.choice, over: dg.over, def: dg.def, uid: dg.uid });
       fx.classList.toggle('ok', dg.over && dg.valid);
       $('#hand-area').classList.toggle('drop-cancel', !dg.over);
     },
@@ -564,7 +651,7 @@ window.HB = window.HB || {};
         cellTargetHighlights(hl, play, opt, sel.def, this.state);
       } else { sel.valid = true; }
       rd.highlights = hl;
-      this.updateForecast({ valid: sel.valid, choice: sel.choice, over: has, def: sel.def });
+      this.updateForecast({ valid: sel.valid, choice: sel.choice, over: has, def: sel.def, uid: sel.uid });
       return sel.valid;
     },
     commitSel(from) {
@@ -631,7 +718,7 @@ window.HB = window.HB || {};
         rd.highlights = opt ? [{ col: opt.end.col, row: opt.end.row, kind: 'path', label: 1, strong: true, attack: !!opt.path[0].attack }] : [];
         rd.pathFrom = opt ? { col: this.state.players[this.state.current].warband.col, row: this.state.players[this.state.current].warband.row } : null;
         rd.forecast = null;
-        if (opt && opt.path[0].attack) { const s = this.state, p = s.players[s.current]; rd.forecast = Object.assign({ a: p.id, d: 3 - p.id }, R.forecast(s, p, s.players[3 - p.id], 'clash', 0, opt.end)); }
+        if (opt && opt.path[0].attack) { const f = this.forecastText(R.forecastStep(this.state, opt.dir), this.state); rd.forecast = f ? Object.assign({ cell: opt.end }, f) : null; }
       });
       board.addEventListener('pointerup', e => {
         if (!this.stepPress || e.pointerId !== this.stepPress.id) return;
@@ -718,10 +805,14 @@ window.HB = window.HB || {};
       if (!cell) return;
       const c = s.cells[hex.key(cell.col, cell.row)];
       const owner = c.owner ? s.players[c.owner].name : 'neutral';
-      let txt = `Hex ${cell.col},${cell.row}: ${owner}${c.bonus ? ', +' + c.bonus + ' bonus' : ''}`;
-      if (c.poi >= 0) { const poi = s.pois[c.poi], d = POIS[poi.type]; txt += ` · ${d.title} → ${CARDS[R.poiCardId(poi)].title}`; }
-      const occ = R.occupant(s, cell);
-      if (occ) { const w = s.players[occ].warband; txt += ` · ${s.players[occ].name} warband, ${w.minions} minions`; }
+      let txt = `Hex ${cell.col},${cell.row}: ${owner}${c.castle ? ' castle' : ''}${c.bonus ? ', +' + c.bonus + ' bonus' : ''}`;
+      if (c.poi >= 0) { const q = s.pois[c.poi], d = HB.cards.POINT_KINDS[q.kind]; txt += ` · ${d.title}: ${d.text}`; }
+      // D-085: who stands here — an Overlord with his retinue, or a group of minions
+      const g = R.groupAt(s, cell);
+      if (g && g.kind === 'hero') {
+        const p = s.players[g.pid], ret = p.types.map(t => `${p.retinue[t].n} ${TYPES[t].title.toLowerCase()}`).join(', ');
+        txt += ` · ${p.name} Overlord ❤${p.warband.hp}/${p.warband.maxHp}, with ${ret || 'no one'}`;
+      } else if (g) txt += ` · ${s.players[g.pid].name} ${TYPES[g.sq.type].title.toLowerCase()} ×${g.sq.n} (${{ out: 'on a sortie', return: 'on the way back', wait: 'waiting for a road' }[g.sq.state]})`;
       $('#status-line').textContent = txt;
     },
 
@@ -746,11 +837,11 @@ window.HB = window.HB || {};
     showGameOver() {
       const s = this.state, sc = s.scores;
       const title = s.winner ? `${s.players[s.winner].name} win` : 'Draw';
-      const reason = { castle: 'The enemy castle has fallen', elimination: 'Enemy warband destroyed', domination: 'The whole map captured', territory: 'More territory', 'tiebreak:pois': 'Tie-break: more outposts', 'tiebreak:minions': 'Tie-break: more minions', 'tiebreak:lastRound': 'Tie-break: more captured in the last round', draw: 'A perfect tie' }[s.endReason] || s.endReason;
+      const reason = { hero: 'The enemy Overlord has fallen', territory: 'More territory', 'tiebreak:pois': 'Tie-break: more upgrade points', 'tiebreak:hero': 'Tie-break: a healthier Overlord', 'tiebreak:minions': 'Tie-break: a bigger army', draw: 'A perfect tie' }[s.endReason] || s.endReason;
       const row = (label, k) => `<tr><td>${label}</td><td class="c1">${sc[1][k]}</td><td class="c2">${sc[2][k]}</td></tr>`;
       this.overlay(`<h2 class="${s.winner ? 'w' + s.winner : ''}">${title}</h2><p>${reason}</p>
         <table class="score"><tr><th></th><th class="c1">${s.players[1].name}</th><th class="c2">${s.players[2].name}</th></tr>
-        ${row('Territory points', 'territory')}${row('Hexes', 'cells')}${row('Outposts', 'pois')}${row('Minions', 'minions')}</table>
+        ${row('Territory points', 'territory')}${row('Hexes', 'cells')}${row('Upgrade points', 'pois')}${row('Overlord HP', 'hero')}${row('Army', 'minions')}</table>
         <p class="muted">Seed ${s.seed} · ${s.roundLimit} rounds</p>
         <div class="row"><button class="btn primary" id="btn-rematch">Rematch</button><button class="btn ghost" id="btn-menu">Main menu</button></div>`);
       $('#btn-rematch').addEventListener('click', () => { this.opts.seed = (Math.random() * 0xffffffff) >>> 0; this.startGame(this.opts); });
@@ -759,17 +850,17 @@ window.HB = window.HB || {};
     showHelp() {
       const tap = this.setup.control === 'tap';
       const ov = this.overlay(`<div class="help"><h2>How to play</h2>
-        <p><b>Turn.</b> At the start of your turn you draw up to 4 cards (when the deck runs out, the discard pile is shuffled into it). ${tap
-          ? 'To play a card, tap it: a description panel appears over the hand and every target lights up on the board. Tap the hex you want — the warband acts at once and the card goes to the discard pile. A card without a target (Rally, Battle Cry…) is played by tapping the board or tapping the card again. Changed your mind — tap the description panel and the card stays in your hand.'
-          : 'To play a card, drag it onto the board: the route is previewed, the warband acts as soon as you release the card, and the card goes to the discard pile. Release it over the hand and it returns.'} Play as many cards per turn as you like, at least one; after the first card an End Turn button appears in the rightmost slot. The control scheme can be switched in Settings → Controls.</p>
-        <p><b>Free step.</b> Once per turn your warband may take one step to a neighbouring hex without a card: tap a hex marked with a chevron next to it, or press the warband and drag in the direction you want — the hex that way lights up, let go anywhere to step (let go on the warband to cancel). The boot badge by the warband shows whether the step is still available. Stepping onto the enemy is an attack. The free step does not count as the card you must play each turn.</p>
-        <p><b>Field cards.</b> Palisade builds a wall one hex ahead — warbands and summons cannot cross it, and it closes enclosures like a border. Levy and Outriders summon units that capture a hex each turn on their own for 1–2 turns; an enemy warband that walks onto them kills them. Fortify makes your hexes within 2 of the warband impossible to capture or burn for 2 rounds. Scorch turns enemy hexes in a line of 3 neutral. Quagmire turns a hex into a swamp that stops any warband entering it.</p>
-        <p><b>Directions.</b> A movement card sets only the shape and length of the route (straight, hook, zigzag, half-ring). Where to go is your choice: every possible end of the route is highlighted, and the one closest to where you release or tap is used. For Wide March the side is left or right of the warband.</p>
-        <p><b>Territory.</b> Hexes you walk through take your colour. An area surrounded on every side by your own hexes (a Palisade wall counts as a border, the map edge does not) becomes entirely yours, enemy hexes included — unless the enemy warband stands in it. Castles never change hands this way. Ringing the enemy warband completely deals siege damage (one minion per ring hex painted by that card).</p>
-        <p><b>Combat.</b> Warbands never fight on their own: to attack, run a movement card's route (or your free step) onto the enemy's hex — that step is highlighted red with a sword and the move ends there. While you aim, both warbands show their predicted losses and this panel says who falls back. Both strike at once: strike = 5·(minions/24)^0.7, Battle Cry +2, Charge +2, Formation −2 on incoming strikes; damage is rounded when dealt. The warband with fewer men left falls back one hex. A warband at 0 leaves the board and gathers again in its castle at the start of its owner's next turn with 16 + 4 per outpost + 6 for the Citadel. Volley and Catapult strike from a distance with no retaliation — at the warband or at the castle.</p>
-        <p><b>Castles.</b> Defence = ${CFG.CASTLE_BASE} + 1 per hex held + 2 per outpost + 4 for the Citadel. Step onto the enemy castle to attack it: it takes normal damage, and its owner loses that many hexes, farthest from the castle first (ordinary hexes before outposts, outposts before the Citadel). At the same moment the castle strikes back like a warband as big as its defence. If after both hits your warband outnumbers the castle's defence, you march in: the castle falls and you win. Ranged hits burn hexes but cannot take a castle. A warband standing in its castle takes the blow instead, strikes back and never falls back; what it cannot absorb hits the castle.</p>
-        <p><b>Victory</b>: destroy the enemy castle, or have more territory points when the round limit is reached. Tie-breaks: outposts → minions → captured in the last round.</p>
-        <p class="muted">Pictograms: arrows — movement (chevrons = number of steps), figures — minions, sword — attack, shield — defence, flag — territory points.</p>
+        <p><b>Goal.</b> Slay the enemy Overlord, or hold more territory when round ${this.state ? this.state.roundLimit : this.setup.rounds} ends. Tie-breaks: upgrade points → Overlord HP → army size.</p>
+        <p><b>Turn.</b> Your hand holds 3 cards from a deck of 6 — 3 Overlord cards and one card for each minion type. ${tap
+          ? 'Tap a card: the targets light up; tap the hex you want and it is played at once. A card without a target is played by tapping the board or the card again; tap the description panel to change your mind.'
+          : 'Drag a card onto the board: the route and the forecast are previewed; release it and it is played at once. Release it over the hand and it returns.'} Play at least one card a turn, then End Turn. The Overlord also has one free step a turn: tap a marked hex next to him, or press him and drag the way you want.</p>
+        <p><b>The Overlord and his retinue.</b> Up to three minion types stand around the Overlord, each in its own sector with a plaque showing how many there are. Any blow at the Overlord hits the retinue first — highest shield first (brutes, brawlers, healers, then runners and archers) — and only then the Overlord himself. The banner shows his HP (❤) and the shield (🛡, the retinue's HP); the shield flashes red when the enemy could break through it next turn.</p>
+        <p><b>Sorties.</b> A minion card sends <i>all</i> minions of its type that stand with the Overlord along its route. They move Speed steps a turn, paint the hexes they walk through (Runners paint a hex to the side as well), and fight whatever enemy group stands in the way: both sides strike at once, strike = minions × Attack (+ card bonus, + War Cry); damage removes minions by their HP, the rest wounds the next one. Archers shoot an enemy within 2 hexes instead, with no retaliation. When the route is done the group walks back at its Return speed and joins the Overlord. One sortie per type at a time.</p>
+        <p><b>Pits and the road.</b> Each type has a pit in a tower of your castle. Fallen minions go back to it; at the start of your turn it sends out new ones (its Out number) while the type has fewer than your army size. If your own hexes connect the castle to the Overlord, they run straight to him. If not, they gather at your hex nearest to him and wait for a road — the enemy can attack them there, and can cut your road by taking hexes.</p>
+        <p><b>Territory.</b> Surround an area with your own hexes (a wall counts as a border, the map edge does not) and it all becomes yours, enemy hexes included — unless the enemy Overlord stands in it. Castles never change hands.</p>
+        <p><b>Upgrade points.</b> Each mirrored pair belongs to a minion type: +1 level to your minions of that type while you hold it (at most +2). The Citadel heals your Overlord by 5 when taken and adds 1 to every pit's Out while held.</p>
+        <p><b>Camp.</b> In Settings pick the Overlord's level and 3 cards, and up to 3 minion types with their level, their number (their Command weight must fit the Overlord's Command) and one card each. Every number shown there is the one the match uses.</p>
+        <p class="muted">The board is big: zoom with the mouse wheel or a two-finger pinch, drag to scroll, or use + / − / ⤢ in its corner.</p>
         <button class="btn primary" id="btn-help-close">Got it</button></div>`);
       $('#btn-help-close').addEventListener('click', () => { ov.hidden = true; });
     },
