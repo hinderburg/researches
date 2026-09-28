@@ -30,11 +30,17 @@ window.HB = window.HB || {};
   function cellTargetHighlights(hl, play, opt, def, s) {
     for (const o of play.options) hl.push({ col: o.cell.col, row: o.cell.row, kind: 'target', strong: o === opt });
     if (!opt) return;
-    if (opt.cells) opt.cells.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: i + 1, strong: true }));
+    if (opt.cells) opt.cells.forEach(c => hl.push({ col: c.col, row: c.row, kind: 'burn' })); // D-087: the line of fire
     if (def.kind === 'palisade') for (const t of [-1, 0, 1]) {
       const m = hex.neighbor(opt.cell.col, opt.cell.row, hex.turn(opt.dir, t));
       if (hex.exists(m.col, m.row, s.cols, s.rows)) hl.push({ kind: 'wall', a: opt.cell, b: m });
     }
+  }
+  // D-087: a move's preview — a dotted route with the number of the turn at each stop, and the hexes it will capture
+  function planHighlights(hl, s, def, opt) {
+    const plan = R.planOf(s, def, opt);
+    for (const c of plan.steps) hl.push({ col: c.col, row: c.row, kind: 'path', label: c.stop ? c.turn : null, strong: true, attack: c.attack });
+    for (const c of plan.capture) hl.push({ col: c.col, row: c.row, kind: 'capture' });
   }
   const defaultLevels = () => Object.assign({ hero: 1 }, ...TYPE_ORDER.map(t => ({ [t]: 1 })));
 
@@ -550,7 +556,7 @@ window.HB = window.HB || {};
         dg.choice = opt; dg.valid = true;
         const ends = new Set(play.options.map(o => hex.key(o.end.col, o.end.row)));
         for (const k of ends) { const [c, r] = k.split(',').map(Number); hl.push({ col: c, row: r, kind: 'target', strong: false }); }
-        opt.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: i + 1, strong: true, attack: !!c.attack }));
+        planHighlights(hl, s, dg.def, opt);
       } else if (play.options && play.options[0] && play.options[0].axis != null) {
         // Flank Claim: pick the axis whose direction is closest to pointer-from-warband
         const wc = rd.screenXY(p.warband.col, p.warband.row);
@@ -631,7 +637,7 @@ window.HB = window.HB || {};
         }
         const ends = new Set(play.options.map(o => hex.key(o.end.col, o.end.row)));
         for (const k of ends) { const [c, r] = k.split(',').map(Number); hl.push({ col: c, row: r, kind: 'target', strong: false }); }
-        if (opt) { sel.choice = opt; sel.valid = true; opt.path.forEach((c, i) => hl.push({ col: c.col, row: c.row, kind: 'path', label: i + 1, strong: true, attack: !!c.attack })); }
+        if (opt) { sel.choice = opt; sel.valid = true; planHighlights(hl, this.state, sel.def, opt); }
       } else if (play.options && play.options[0] && play.options[0].axis != null) {
         let opt = null;
         if (has) {
@@ -717,7 +723,7 @@ window.HB = window.HB || {};
         if (!this.stepPress || e.pointerId !== this.stepPress.id) return;
         const opt = this.stepOptionToward(e.clientX, e.clientY), rd = this.renderer;
         this.stepPress.opt = opt;
-        rd.highlights = opt ? [{ col: opt.end.col, row: opt.end.row, kind: 'path', label: 1, strong: true, attack: !!opt.path[0].attack }] : [];
+        rd.highlights = []; if (opt) planHighlights(rd.highlights, this.state, { kind: 'hero_move' }, opt);
         rd.pathFrom = opt ? { col: this.state.players[this.state.current].warband.col, row: this.state.players[this.state.current].warband.row } : null;
         rd.forecast = null;
         if (opt && opt.path[0].attack) { const f = this.forecastText(R.forecastStep(this.state, opt.dir), this.state); rd.forecast = f ? Object.assign({ cell: opt.end }, f) : null; }

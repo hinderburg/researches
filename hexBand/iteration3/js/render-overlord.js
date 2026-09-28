@@ -314,6 +314,7 @@ window.HB = window.HB || {};
     this.drawSquads(ctx, now);
     const order = [1, 2].sort((a, b) => s.players[a].warband.row - s.players[b].warband.row);
     for (const pid of order) this.drawOverlord(ctx, s.players[pid], now);
+    this.drawPlanV4(ctx, now, 'over'); // D-087
     this.drawForecastV4(ctx, now);
   };
 
@@ -342,14 +343,15 @@ window.HB = window.HB || {};
     ctx.fillStyle = '#ffe14a'; ctx.beginPath(); ctx.arc(x - rr * 0.28, y - rr * 0.95, rr * 0.14, 0, Math.PI * 2); ctx.arc(x + rr * 0.28, y - rr * 0.95, rr * 0.14, 0, Math.PI * 2); ctx.fill();
   };
   const SLOTS = [[0, 0], [-0.9, 0.15], [0.9, 0.15], [-0.45, -0.75], [0.45, -0.75], [0, 0.95], [-1.35, -0.6], [1.35, -0.6]];
+  const MINION_R = 0.18; // D-087: minion figures ×1.5 (was 0.12 of the hex size)
   // a crowd of one type: figures ∝ count (1 per 2, up to 8) round a centre, then its plaque
   P.drawCrowd = function (ctx, pid, type, n, cx, cy, now, plaque, extra, plaqueBelow) {
     if (n <= 0) return;
-    const S = this.size, r = S * 0.12, m = Math.min(8, Math.ceil(n / 2));
+    const S = this.size, r = S * MINION_R, m = Math.min(8, Math.ceil(n / 2));
     const list = SLOTS.slice(0, m).map((o, i) => ({ x: cx + o[0] * r * 2.1, y: cy + o[1] * r * 1.7, i })).sort((a, b) => a.y - b.y);
     ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(cx, cy + r * 1.2, r * (1.4 + Math.min(m, 5) * 0.35), r * 0.8, 0, 0, Math.PI * 2); ctx.fill();
     for (const f of list) this.drawMinion(ctx, f.x, f.y, r, pid, type, now, f.i + (extra || 0));
-    if (plaque) this.drawTypePlaque(ctx, pid, type, n, cx, plaqueBelow ? cy + r * 3.1 : cy - r * 3.4, plaque === 'wait');
+    if (plaque) this.drawTypePlaque(ctx, pid, type, n, cx, plaqueBelow ? cy + r * 2.5 : cy - r * 3.2, plaque === 'wait');
   };
   // emblem + number; at a distance the plaques carry the information, close up the figures do
   P.drawTypePlaque = function (ctx, pid, type, n, x, y, waiting) {
@@ -366,10 +368,64 @@ window.HB = window.HB || {};
     ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(txt, bx + h + S * 0.04, y + 1);
   };
   // sectors round the Overlord: the first type at his feet, the others at his left and right hand — the same order as the
-  // towers of the castle (middle, left, right). D-086: he is big now (0.8 of a hex high), so no crowd stands behind him
+  // towers of the castle (middle, left, right). D-086/D-087: he towers over his hex, so no crowd stands behind him
   P.sectorOffsets = function () {
     const S = this.size;
-    return [{ x: 0, y: S * 0.64 }, { x: -S * 0.92, y: -S * 0.08 }, { x: S * 0.92, y: -S * 0.08 }];
+    return [{ x: 0, y: S * 0.98 }, { x: -S * 1.2, y: S * 0.05 }, { x: S * 1.2, y: S * 0.05 }];
+  };
+  // D-087: the Overlord as a dark lord in the manner of Sauron — black plate armour, a crown of iron spikes over a closed
+  // helm with a burning eye slit, spiked pauldrons, a flanged mace, a cape in the team colour (the team reads by the cape,
+  // the belt and the banner). 1.2 hex high (√3·S) from the feet to the tip of the middle spike.
+  P.drawDarkLord = function (ctx, x, y0, r, pid, now) {
+    const color = COL[pid], light = COL[pid + 'Light'], dark = COL[pid + 'Dark'], lw = Math.max(1.4, r * 0.05);
+    const steel = '#2a2630', steelHi = '#5a5463', black = '#17141a';
+    const poly = (pts, fill, stroke) => { ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(x + q[0] * r, y0 + q[1] * r) : ctx.moveTo(x + q[0] * r, y0 + q[1] * r)); ctx.closePath(); if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); } };
+    const spike = (bx, by, ang, len, wid, fill) => { const dx = Math.sin(ang), dy = -Math.cos(ang), nx = -dy, ny = dx; ctx.beginPath(); ctx.moveTo(x + (bx + nx * wid) * r, y0 + (by + ny * wid) * r); ctx.lineTo(x + (bx + dx * len) * r, y0 + (by + dy * len) * r); ctx.lineTo(x + (bx - nx * wid) * r, y0 + (by - ny * wid) * r); ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); };
+    // shadow and cape
+    ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.beginPath(); ctx.ellipse(x, y0 + r * 1.02, r * 1.35, r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+    const cg = ctx.createLinearGradient(0, y0 - r * 0.8, 0, y0 + r); cg.addColorStop(0, color); cg.addColorStop(1, dark);
+    ctx.beginPath(); ctx.moveTo(x - r * 0.72, y0 - r * 0.72); ctx.quadraticCurveTo(x - r * 1.15, y0 + r * 0.2, x - r * 1.28, y0 + r * 1.0);
+    ctx.quadraticCurveTo(x, y0 + r * 1.12, x + r * 1.28, y0 + r * 1.0); ctx.quadraticCurveTo(x + r * 1.15, y0 + r * 0.2, x + r * 0.72, y0 - r * 0.72); ctx.closePath();
+    ctx.fillStyle = cg; ctx.fill(); ctx.strokeStyle = black; ctx.lineWidth = lw; ctx.stroke();
+    // armoured skirt and boots
+    poly([[-0.5, 0.1], [-0.74, 0.98], [0.74, 0.98], [0.5, 0.1]], steel, black);
+    ctx.strokeStyle = steelHi; ctx.lineWidth = lw * 0.8;
+    for (const k of [-0.3, 0, 0.3]) { ctx.beginPath(); ctx.moveTo(x + k * r, y0 + r * 0.18); ctx.lineTo(x + k * 1.35 * r, y0 + r * 0.95); ctx.stroke(); }
+    ctx.fillStyle = black; ctx.beginPath(); ctx.ellipse(x - r * 0.32, y0 + r * 0.98, r * 0.22, r * 0.1, 0, 0, Math.PI * 2); ctx.ellipse(x + r * 0.32, y0 + r * 0.98, r * 0.22, r * 0.1, 0, 0, Math.PI * 2); ctx.fill();
+    // breastplate with a ridge and lames
+    const bg = ctx.createLinearGradient(0, y0 - r * 0.75, 0, y0 + r * 0.15); bg.addColorStop(0, '#4a4452'); bg.addColorStop(1, '#1c1920');
+    poly([[-0.62, -0.72], [0.62, -0.72], [0.5, 0.15], [-0.5, 0.15]], bg, black);
+    ctx.strokeStyle = steelHi; ctx.lineWidth = lw * 0.8; ctx.beginPath(); ctx.moveTo(x, y0 - r * 0.7); ctx.lineTo(x, y0 + r * 0.1);
+    for (const k of [-0.42, -0.2]) { ctx.moveTo(x - r * 0.55, y0 + k * r); ctx.quadraticCurveTo(x, y0 + (k + 0.12) * r, x + r * 0.55, y0 + k * r); } ctx.stroke();
+    // belt in the team colour
+    ctx.fillStyle = color; ctx.fillRect(x - r * 0.53, y0 + r * 0.02, r * 1.06, r * 0.15); ctx.strokeStyle = black; ctx.lineWidth = lw * 0.7; ctx.strokeRect(x - r * 0.53, y0 + r * 0.02, r * 1.06, r * 0.15);
+    // arms: the left holds the mace up, the right grips the banner pole
+    ctx.strokeStyle = steel; ctx.lineCap = 'round'; ctx.lineWidth = r * 0.26;
+    ctx.beginPath(); ctx.moveTo(x - r * 0.72, y0 - r * 0.55); ctx.lineTo(x - r * 0.9, y0 - r * 0.02); ctx.moveTo(x + r * 0.72, y0 - r * 0.55); ctx.lineTo(x + r * 0.95, y0 - r * 0.05); ctx.stroke();
+    // the mace: a long haft and a flanged head
+    ctx.strokeStyle = '#1a1612'; ctx.lineWidth = r * 0.09; ctx.beginPath(); ctx.moveTo(x - r * 0.84, y0 + r * 0.3); ctx.lineTo(x - r * 1.16, y0 - r * 1.0); ctx.stroke(); ctx.lineCap = 'butt';
+    const mx = -1.19, my = -1.12;
+    for (let i = 0; i < 6; i++) spike(mx, my, i * Math.PI / 3 + 0.3, 0.38, 0.09, steel);
+    ctx.fillStyle = '#35303b'; ctx.beginPath(); ctx.arc(x + mx * r, y0 + my * r, r * 0.22, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = steelHi; ctx.lineWidth = lw * 0.7; ctx.stroke();
+    // gauntlets; the right one wears the ring
+    ctx.fillStyle = black; ctx.beginPath(); ctx.arc(x - r * 0.9, y0 + r * 0.02, r * 0.14, 0, Math.PI * 2); ctx.arc(x + r * 0.97, y0 - r * 0.02, r * 0.14, 0, Math.PI * 2); ctx.fill();
+    const glint = 0.6 + 0.4 * Math.sin(now / 260);
+    ctx.fillStyle = `rgba(255,214,90,${glint})`; ctx.beginPath(); ctx.arc(x + r * 0.9, y0 + r * 0.06, r * 0.05, 0, Math.PI * 2); ctx.fill();
+    // spiked pauldrons
+    for (const sd of [-1, 1]) {
+      for (const a of [-0.35, 0.25, 0.85]) spike(sd * 0.74, -0.72, sd * a, 0.42, 0.07, steel);
+      ctx.fillStyle = '#35303b'; ctx.beginPath(); ctx.ellipse(x + sd * r * 0.7, y0 - r * 0.64, r * 0.32, r * 0.24, 0, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = black; ctx.lineWidth = lw; ctx.stroke();
+    }
+    // the crown of iron spikes, behind the helm
+    for (let i = -3; i <= 3; i++) { const a = i * 0.24, len = 0.95 - Math.abs(i) * 0.1; spike(Math.sin(a) * 0.3, -1.3 - Math.cos(a) * 0.12, a, len, 0.07, i % 2 ? steel : black); }
+    // the closed helm with a burning eye slit
+    ctx.beginPath(); ctx.moveTo(x - r * 0.34, y0 - r * 0.72); ctx.lineTo(x - r * 0.38, y0 - r * 1.25); ctx.quadraticCurveTo(x, y0 - r * 1.62, x + r * 0.38, y0 - r * 1.25); ctx.lineTo(x + r * 0.34, y0 - r * 0.72); ctx.quadraticCurveTo(x, y0 - r * 0.62, x - r * 0.34, y0 - r * 0.72); ctx.closePath();
+    ctx.fillStyle = '#1f1c23'; ctx.fill(); ctx.strokeStyle = steelHi; ctx.lineWidth = lw; ctx.stroke();
+    ctx.strokeStyle = steelHi; ctx.lineWidth = lw * 0.8; ctx.beginPath(); ctx.moveTo(x, y0 - r * 1.45); ctx.lineTo(x, y0 - r * 0.78); ctx.stroke(); // nasal ridge
+    const fl = 0.75 + 0.25 * Math.sin(now / 90 + pid);
+    const eg = ctx.createRadialGradient(x, y0 - r * 1.1, 0, x, y0 - r * 1.1, r * 0.42); eg.addColorStop(0, `rgba(255,150,40,${0.55 * fl})`); eg.addColorStop(1, 'rgba(255,90,20,0)');
+    ctx.fillStyle = eg; ctx.beginPath(); ctx.arc(x, y0 - r * 1.1, r * 0.42, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgba(255,${Math.round(150 + 60 * fl)},60,1)`; ctx.beginPath(); ctx.ellipse(x - r * 0.15, y0 - r * 1.1, r * 0.12, r * 0.035, 0, 0, Math.PI * 2); ctx.ellipse(x + r * 0.15, y0 - r * 1.1, r * 0.12, r * 0.035, 0, 0, Math.PI * 2); ctx.fill();
   };
   P.drawOverlord = function (ctx, p, now) {
     if (this.hideWb[p.id]) return;
@@ -381,42 +437,34 @@ window.HB = window.HB || {};
     if (dead) return;
     const fk = fall != null ? Math.min(1, (now - fall) / 900) : 0;
     const rise = this.heroRise[pid] != null ? Math.min(1, (now - this.heroRise[pid]) / 450) : 1;
-    // the retinue, sector by sector (behind the Overlord first)
+    // the retinue, sector by sector (the ones further back first)
     const offs = this.sectorOffsets(pid);
     const idx = p.types.map((t, i) => ({ t, i, o: offs[i] })).sort((a, b) => a.o.y - b.o.y);
-    for (const e of idx) if (e.o.y <= 0) this.drawCrowd(ctx, pid, e.t, this.retShown(pid, e.t), x + e.o.x, y + e.o.y, now, true, e.i * 3);
-    // the Overlord: a big figure with a cape and a horned helm. D-086: from his feet (y + r) to the tips of the horns
-    // (y − 2.3r) he is 3.3r = 0.8 of a hex high (√3·S)
+    for (const e of idx) if (e.o.y <= S * 0.3) this.drawCrowd(ctx, pid, e.t, this.retShown(pid, e.t), x + e.o.x, y + e.o.y, now, true, e.i * 3);
+    // the Overlord: 1.2 hex high, standing on his hex with his retinue at his feet (D-087); r is his body unit
+    const r = 1.2 * Math.sqrt(3) * S / 3.47, y0 = y + S * 0.05;
     ctx.save();
-    if (fk > 0) { ctx.globalAlpha = 1 - fk; ctx.translate(x, y); ctx.rotate(fk * 1.2); ctx.translate(-x, -y); }
-    if (rise < 1) { ctx.globalAlpha *= rise; y -= (1 - easeOutBack(rise)) * S * 0.6; }
-    const color = COL[pid], light = COL[pid + 'Light'], dark = COL[pid + 'Dark'], r = S * 0.8 * Math.sqrt(3) / 3.3, lw = Math.max(1.6, r * 0.08);
-    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(x, y + r * 1.05, r * 1.3, r * 0.38, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = dark; ctx.beginPath(); ctx.moveTo(x - r * 1.1, y + r * 0.9); ctx.quadraticCurveTo(x, y - r * 1.4, x + r * 1.1, y + r * 0.9); ctx.closePath(); ctx.fill(); // cape
-    ctx.fillStyle = color; ctx.strokeStyle = dark; ctx.lineWidth = lw;
-    ctx.beginPath(); ctx.ellipse(x, y, r * 0.95, r * 1.0, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = light; ctx.beginPath(); ctx.moveTo(x - r * 0.5, y - r * 0.55); ctx.lineTo(x + r * 0.5, y - r * 0.55); ctx.lineTo(x, y + r * 0.35); ctx.closePath(); ctx.fill(); // collar
-    ctx.fillStyle = dark; ctx.fillRect(x - r * 0.9, y + r * 0.25, r * 1.8, r * 0.18); ctx.fillStyle = '#ffd45a'; ctx.fillRect(x - r * 0.12, y + r * 0.22, r * 0.24, r * 0.24); // belt
-    ctx.fillStyle = '#e9d7b4'; ctx.beginPath(); ctx.arc(x, y - r * 1.15, r * 0.62, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#2d2a33'; ctx.beginPath(); ctx.arc(x, y - r * 1.25, r * 0.66, Math.PI, 0); ctx.closePath(); ctx.fill(); // helm
-    ctx.strokeStyle = '#efe6d2'; ctx.lineWidth = r * 0.16; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x - r * 0.55, y - r * 1.45); ctx.quadraticCurveTo(x - r * 1.0, y - r * 1.9, x - r * 0.75, y - r * 2.3); ctx.moveTo(x + r * 0.55, y - r * 1.45); ctx.quadraticCurveTo(x + r * 1.0, y - r * 1.9, x + r * 0.75, y - r * 2.3); ctx.stroke(); ctx.lineCap = 'butt'; // horns
-    ctx.fillStyle = '#ff5a3c'; ctx.beginPath(); ctx.arc(x - r * 0.22, y - r * 1.1, r * 0.1, 0, Math.PI * 2); ctx.arc(x + r * 0.22, y - r * 1.1, r * 0.1, 0, Math.PI * 2); ctx.fill(); // eyes
-    ctx.fillStyle = '#e9d7b4'; ctx.strokeStyle = dark; ctx.lineWidth = lw * 0.8; ctx.beginPath(); ctx.arc(x + r * 1.08, y + r * 0.1, r * 0.2, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); // the hand on the banner pole
+    if (fk > 0) { ctx.globalAlpha = 1 - fk; ctx.translate(x, y0); ctx.rotate(fk * 1.2); ctx.translate(-x, -y0); }
+    let yy = y0;
+    if (rise < 1) { ctx.globalAlpha *= rise; yy -= (1 - easeOutBack(rise)) * S * 0.6; }
+    this.drawDarkLord(ctx, x, yy, r, pid, now);
     const wc = now - (this.warCryPulse[pid] || -1e9);
-    if (R.active(this.s, p.status.warCryUntil) || wc < 600) { ctx.strokeStyle = `rgba(255,179,71,${0.55 + 0.35 * Math.sin(now / 200)})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y - r * 0.4, r * 1.7, r * 1.9, 0, 0, Math.PI * 2); ctx.stroke(); }
+    if (R.active(this.s, p.status.warCryUntil) || wc < 600) { ctx.strokeStyle = `rgba(255,179,71,${0.55 + 0.35 * Math.sin(now / 200)})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, yy - r * 0.35, r * 1.6, r * 1.95, 0, 0, Math.PI * 2); ctx.stroke(); }
     ctx.restore();
-    if (fk > 0) { for (const e of idx) if (e.o.y > 0) this.drawCrowd(ctx, pid, e.t, this.retShown(pid, e.t), x + e.o.x, y + e.o.y, now, true, e.i * 3, true); return; }
-    // banner with the Overlord's HP and the shield of his retinue — on a pole he holds in his right hand
+    const front = () => { for (const e of idx) if (e.o.y > S * 0.3) this.drawCrowd(ctx, pid, e.t, this.retShown(pid, e.t), x + e.o.x, y + e.o.y, now, true, e.i * 3, true); };
+    if (fk > 0) { front(); return; }
+    // banner with the Overlord's HP and the shield of his retinue — on a pole he grips in his right hand
     const bumpK = (now - (this.bump[pid] || -1e9)) / 380, bsc = bumpK >= 0 && bumpK < 1 ? 1 + 0.25 * Math.sin(bumpK * Math.PI) : 1;
-    const px = x + r * 1.08, top = y - S * 1.75;
-    ctx.strokeStyle = '#3b2a14'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px, y + r * 0.95); ctx.lineTo(px, top); ctx.stroke();
+    const px = x + r * 0.97, top = y - S * 2.05;
+    ctx.strokeStyle = '#3b2a14'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px, y0 + r * 0.95); ctx.lineTo(px, top); ctx.stroke();
+    ctx.fillStyle = '#17141a'; ctx.beginPath(); ctx.arc(px, y0 - r * 0.02, r * 0.14, 0, Math.PI * 2); ctx.fill(); // the gauntlet over the pole
     // the crowd at his feet is nearer to the viewer: drawn over him and the pole, its plaque under it
-    for (const e of idx) if (e.o.y > 0) this.drawCrowd(ctx, pid, e.t, this.retShown(pid, e.t), x + e.o.x, y + e.o.y, now, true, e.i * 3, true);
+    front();
     const hp = this.hpShown(pid), txt = `❤ ${hp}`, fs = Math.round(S * 0.36);
     ctx.font = `900 ${fs}px system-ui, sans-serif`;
     const fw = Math.max(S * 0.95, ctx.measureText(txt).width + S * 0.45), fh = S * 0.5;
     ctx.save(); ctx.translate(px, top + fh / 2); ctx.scale(bsc, bsc); ctx.translate(-px, -(top + fh / 2));
-    ctx.fillStyle = color; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+    ctx.fillStyle = COL[pid]; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px + fw, top + fh * 0.08); ctx.lineTo(px + fw - S * 0.12, top + fh * 0.54); ctx.lineTo(px + fw, top + fh); ctx.lineTo(px, top + fh + fh * 0.08); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, px + fw / 2 - S * 0.04, top + fh * 0.54);
     ctx.restore();
@@ -429,9 +477,9 @@ window.HB = window.HB || {};
     ctx.fillStyle = danger ? `rgba(120,20,10,${0.75 + 0.2 * pulse})` : 'rgba(20,12,6,0.8)'; ctx.strokeStyle = danger ? '#ff6b5a' : COL[pid + 'Light']; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.roundRect(sx, sy, sw, sh2, sh2 / 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText(st, sx + S * 0.15, sy + sh2 / 2 + 1);
-    if (pid === this.s.current && this.s.phase === 'play') {
+    if (pid === this.s.current && this.s.phase === 'play') { // whose turn: a dashed ring round him and his retinue
       ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 2; ctx.setLineDash([5, 5]);
-      ctx.beginPath(); ctx.ellipse(x, y, S * 1.25, S * 1.0, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.ellipse(x, y + S * 0.3, S * 1.85, S * 1.1, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
     }
   };
   P.squadPos = function (q, now) {
@@ -544,6 +592,60 @@ window.HB = window.HB || {};
     ctx.beginPath(); ctx.roundRect(p.x - w / 2, y - h / 2, w, h, h / 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = f.win ? '#ffe27a' : f.bad ? '#ff8a76' : '#ffe9a8'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(f.text, p.x, y + 1);
   };
+  // D-087: the preview of a move, not tied to hex shapes.
+  //  under the figures: the hexes the move will capture (small tokens in the team colour), the line of fire, candidate ends;
+  //  over the figures: the route as a moving dotted line from the Overlord, and at each stop the number of the turn the
+  //  group gets there (a squad walks its speed a turn; ⚔ where it strikes)
+  P.drawPlanV4 = function (ctx, now, layer) {
+    const hl = this.highlights; if (!hl || !hl.length) return;
+    const S = this.size, pid = this.s.current, color = COL[pid], light = COL[pid + 'Light'], pulse = 0.5 + 0.5 * Math.sin(now / 180);
+    if (layer === 'under') {
+      for (const h of hl) {
+        const p = this.cellXY(h.col, h.row);
+        if (h.kind === 'capture') {
+          const pts = hex.corners(p.x, p.y, S * 0.36, 0);
+          ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath();
+          ctx.globalAlpha = 0.55 + 0.25 * pulse; ctx.fillStyle = color; ctx.fill();
+          ctx.globalAlpha = 1; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2; ctx.stroke();
+        } else if (h.kind === 'target') {
+          ctx.strokeStyle = `rgba(255,255,255,${(h.strong ? 0.85 : 0.45) + 0.15 * pulse})`; ctx.lineWidth = h.strong ? 3 : 2;
+          ctx.beginPath(); ctx.arc(p.x, p.y, S * 0.3, 0, Math.PI * 2); ctx.stroke();
+        } else if (h.kind === 'burn') {
+          ctx.fillStyle = `rgba(255,120,40,${0.35 + 0.25 * pulse})`; ctx.beginPath(); ctx.arc(p.x, p.y, S * 0.42, 0, Math.PI * 2); ctx.fill();
+          ctx.font = `${Math.round(S * 0.5)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🔥', p.x, p.y + 1);
+        }
+      }
+      return;
+    }
+    const path = hl.filter(h => h.kind === 'path');
+    if (!path.length || !this.pathFrom) return;
+    const pts = [this.cellXY(this.pathFrom.col, this.pathFrom.row)].concat(path.map(h => this.cellXY(h.col, h.row)));
+    const gap = S * 0.27, off = -(now / 30) % gap;
+    const line = (a, b, col) => {
+      ctx.lineCap = 'round'; ctx.setLineDash([0.01, gap]); ctx.lineDashOffset = off;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+      ctx.strokeStyle = 'rgba(20,12,6,0.75)'; ctx.lineWidth = S * 0.2; ctx.stroke();
+      ctx.strokeStyle = col; ctx.lineWidth = S * 0.12; ctx.stroke();
+    };
+    for (let i = 1; i < pts.length; i++) line(pts[i - 1], pts[i], path[i - 1].attack ? '#ff5a3c' : light);
+    ctx.setLineDash([]); ctx.lineDashOffset = 0; ctx.lineCap = 'butt';
+    const end = path[path.length - 1];
+    path.forEach((h, i) => {
+      if (h.label == null && !h.attack) return;
+      const p = pts[i + 1], r = S * 0.27, atk = h.attack, last = h === end;
+      const sc = last ? 1 + 0.08 * pulse : 1;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.scale(sc, sc);
+      ctx.fillStyle = atk ? '#8a1c10' : 'rgba(20,12,6,0.9)'; ctx.strokeStyle = atk ? '#ff6b5a' : light; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = `900 ${Math.round(S * (atk ? 0.3 : 0.34))}px system-ui, sans-serif`; ctx.fillText(atk ? '⚔' : String(h.label), 0, 1);
+      if (atk && h.label > 1) { // a strike on a later turn: its turn number on a small chip
+        ctx.fillStyle = 'rgba(20,12,6,0.95)'; ctx.strokeStyle = light; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(r * 0.8, -r * 0.8, r * 0.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#fff'; ctx.font = `900 ${Math.round(S * 0.2)}px system-ui, sans-serif`; ctx.fillText(String(h.label), r * 0.8, -r * 0.8 + 1);
+      }
+      ctx.restore();
+    });
+  };
   // a figure running along a polyline (muster along the road, the intro)
   P.drawMarchFx = function (ctx, f, k) {
     const e = k, pts = f.pts, n = pts.length - 1;
@@ -552,7 +654,7 @@ window.HB = window.HB || {};
     else { const fpos = e * n, i = Math.min(n - 1, Math.floor(fpos)), u = fpos - i; x = pts[i].x + (pts[i + 1].x - pts[i].x) * u; y = pts[i].y + (pts[i + 1].y - pts[i].y) * u; }
     const S = this.size, jitter = (f.seed % 3 - 1) * S * 0.12;
     ctx.globalAlpha = k > 0.9 ? 1 - (k - 0.9) / 0.1 : 1;
-    this.drawMinion(ctx, x + jitter, y + (f.seed % 2 ? S * 0.08 : -S * 0.05) - Math.abs(Math.sin(k * Math.PI * 6 + f.seed)) * S * 0.08, S * 0.11, f.pid, f.mtype, performance.now(), f.seed);
+    this.drawMinion(ctx, x + jitter, y + (f.seed % 2 ? S * 0.08 : -S * 0.05) - Math.abs(Math.sin(k * Math.PI * 6 + f.seed)) * S * 0.08, S * MINION_R * 0.92, f.pid, f.mtype, performance.now(), f.seed);
     ctx.globalAlpha = 1;
   };
 })();

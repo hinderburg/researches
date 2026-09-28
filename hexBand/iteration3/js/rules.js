@@ -397,10 +397,10 @@ window.HB = window.HB || {};
     }
     return path;
   }
-  function launchSortie(s, p, def, dirs) {
+  function launchSortie(s, p, def, dirs, bend) {
     const t = def.owner, r = p.retinue[t], w = p.warband;
     const sq = { id: s.nextSquadId++, owner: p.id, type: t, n: r.n, wound: r.wound, col: w.col, row: w.row, state: 'out', dirs: dirs.slice(), orig: dirs.slice(), walked: 0,
-      bonus: def.atkBonus || 0, curl: !!def.curl, wide: !!def.wide, start: { col: w.col, row: w.row }, shot: false, card: def.id };
+      bonus: def.atkBonus || 0, curl: !!def.curl, wide: !!def.wide, bend: bend || 1, start: { col: w.col, row: w.row }, shot: false, card: def.id };
     r.n = 0; r.wound = 0;
     s.squads.push(sq);
     s.events.push({ type: 'sortie', player: p.id, id: sq.id, sqType: t, n: sq.n, col: w.col, row: w.row });
@@ -437,7 +437,8 @@ window.HB = window.HB || {};
       sq.col = n.col; sq.row = n.row; sq.dirs.shift(); moved++; sq.walked++;
       path.push({ col: n.col, row: n.row });
       paint(s, p, n, 'walk');
-      if (d0.capture >= 2) { const side = hex.neighbor(n.col, n.row, hex.turn(d, 1)); if (exists(s, side) && !groupAt(s, side)) paint(s, p, side, 'split'); }
+      // Capture 2 (runners): the hex beside each step, always on the side the pattern bends to — a 2-wide strip (D-087)
+      if (d0.capture >= 2) { const side = hex.neighbor(n.col, n.row, hex.turn(d, sq.bend || 1)); if (exists(s, side) && !groupAt(s, side)) paint(s, p, side, 'split'); }
       if (sq.wide) for (const tt of [2, -2]) { const side = hex.neighbor(n.col, n.row, hex.turn(d, tt)); if (exists(s, side) && !groupAt(s, side)) paint(s, p, side, 'split'); }
       if (isSwamp(s, n)) { sq.dirs = []; break; }
     }
@@ -544,9 +545,35 @@ window.HB = window.HB || {};
       const dirs = def.pattern.map(o => ((d + m * o) % 6 + 6) % 6), key = dirs.join('');
       if (seen.has(key)) continue; seen.add(key);
       const path = fn(dirs);
-      if (path.length) opts.push({ key: 'p' + key, dirs, path, end: path[path.length - 1], label: HB.cards.DIR_LABEL[d] + (m < 0 ? ' (mirrored)' : '') });
+      if (path.length) opts.push({ key: 'p' + key, dirs, path, bend: m, end: path[path.length - 1], label: HB.cards.DIR_LABEL[d] + (m < 0 ? ' (mirrored)' : '') });
     }
     return opts;
+  }
+  // D-087: the plan of a move for its preview — where the group stops at the end of each turn (a squad walks `speed`
+  // hexes a turn; the Overlord walks the whole route now) and which hexes it will capture (route + Capture-2 strip,
+  // Sweep sides, Envelop's closing hex), not counting hexes already the player's
+  function planOf(s, def, opt) {
+    const p = s.players[s.current], w = p.warband, out = { steps: [], capture: [] }, seen = new Set();
+    const cap = c => {
+      const k = K(c.col, c.row); if (seen.has(k)) return; seen.add(k);
+      const cell = cellAt(s, c);
+      if (!cell || cell.castle || cell.owner === p.id || isFortifiedAgainst(s, cell, p.id)) return;
+      const g = groupAt(s, c); if (g && g.pid !== p.id) return;
+      out.capture.push({ col: c.col, row: c.row });
+    };
+    const sortie = def.kind === 'sortie', d0 = sortie ? TYPES[def.owner] : null;
+    const sp = sortie ? Math.max(1, typeStat(s, p.id, def.owner, 'speed')) : Infinity, n = opt.path.length;
+    opt.path.forEach((c, i) => {
+      out.steps.push({ col: c.col, row: c.row, attack: !!c.attack, turn: sortie ? Math.floor(i / sp) + 1 : 1, stop: i === n - 1 || (sortie && (i + 1) % sp === 0) });
+      if (c.attack) return;
+      cap(c);
+      if (!sortie) return;
+      const d = opt.dirs[i];
+      if (d0.capture >= 2) { const side = hex.neighbor(c.col, c.row, hex.turn(d, opt.bend || 1)); if (exists(s, side)) cap(side); }
+      if (def.wide) for (const tt of [2, -2]) { const side = hex.neighbor(c.col, c.row, hex.turn(d, tt)); if (exists(s, side)) cap(side); }
+    });
+    if (sortie && def.curl && n === def.pattern.length && !opt.path[n - 1].attack) { const c = hex.neighbor(w.col, w.row, opt.dirs[1]); if (exists(s, c)) cap(c); }
+    return out;
   }
   function getPlay(s, card) {
     const p = s.players[s.current], def = CARDS[card.def], w = p.warband;
@@ -588,7 +615,7 @@ window.HB = window.HB || {};
     const w = p.warband, T = s.turnIndex, e = enemyOf(s, p.id);
     switch (def.kind) {
       case 'hero_move': moveHero(s, p, choice.dirs); enclosure(s, p); break;
-      case 'sortie': launchSortie(s, p, def, choice.dirs); break;
+      case 'sortie': launchSortie(s, p, def, choice.dirs, choice.bend); break;
       case 'recall': {
         for (const q of s.squads.filter(x => x.owner === p.id)) join(s, q, 'recall');
         log(s, `${p.name}: Recall — every group is back with the Overlord.`); break;
@@ -755,7 +782,7 @@ window.HB = window.HB || {};
   function takeEvents(s) { const e = s.events; s.events = []; return e; }
   function clone(s) { const e = s.events, l = s.log; s.events = []; s.log = []; const c = JSON.parse(JSON.stringify(s)); s.events = e; s.log = l; return c; }
 
-  HB.rules = { createGame, playCard, endTurn, passTurn, getPlay, takeEvents, clone, territory, cellCount, poiCount, totalCells,
+  HB.rules = { createGame, playCard, endTurn, passTurn, getPlay, planOf, takeEvents, clone, territory, cellCount, poiCount, totalCells,
     scoreboard, round, occupant, groupAt, isBlocked, active, rand, stepOptions, freeStep, walled, isSwamp, isFortifiedAgainst, castleAt,
     statsAt, heroStatsAt, typeStat, typeLevel, heroStat, armyOnField, retinueHP, roadRegion, heroThreat, forecastPlay, forecastStep,
     sortieBlocked, power };

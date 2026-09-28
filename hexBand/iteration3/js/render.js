@@ -202,7 +202,7 @@ window.HB = window.HB || {};
       const { w, h } = this.cssSize, S = this.size, b = this.boardPx;
       const clamp = (v, lo, hi) => lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v));
       // world extent incl. margins for banners above row 0 and plaques below the last row
-      const x0 = this.offset.x - S * 0.3, x1 = this.offset.x + b.w + S * 0.3, y0 = this.offset.y - S * 1.3, y1 = this.offset.y + b.h + S * 1.1;
+      const x0 = this.offset.x - S * 0.3, x1 = this.offset.x + b.w + S * 0.3, y0 = this.offset.y - S * 2.2, y1 = this.offset.y + b.h + S * 1.1;
       return z <= 1.001 ? { x: 0, y: 0 } : { x: clamp(cam.x, w - x1 * z, -x0 * z), y: clamp(cam.y, h - y1 * z, -y0 * z) };
     }
     // D-086: a camera glide — the zoom and the world point in the middle of the screen move together, eased in and out.
@@ -230,7 +230,7 @@ window.HB = window.HB || {};
       const S = this.size, { w, h } = this.cssSize;
       let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
       for (const c of cells) { const p = this.cellXY(c.col, c.row); x0 = Math.min(x0, p.x - S); x1 = Math.max(x1, p.x + S); y0 = Math.min(y0, p.y - S * 0.87); y1 = Math.max(y1, p.y + S * 0.87); }
-      y0 -= S * 0.6; // the Overlord's banner stands above his hex
+      y0 -= S * 1.2; // the Overlord's banner stands high above his hex
       const z = Math.min(w / (x1 - x0), h / (y1 - y0));
       return this.camTo(z, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, dur);
     }
@@ -727,8 +727,10 @@ window.HB = window.HB || {};
       this.drawField(ctx, now); // D-068: walls, swamps, fortified hexes
       // highlights
       const pulse = 0.55 + 0.45 * Math.sin(now / 180);
+      const v4 = this.isV4 && this.isV4();
       for (const h of this.highlights) {
         if (h.kind === 'wall') { this.drawWall(ctx, h.a, h.b, 1, 0, now, true); continue; } // D-068: Palisade preview
+        if (v4) continue; // D-087: V4 draws its move previews as routes, not hexes (drawPlanV4)
         const p = this.cellXY(h.col, h.row);
         if (h.kind === 'path') {
           const atk = h.attack; // D-042: the last step onto the enemy is an attack — red
@@ -743,7 +745,8 @@ window.HB = window.HB || {};
       }
       // path arrows between consecutive path highlights
       const path = this.highlights.filter(h => h.kind === 'path');
-      if (path.length && this.pathFrom) {
+      if (v4) this.drawPlanV4(ctx, now, 'under'); // D-087: capture tokens under the figures, the route over them (drawV4)
+      else if (path.length && this.pathFrom) {
         let prev = this.cellXY(this.pathFrom.col, this.pathFrom.row);
         ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 3; ctx.setLineDash([S * 0.15, S * 0.12]);
         for (const h of path) { const p = this.cellXY(h.col, h.row); ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(p.x, p.y); ctx.stroke(); prev = p; }

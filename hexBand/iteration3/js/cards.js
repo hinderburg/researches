@@ -35,7 +35,7 @@ window.HB = window.HB || {};
     b_breach: { id: 'b_breach', title: 'Break Through', type: 'Brawlers', owner: 'brawler', kind: 'sortie', pattern: [0, 1], mirror: true, req: 1, icon: 'hook', text: 'All brawlers with the Overlord go 2 hexes with a 60° turn.' },
     b_envelop: { id: 'b_envelop', title: 'Envelop', type: 'Brawlers', owner: 'brawler', kind: 'sortie', pattern: [0, 1], mirror: true, curl: true, req: 3, icon: 'around', text: 'All brawlers with the Overlord curl 2 hexes round a neighbour; that hex is captured too. Needs 3+ brawlers.' },
     // ---- Runners
-    r_raid: { id: 'r_raid', title: 'Raid', type: 'Runners', owner: 'runner', kind: 'sortie', pattern: [0, 0, 1, 1], mirror: true, req: 4, icon: 'v_raid', text: 'All runners with the Overlord run 4 hexes, turning twice. Needs 4+ runners.' },
+    r_raid: { id: 'r_raid', title: 'Raid', type: 'Runners', owner: 'runner', kind: 'sortie', pattern: [0, 0, 1, 1], mirror: true, req: 4, icon: 'v_raid', text: 'All runners with the Overlord run 4 hexes: 2 straight, then 2 after one bend. They capture a 2-hex-wide strip on the inner side of the bend. Needs 4+ runners.' },
     r_weave: { id: 'r_weave', title: 'Weave', type: 'Runners', owner: 'runner', kind: 'sortie', pattern: [0, 2, 0], mirror: true, req: 1, icon: 'v_weave', text: 'All runners with the Overlord zigzag 3 hexes.' },
     r_sweep: { id: 'r_sweep', title: 'Sweep', type: 'Runners', owner: 'runner', kind: 'sortie', pattern: [0, 0], wide: true, req: 2, icon: 'v_sweep', text: 'All runners with the Overlord run 2 hexes straight and capture the hexes on both sides. Needs 2+ runners.' },
     // ---- Archers
