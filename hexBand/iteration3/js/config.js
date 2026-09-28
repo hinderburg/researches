@@ -1,7 +1,7 @@
 // HEXBand prototype — tunables. See docs/DECISIONS.md for the reasoning behind each value.
 window.HB = window.HB || {};
 HB.CONFIG = {
-  VERSION: '0.37.1-it3',
+  VERSION: '0.38.0-it3',
   COLS: 11,              // flat-top hex columns; odd columns are shifted down and hold one cell less (see D-002). iteration3 (D-083): 7 → 11
   BOARD_TIP: 1.5,        // D-093: the diamond board narrows to ±1.5 hex widths (3 columns) at the castle ends
   BOARD_SIDE: 1.5,       // D-093: and its left and right corners are blunted (3 hexes tall instead of 1)

@@ -181,13 +181,13 @@ window.HB = window.HB || {};
       // D-083: this fitted layout is the "world"; the camera zooms and pans it as a canvas transform, so everything that
       // animations remember in world pixels stays put while the view moves
       const tall = !!(s.castles && s.castles[1] && s.castles[1].cells); // D-093: room above the board for the big castle at its top tip
-      const size = Math.floor(Math.min(w / (1.5 * (s.cols - 1) + 2), h / (hex.SQRT3 * s.rows + (tall ? 3.4 : 1.2))));
+      const size = Math.floor(Math.min(w / (1.5 * (s.cols - 1) + 2), h / (hex.SQRT3 * s.rows + (tall ? 4.6 : 1.2)))); // D-095: and below it for the plateau tip
       this.size = Math.max(10, size);
       const b = hex.boardSize(s.cols, s.rows, this.size);
       this.dpr = window.devicePixelRatio || 1;
       this.canvas.width = Math.round(w * this.dpr); this.canvas.height = Math.round(h * this.dpr);
       this.canvas.style.width = w + 'px'; this.canvas.style.height = h + 'px';
-      this.offset = { x: (w - b.w) / 2, y: (h - b.h) / 2 + this.size * (tall ? 1.5 : 0.6) }; // room for the taller banner on row 0 (and the castle, D-093)
+      this.offset = { x: (w - b.w) / 2, y: (h - b.h) / 2 + this.size * (tall ? 1.0 : 0.6) }; // room for the taller banner on row 0 (and the castle, D-093)
       this.cssSize = { w, h }; this.boardPx = b;
       this.applyCamera();
     }
@@ -203,7 +203,7 @@ window.HB = window.HB || {};
       const { w, h } = this.cssSize, S = this.size, b = this.boardPx;
       const clamp = (v, lo, hi) => lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v));
       // world extent incl. margins for banners above row 0 and plaques below the last row
-      const x0 = this.offset.x - S * 0.3, x1 = this.offset.x + b.w + S * 0.3, y0 = this.offset.y - S * 3.4, y1 = this.offset.y + b.h + S * 1.1;
+      const x0 = this.offset.x - S * 0.3, x1 = this.offset.x + b.w + S * 0.3, y0 = this.offset.y - S * 3.4, y1 = this.offset.y + b.h + S * 1.4;
       return z <= 1.001 ? { x: 0, y: 0 } : { x: clamp(cam.x, w - x1 * z, -x0 * z), y: clamp(cam.y, h - y1 * z, -y0 * z) };
     }
     // D-086: a camera glide — the zoom and the world point in the middle of the screen move together, eased in and out.

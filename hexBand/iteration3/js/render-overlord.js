@@ -605,10 +605,19 @@ window.HB = window.HB || {};
     const S = this.size, p = this.cellXY(c.col, c.row), types = s.players[pid].types;
     let vis = 1; const r0 = this.castleRise[pid];
     if (r0 !== undefined) { if (now < r0) return; const k = (now - r0) / 900; if (k >= 1) delete this.castleRise[pid]; else vis = easeOut(k); }
-    // D-093: on its plateau the castle is drawn ×2.1, standing in the middle of the three hexes
+    // D-093: on its plateau the castle is drawn ×2.1.
+    // D-095: the castle at the bottom tip stands on its lowest hex (the middle tower right there, the upper hex of the
+    // plateau free in front of the start hex); the one at the top keeps its place over the three hexes by the castle hex
     if (c.cells && !this._castleScaled) {
-      let cx = 0, cy = 0; for (const q of c.cells) { const xy = this.cellXY(q.col, q.row); cx += xy.x; cy += xy.y; } cx /= c.cells.length; cy /= c.cells.length;
-      ctx.save(); ctx.translate(cx, cy + S * 0.55); ctx.scale(CASTLE_SCALE, CASTLE_SCALE); ctx.translate(-p.x, -(p.y + S * 0.45));
+      const lowC = c.row > s.rows / 2 && c.tip;
+      let cx = 0, cy = 0;
+      if (lowC) { const xy = this.cellXY(c.tip.col, c.tip.row); cx = xy.x; cy = xy.y + S * 0.35; }
+      else {
+        const base = c.cells.filter(q => !c.tip || q.col !== c.tip.col || q.row !== c.tip.row);
+        for (const q of base) { const xy = this.cellXY(q.col, q.row); cx += xy.x; cy += xy.y; }
+        cx /= base.length; cy = cy / base.length + S * 0.55;
+      }
+      ctx.save(); ctx.translate(cx, cy); ctx.scale(CASTLE_SCALE, CASTLE_SCALE); ctx.translate(-p.x, -(p.y + S * 0.45));
       this._castleScaled = true; try { this.drawGothicCastle(ctx, pid, now); } finally { this._castleScaled = false; ctx.restore(); }
       return;
     }

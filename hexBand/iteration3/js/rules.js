@@ -114,8 +114,13 @@ window.HB = window.HB || {};
       const st = CFG.START[pid], Yc = (s.rows - 1) / 2, far = c => Math.abs(c.row + 0.5 * (c.col & 1) - Yc);
       const cells = [{ col: st.col, row: st.row }];
       for (let d = 0; d < 6; d++) { const n = hex.neighbor(st.col, st.row, d); if (exists(s, n) && far(n) > far(st)) cells.push({ col: n.col, row: n.row }); }
+      // D-095: a fourth hex closes the plateau into a small rhombus — the tip straight out beyond the castle hex (just off
+      // the rectangle of the grid: (5,16) at the bottom, (5,-1) at the top)
+      const tip = hex.neighbor(st.col, st.row, far({ col: st.col, row: st.row + 1 }) > far(st) ? 3 : 0);
+      if (!exists(s, tip)) s.cells[K(tip.col, tip.row)] = { col: tip.col, row: tip.row, owner: 0, bonus: 0, poi: -1, paintedAt: -1 };
+      cells.push({ col: tip.col, row: tip.row });
       for (const c of cells) { const cell = cellAt(s, c); cell.castle = pid; cell.owner = pid; }
-      s.castles[pid] = { col: st.col, row: st.row, cells };
+      s.castles[pid] = { col: st.col, row: st.row, cells, tip: { col: tip.col, row: tip.row } };
       for (const c of cells) for (let d = 0; d < 6; d++) { const n = hex.neighbor(c.col, c.row, d); if (exists(s, n) && !cellAt(s, n).castle) cellAt(s, n).owner = pid; }
     }
     // upgrade points: four recruiting posts (D-091: whoever takes one raises that type's army size) and the Citadel
