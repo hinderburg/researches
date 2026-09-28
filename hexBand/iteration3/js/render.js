@@ -202,7 +202,7 @@ window.HB = window.HB || {};
       const { w, h } = this.cssSize, S = this.size, b = this.boardPx;
       const clamp = (v, lo, hi) => lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v));
       // world extent incl. margins for banners above row 0 and plaques below the last row
-      const x0 = this.offset.x - S * 0.3, x1 = this.offset.x + b.w + S * 0.3, y0 = this.offset.y - S * 2.2, y1 = this.offset.y + b.h + S * 1.1;
+      const x0 = this.offset.x - S * 0.3, x1 = this.offset.x + b.w + S * 0.3, y0 = this.offset.y - S * 2.6, y1 = this.offset.y + b.h + S * 1.1;
       return z <= 1.001 ? { x: 0, y: 0 } : { x: clamp(cam.x, w - x1 * z, -x0 * z), y: clamp(cam.y, h - y1 * z, -y0 * z) };
     }
     // D-086: a camera glide — the zoom and the world point in the middle of the screen move together, eased in and out.
@@ -230,7 +230,7 @@ window.HB = window.HB || {};
       const S = this.size, { w, h } = this.cssSize;
       let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
       for (const c of cells) { const p = this.cellXY(c.col, c.row); x0 = Math.min(x0, p.x - S); x1 = Math.max(x1, p.x + S); y0 = Math.min(y0, p.y - S * 0.87); y1 = Math.max(y1, p.y + S * 0.87); }
-      y0 -= S * 1.2; // the Overlord's banner stands high above his hex
+      y0 -= S * 1.6; // the Overlord's banner stands high above his hex
       const z = Math.min(w / (x1 - x0), h / (y1 - y0));
       return this.camTo(z, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, dur);
     }

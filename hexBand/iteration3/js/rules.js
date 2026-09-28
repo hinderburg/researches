@@ -297,12 +297,13 @@ window.HB = window.HB || {};
     const lA = damage(s, A, pd), lD = damage(s, D, pa);
     const after = { a: snapshot(s, A), d: snapshot(s, D) };
     s.attacksThisTurn++;
-    s.events.push({ type: 'fight', attacker: A.pid, defender: D.pid, from, at, dmgToDef: pa, dmgToAtt: pd, a: { before: before.a, after: after.a, losses: lA.losses, heroDmg: lA.heroDmg }, d: { before: before.d, after: after.d, losses: lD.losses, heroDmg: lD.heroDmg } });
+    const ev = { type: 'fight', attacker: A.pid, defender: D.pid, from, at, dmgToDef: pa, dmgToAtt: pd, a: { before: before.a, after: after.a, losses: lA.losses, heroDmg: lA.heroDmg }, d: { before: before.d, after: after.d, losses: lD.losses, heroDmg: lD.heroDmg } };
+    s.events.push(ev);
     const who = x => x.kind === 'hero' ? `${s.players[x.pid].name}'s Overlord` : `${s.players[x.pid].name}'s ${TYPES[x.sqType].title.toLowerCase()}`;
     log(s, `Fight: ${who(before.a)} (${pa}) vs ${who(before.d)} (${pd}).`);
     const dGone = D.kind === 'squad' ? D.sq.n <= 0 : false, aGone = A.kind === 'squad' ? A.sq.n <= 0 : false;
     cleanup(s);
-    return { attackerGone: aGone, defenderGone: dGone };
+    return { attackerGone: aGone, defenderGone: dGone, ev };
   }
   function shoot(s, A, D, dmg) {
     const before = snapshot(s, D), from = groupPos(s, A), at = groupPos(s, D);
@@ -351,7 +352,13 @@ window.HB = window.HB || {};
       if (g && g.pid !== p.id) {
         if (path.length) s.events.push({ type: 'move', player: p.id, path: path.slice() });
         flushPaint(s, p);
-        fight(s, { kind: 'hero', pid: p.id }, g);
+        const res = fight(s, { kind: 'hero', pid: p.id }, g);
+        // D-088: a group wiped out — the Overlord takes its hex; otherwise he falls back to the hex he struck from
+        if (s.phase === 'play' && !w.dead && res.defenderGone && !groupAt(s, n)) {
+          res.ev.enter = true;
+          w.col = n.col; w.row = n.row;
+          paint(s, p, n, 'walk');
+        }
         return;
       }
       w.col = n.col; w.row = n.row; path.push({ col: n.col, row: n.row });
@@ -412,6 +419,15 @@ window.HB = window.HB || {};
     let path = [], moved = 0;
     const flush = () => { if (path.length) { s.events.push({ type: 'squadMove', player: sq.owner, id: sq.id, sqType: sq.type, path }); path = []; } };
     const me = () => ({ kind: 'squad', pid: sq.owner, sq });
+    // one step of the route: the hex under the group; Capture 2 (runners): the hex beside it, always on the side the
+    // pattern bends to — a 2-wide strip (D-087); Sweep: both sides
+    const step = (n, d, walk) => {
+      sq.col = n.col; sq.row = n.row; sq.dirs.shift(); moved++; sq.walked++;
+      if (walk) path.push({ col: n.col, row: n.row }); // a hex taken in a fight is shown by the fight itself
+      paint(s, p, n, 'walk');
+      if (d0.capture >= 2) { const side = hex.neighbor(n.col, n.row, hex.turn(d, sq.bend || 1)); if (exists(s, side) && !groupAt(s, side)) paint(s, p, side, 'split'); }
+      if (sq.wide) for (const tt of [2, -2]) { const side = hex.neighbor(n.col, n.row, hex.turn(d, tt)); if (exists(s, side) && !groupAt(s, side)) paint(s, p, side, 'split'); }
+    };
     const shootNow = () => {
       const near = enemyGroupsNear(s, sq.owner, sq, d0.range);
       if (!near.length) return false;
@@ -431,15 +447,16 @@ window.HB = window.HB || {};
         if (ranged) { if (!sq.shot) shootNow(); sq.dirs = []; break; }
         const res = fight(s, me(), g);
         if (s.phase !== 'play' || !s.squads.includes(sq)) return;
-        if (res.defenderGone && d0.trait === 'steady' && !groupAt(s, n)) continue; // Steady: the way is clear — keep going
+        // D-088: the enemy group wiped out — the squad takes its hex (a step of its route); otherwise it falls back to the
+        // hex it struck from and the sortie ends. Steady: after taking the hex it keeps going
+        if (res.defenderGone && !groupAt(s, n)) {
+          res.ev.enter = true;
+          step(n, d, false);
+          if (d0.trait === 'steady' && !isSwamp(s, n)) continue;
+        }
         sq.dirs = []; break;
       }
-      sq.col = n.col; sq.row = n.row; sq.dirs.shift(); moved++; sq.walked++;
-      path.push({ col: n.col, row: n.row });
-      paint(s, p, n, 'walk');
-      // Capture 2 (runners): the hex beside each step, always on the side the pattern bends to — a 2-wide strip (D-087)
-      if (d0.capture >= 2) { const side = hex.neighbor(n.col, n.row, hex.turn(d, sq.bend || 1)); if (exists(s, side) && !groupAt(s, side)) paint(s, p, side, 'split'); }
-      if (sq.wide) for (const tt of [2, -2]) { const side = hex.neighbor(n.col, n.row, hex.turn(d, tt)); if (exists(s, side) && !groupAt(s, side)) paint(s, p, side, 'split'); }
+      step(n, d, true);
       if (isSwamp(s, n)) { sq.dirs = []; break; }
     }
     flush();

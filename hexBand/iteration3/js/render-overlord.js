@@ -74,7 +74,13 @@ window.HB = window.HB || {};
           const a = { t: String(ev.dmgToDef), color: COL[A + 'Light'] }, d = { t: String(ev.dmgToAtt), color: COL[D + 'Light'] }, mid = { t: ' ⚔ ', color: '#fff' };
           this.addText(ev.at.col, ev.at.row, '', null, { dy: -S * 1.9, big: true, dur: 1500, pop: true, parts: fromXY.x <= atXY.x ? [a, mid, d] : [d, mid, a] });
         });
-        this.schedule(hit + 650, () => { if (ev.a.before.kind === 'hero') this.slide[A] = { path: [ev.from], t0: performance.now(), per: run, start: atXY, hold: true }; });
+        // D-088: the defenders wiped out — the attacker takes their hex; otherwise it falls back to where it struck from
+        if (ev.enter && ev.a.before.kind === 'hero') { if (this.prevPos) this.prevPos[A] = { col: ev.at.col, row: ev.at.row }; }
+        else if (ev.enter) this.schedule(hit + 400, () => {
+          const id = ev.a.before.id, q = this.view && this.view.squads[id]; delete this.squadBump[id];
+          if (q) { const from = { col: q.col, row: q.row }; q.col = ev.at.col; q.row = ev.at.row; this.squadAnim[id] = { pts: [from, { col: ev.at.col, row: ev.at.row }], t0: performance.now() - 0.55 * 260, per: 260 }; }
+        });
+        this.schedule(hit + 650, () => { if (ev.a.before.kind === 'hero' && !ev.enter) this.slide[A] = { path: [ev.from], t0: performance.now(), per: run, start: atXY, hold: true }; });
         return hit + 650 + run + 60;
       }
       case 'shoot': {
@@ -344,18 +350,38 @@ window.HB = window.HB || {};
   };
   const SLOTS = [[0, 0], [-0.9, 0.15], [0.9, 0.15], [-0.45, -0.75], [0.45, -0.75], [0, 0.95], [-1.35, -0.6], [1.35, -0.6]];
   const MINION_R = 0.18; // D-087: minion figures ×1.5 (was 0.12 of the hex size)
-  // a crowd of one type: figures ∝ count (1 per 2, up to 8) round a centre, then its plaque
-  P.drawCrowd = function (ctx, pid, type, n, cx, cy, now, plaque, extra, plaqueBelow) {
-    if (n <= 0) return;
-    const S = this.size, r = S * MINION_R, m = Math.min(8, Math.ceil(n / 2));
-    const list = SLOTS.slice(0, m).map((o, i) => ({ x: cx + o[0] * r * 2.1, y: cy + o[1] * r * 1.7, i })).sort((a, b) => a.y - b.y);
-    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(cx, cy + r * 1.2, r * (1.4 + Math.min(m, 5) * 0.35), r * 0.8, 0, 0, Math.PI * 2); ctx.fill();
-    for (const f of list) this.drawMinion(ctx, f.x, f.y, r, pid, type, now, f.i + (extra || 0));
-    if (plaque) this.drawTypePlaque(ctx, pid, type, n, cx, plaqueBelow ? cy + r * 2.5 : cy - r * 3.2, plaque === 'wait');
+  // D-088: minions trail their leader — each figure eases towards its place (exponential follow, its own lag), so when
+  // the Overlord or a group moves the figures fall behind and catch up instead of moving as one block
+  P.lagPos = function (key, tx, ty, tau, now) {
+    const L = this.lagState || (this.lagState = {}), S = this.size;
+    let e = L[key];
+    if (!e || now - e.t > 400 || e.S !== S || Math.hypot(tx - e.x, ty - e.y) > S * 5) { e = L[key] = { x: tx, y: ty, t: now, S }; return e; }
+    const k = 1 - Math.exp(-Math.max(0, now - e.t) / tau);
+    e.x += (tx - e.x) * k; e.y += (ty - e.y) * k; e.t = now;
+    return e;
   };
-  // emblem + number; at a distance the plaques carry the information, close up the figures do
-  P.drawTypePlaque = function (ctx, pid, type, n, x, y, waiting) {
-    const S = this.size, z = this.zoom || 1, sc = z > 1.6 ? 0.85 : 1.1;
+  // a crowd of one type: figures ∝ count (1 per 2, up to o.max) round a centre, then (o.plaque) its plaque above.
+  // o.lag: a key — the figures trail the centre when it moves; o.scale: plaque size; o.seed: gait variety
+  P.drawCrowd = function (ctx, pid, type, n, cx, cy, now, o) {
+    o = o || {};
+    if (n <= 0) return;
+    const S = this.size, r = S * MINION_R, m = Math.min(o.max || 8, Math.ceil(n / 2)), sx = r * 1.75, sy = r * 1.4;
+    let ax = 0, ay = 0;
+    const list = SLOTS.slice(0, m).map((q, i) => {
+      let fx = cx + q[0] * sx, fy = cy + q[1] * sy;
+      if (o.lag) { const L = this.lagPos(o.lag + ':' + i, fx, fy, 60 + (i * 37) % 100, now); fx = L.x; fy = L.y; }
+      ax += fx - q[0] * sx; ay += fy - q[1] * sy;
+      return { x: fx, y: fy, i };
+    }).sort((a, b) => a.y - b.y);
+    ax /= m; ay /= m; // the shadow follows the (trailing) crowd
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(ax, ay + r * 1.2, r * (1.3 + Math.min(m, 5) * 0.3), r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+    for (const f of list) this.drawMinion(ctx, f.x, f.y, r, pid, type, now, f.i + (o.seed || 0));
+    if (o.plaque) this.drawTypePlaque(ctx, pid, type, n, cx, cy - r * 2.9 - (o.scale > 1 ? S * 0.1 : 0), o.plaque === 'wait', o.scale);
+  };
+  // emblem + number; at a distance the plaques carry the information, close up the figures do.
+  // D-088: groups away from the Overlord carry them 1.5× larger (scale)
+  P.drawTypePlaque = function (ctx, pid, type, n, x, y, waiting, scale) {
+    const S = this.size, z = this.zoom || 1, sc = (z > 1.6 ? 0.85 : 1.1) * (scale || 1);
     const h = S * 0.36 * sc, fs = Math.round(S * 0.27 * sc);
     ctx.font = `900 ${fs}px system-ui, sans-serif`;
     const txt = (waiting ? '⏳' : '') + String(n), tw = ctx.measureText(txt).width, w = h + tw + S * 0.2 * sc;
@@ -366,12 +392,6 @@ window.HB = window.HB || {};
     const img = HB.icons.image('t_' + type, '#2a1d0e'), is = h * 0.62;
     if (img.complete && img.naturalWidth) ctx.drawImage(img, bx + h / 2 - is / 2, y - is / 2, is, is);
     ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(txt, bx + h + S * 0.04, y + 1);
-  };
-  // sectors round the Overlord: the first type at his feet, the others at his left and right hand — the same order as the
-  // towers of the castle (middle, left, right). D-086/D-087: he towers over his hex, so no crowd stands behind him
-  P.sectorOffsets = function () {
-    const S = this.size;
-    return [{ x: 0, y: S * 0.98 }, { x: -S * 1.2, y: S * 0.05 }, { x: S * 1.2, y: S * 0.05 }];
   };
   // D-087: the Overlord as a dark lord in the manner of Sauron — black plate armour, a crown of iron spikes over a closed
   // helm with a burning eye slit, spiked pauldrons, a flanged mace, a cape in the team colour (the team reads by the cape,
@@ -427,6 +447,12 @@ window.HB = window.HB || {};
     ctx.fillStyle = eg; ctx.beginPath(); ctx.arc(x, y0 - r * 1.1, r * 0.42, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = `rgba(255,${Math.round(150 + 60 * fl)},60,1)`; ctx.beginPath(); ctx.ellipse(x - r * 0.15, y0 - r * 1.1, r * 0.12, r * 0.035, 0, 0, Math.PI * 2); ctx.ellipse(x + r * 0.15, y0 - r * 1.1, r * 0.12, r * 0.035, 0, 0, Math.PI * 2); ctx.fill();
   };
+  // D-088: the retinue stands in the Overlord's own hex, in front of him — the first type at the middle, the others to
+  // his left and right (the same order as the castle towers: middle, left, right); at most 6 figures a type here
+  P.sectorOffsets = function () {
+    const S = this.size;
+    return [{ x: 0, y: S * 0.5 }, { x: -S * 0.52, y: S * 0.14 }, { x: S * 0.52, y: S * 0.14 }];
+  };
   P.drawOverlord = function (ctx, p, now) {
     if (this.hideWb[p.id]) return;
     const S = this.size, w = p.warband, pos = this.warbandPos(p, now), pid = p.id;
@@ -437,12 +463,9 @@ window.HB = window.HB || {};
     if (dead) return;
     const fk = fall != null ? Math.min(1, (now - fall) / 900) : 0;
     const rise = this.heroRise[pid] != null ? Math.min(1, (now - this.heroRise[pid]) / 450) : 1;
-    // the retinue, sector by sector (the ones further back first)
-    const offs = this.sectorOffsets(pid);
-    const idx = p.types.map((t, i) => ({ t, i, o: offs[i] })).sort((a, b) => a.o.y - b.o.y);
-    for (const e of idx) if (e.o.y <= S * 0.3) this.drawCrowd(ctx, pid, e.t, this.retShown(pid, e.t), x + e.o.x, y + e.o.y, now, true, e.i * 3);
-    // the Overlord: 1.2 hex high, standing on his hex with his retinue at his feet (D-087); r is his body unit
-    const r = 1.2 * Math.sqrt(3) * S / 3.47, y0 = y + S * 0.05;
+    // the Overlord: 1.2 hex high; D-088: he stands in the middle of his hex, his feet a little above its centre, so the
+    // retinue fits in front of him in the same hex. r is his body unit (feet at y0 + r)
+    const r = 1.2 * Math.sqrt(3) * S / 3.47, y0 = y - S * 0.08 - r;
     ctx.save();
     if (fk > 0) { ctx.globalAlpha = 1 - fk; ctx.translate(x, y0); ctx.rotate(fk * 1.2); ctx.translate(-x, -y0); }
     let yy = y0;
@@ -451,15 +474,21 @@ window.HB = window.HB || {};
     const wc = now - (this.warCryPulse[pid] || -1e9);
     if (R.active(this.s, p.status.warCryUntil) || wc < 600) { ctx.strokeStyle = `rgba(255,179,71,${0.55 + 0.35 * Math.sin(now / 200)})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, yy - r * 0.35, r * 1.6, r * 1.95, 0, 0, Math.PI * 2); ctx.stroke(); }
     ctx.restore();
-    const front = () => { for (const e of idx) if (e.o.y > S * 0.3) this.drawCrowd(ctx, pid, e.t, this.retShown(pid, e.t), x + e.o.x, y + e.o.y, now, true, e.i * 3, true); };
-    if (fk > 0) { front(); return; }
-    // banner with the Overlord's HP and the shield of his retinue — on a pole he grips in his right hand
+    // banner pole in his right hand
+    const px = x + r * 0.97, top = y0 - r * 2.75;
+    if (fk <= 0) {
+      ctx.strokeStyle = '#3b2a14'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px, y0 + r * 0.95); ctx.lineTo(px, top); ctx.stroke();
+      ctx.fillStyle = '#17141a'; ctx.beginPath(); ctx.arc(px, y0 - r * 0.02, r * 0.14, 0, Math.PI * 2); ctx.fill(); // the gauntlet over the pole
+    }
+    // the retinue in front of him, back rows first; the figures trail him when he moves (D-088)
+    const offs = this.sectorOffsets(pid);
+    const idx = p.types.map((t, i) => ({ t, i, o: offs[i] })).sort((a, b) => a.o.y - b.o.y);
+    for (const e of idx) this.drawCrowd(ctx, pid, e.t, this.retShown(pid, e.t), x + e.o.x, y + e.o.y, now, { max: 6, lag: 'h' + pid + e.t, seed: e.i * 3 });
+    if (fk > 0) return;
+    // the retinue's plaques: a column at his left hand, in the order of the sectors
+    p.types.forEach((t, i) => this.drawTypePlaque(ctx, pid, t, this.retShown(pid, t), x - S * 0.95, y0 - r * 1.55 + i * S * 0.46, false));
+    // banner with the Overlord's HP and the shield of his retinue
     const bumpK = (now - (this.bump[pid] || -1e9)) / 380, bsc = bumpK >= 0 && bumpK < 1 ? 1 + 0.25 * Math.sin(bumpK * Math.PI) : 1;
-    const px = x + r * 0.97, top = y - S * 2.05;
-    ctx.strokeStyle = '#3b2a14'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px, y0 + r * 0.95); ctx.lineTo(px, top); ctx.stroke();
-    ctx.fillStyle = '#17141a'; ctx.beginPath(); ctx.arc(px, y0 - r * 0.02, r * 0.14, 0, Math.PI * 2); ctx.fill(); // the gauntlet over the pole
-    // the crowd at his feet is nearer to the viewer: drawn over him and the pole, its plaque under it
-    front();
     const hp = this.hpShown(pid), txt = `❤ ${hp}`, fs = Math.round(S * 0.36);
     ctx.font = `900 ${fs}px system-ui, sans-serif`;
     const fw = Math.max(S * 0.95, ctx.measureText(txt).width + S * 0.45), fh = S * 0.5;
@@ -477,9 +506,9 @@ window.HB = window.HB || {};
     ctx.fillStyle = danger ? `rgba(120,20,10,${0.75 + 0.2 * pulse})` : 'rgba(20,12,6,0.8)'; ctx.strokeStyle = danger ? '#ff6b5a' : COL[pid + 'Light']; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.roundRect(sx, sy, sw, sh2, sh2 / 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText(st, sx + S * 0.15, sy + sh2 / 2 + 1);
-    if (pid === this.s.current && this.s.phase === 'play') { // whose turn: a dashed ring round him and his retinue
+    if (pid === this.s.current && this.s.phase === 'play') { // whose turn: a dashed ring round his hex
       ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 2; ctx.setLineDash([5, 5]);
-      ctx.beginPath(); ctx.ellipse(x, y + S * 0.3, S * 1.85, S * 1.1, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.ellipse(x, y + S * 0.15, S * 1.15, S * 0.8, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
     }
   };
   P.squadPos = function (q, now) {
@@ -515,7 +544,7 @@ window.HB = window.HB || {};
         const w = this.s.players[q.owner].warband, h = this.warbandPos(this.s.players[q.owner], now);
         if (!w.dead) { ctx.strokeStyle = COL[q.owner + 'Light']; ctx.globalAlpha = 0.6; ctx.lineWidth = 2; ctx.setLineDash([4, 5]); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); ctx.lineTo(h.x, h.y); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; }
       }
-      this.drawCrowd(ctx, q.owner, q.type, q.n, pos.x, pos.y, now, q.state === 'wait' ? 'wait' : true, q.id);
+      this.drawCrowd(ctx, q.owner, q.type, q.n, pos.x, pos.y, now, { plaque: q.state === 'wait' ? 'wait' : true, scale: 1.5, lag: 'q' + q.id, seed: q.id }); // D-088: big plaques away from the Overlord; figures trail the group
     }
   };
   // the gothic castle: dark stone, lancet windows, three towers with spires — a tower per minion type, left to right in

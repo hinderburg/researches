@@ -7,10 +7,10 @@ window.HB = window.HB || {};
   const $ = sel => document.querySelector(sel);
   const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
   const KIND_CLASS = { hero_move: 'k-move', sortie: 'k-sortie', recall: 'k-util', war_cry: 'k-combat', fortify: 'k-def', volley: 'k-combat', scorch: 'k-combat', palisade: 'k-def', bless: 'k-reinf', call: 'k-reinf' };
-  // D-085: a minion card carries its type's emblem in the type colour; Overlord cards a crown
+  // D-085/D-088: a minion card carries a strip in its type colour with the emblem and the name; Overlord cards a gold crown strip
   const cardHTML = defId => {
     const d = CARDS[defId], t = TYPES[d.owner];
-    const tag = t ? `<div class="card-type" style="background:${t.color}">${HB.icons.svg('t_' + d.owner)}</div>` : '<div class="card-type hero">♛</div>';
+    const tag = t ? `<div class="card-type" style="--tc:${t.color}">${HB.icons.svg('t_' + d.owner)}<span>${t.title}</span></div>` : '<div class="card-type hero"><b>♛</b><span>Overlord</span></div>'; // D-088: a header strip
     return `${tag}<div class="card-icon">${HB.icons.svg(iconOf(defId))}</div><div class="card-name">${d.title}</div>`;
   };
   const cardClass = defId => 'card ' + (KIND_CLASS[CARDS[defId].kind] || '') + (CARDS[defId].owner === 'hero' ? ' tier-hero' : '');
@@ -285,7 +285,7 @@ window.HB = window.HB || {};
     // a tiny hand-made Overlord board the normal renderer can draw (menu scenes, D-085)
     miniState(cols, rows, fn) {
       const pl = (id, types, col, row) => {
-        const p = { id, name: id === 1 ? 'Blue' : 'Red', types: Object.keys(types), comp: Object.assign({}, types), retinue: {}, levels: { hero: 1 }, status: { warCryUntil: -1, attackBonus: 0, formationUntil: -1 }, warband: { col, row, hp: 30, maxHp: 30, minions: 0 }, hand: [], deck: [], discard: [] };
+        const p = { id, name: id === 1 ? 'Blue' : 'Red', types: Object.keys(types), comp: Object.assign({}, types), retinue: {}, levels: { hero: 1 }, status: { warCryUntil: -1, attackBonus: 0, formationUntil: -1 }, warband: { col, row, hp: 40, maxHp: 40, minions: 0 }, hand: [], deck: [], discard: [] };
         for (const t in types) { p.retinue[t] = { n: types[t], wound: 0 }; p.levels[t] = 1; }
         return p;
       };
@@ -299,14 +299,14 @@ window.HB = window.HB || {};
       const castle = (s, pid, col, row) => { s.castles[pid] = { col, row }; const c = s.cells[hex.key(col, row)]; c.castle = pid; c.owner = pid; };
       // 1 · territory at the end: a split board, each Overlord in front of his castle
       const s3 = this.miniState(5, 4, s => {
-        s.players[1].warband = { col: 1, row: 2, hp: 30, maxHp: 30 }; s.players[2].warband = { col: 3, row: 1, hp: 30, maxHp: 30 };
+        s.players[1].warband = { col: 1, row: 2, hp: 40, maxHp: 40 }; s.players[2].warband = { col: 3, row: 1, hp: 40, maxHp: 40 };
         for (const k in s.cells) { const c = s.cells[k]; c.owner = c.row >= 2 || (c.row === 1 && c.col <= 2) ? 1 : (c.col === 0 && c.row === 0 ? 0 : 2); }
         castle(s, 1, 2, 3); castle(s, 2, 4, 0);
       });
       mk('#pic-terr', s3);
       // 2 · slay the Overlord: blue brawlers charge a red Overlord whose retinue is off on a sortie
       const s1 = this.miniState(5, 4, s => {
-        s.players[1].warband = { col: 0, row: 2, hp: 30, maxHp: 30 }; s.players[2].warband = { col: 3, row: 1, hp: 9, maxHp: 30 };
+        s.players[1].warband = { col: 0, row: 2, hp: 40, maxHp: 40 }; s.players[2].warband = { col: 3, row: 1, hp: 12, maxHp: 40 };
         s.players[2].retinue.brawler.n = 0; s.players[2].retinue.brute.n = 0; s.players[2].retinue.archer.n = 1;
         s.players[1].retinue.brawler.n = 0;
         s.squads.push({ id: 1, owner: 1, type: 'brawler', n: 8, col: 2, row: 1, state: 'out' });
