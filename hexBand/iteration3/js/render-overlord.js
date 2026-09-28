@@ -552,9 +552,17 @@ window.HB = window.HB || {};
       const k = q.col + ',' + q.row, slot = seen[k] = (seen[k] || 0) + 1;
       let pos = this.squadPos(q, now);
       if (slot > 1) pos = { x: pos.x + (slot % 2 ? -1 : 1) * S * 0.45, y: pos.y + S * 0.2 };
-      if (q.state === 'return' && !this.squadAnim[q.id]) { // dotted line back to the Overlord
-        const w = this.s.players[q.owner].warband, h = this.warbandPos(this.s.players[q.owner], now);
-        if (!w.dead) { ctx.strokeStyle = COL[q.owner + 'Light']; ctx.globalAlpha = 0.6; ctx.lineWidth = 2; ctx.setLineDash([4, 5]); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); ctx.lineTo(h.x, h.y); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; }
+      if (q.state === 'return' && !this.squadAnim[q.id]) { // D-092: the actual way home, hex by hex, with the turn of each stop
+        const w = this.s.players[q.owner].warband, real = this.s.squads.find(x => x.id === q.id);
+        const route = !w.dead && real && real.col === q.col && real.row === q.row ? R.returnPath(this.s, real) : null;
+        if (route && route.length) {
+          const pts = [pos].concat(route.map(c => this.cellXY(c.col, c.row))), per = Math.max(1, R.typeStat(this.s, q.owner, q.type, 'ret'));
+          ctx.strokeStyle = COL[q.owner + 'Light']; ctx.globalAlpha = 0.65; ctx.lineWidth = 2.5; ctx.setLineDash([4, 6]); ctx.lineCap = 'round';
+          ctx.beginPath(); pts.forEach((pt, i) => i ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y)); ctx.stroke(); ctx.setLineDash([]); ctx.lineCap = 'butt';
+          // where it will stand after each of the coming turns (it joins as soon as it is next to the Overlord)
+          for (let i = per; i < route.length - 1; i += per) { const c = pts[i]; ctx.fillStyle = 'rgba(20,12,6,0.85)'; ctx.beginPath(); ctx.arc(c.x, c.y, S * 0.17, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = COL[q.owner + 'Light']; ctx.font = `900 ${Math.round(S * 0.22)}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(i / per), c.x, c.y + 1); }
+          ctx.globalAlpha = 1;
+        }
       }
       if (q.state === 'hold') { // D-090: the reach of the ambush
         const real = this.s.squads.find(x => x.id === q.id), rr = ((real && real.holdRange) || 3) * Math.sqrt(3) * S + S * 0.6;

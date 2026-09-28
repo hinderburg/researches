@@ -547,21 +547,25 @@ window.HB = window.HB || {};
     }
     return hit;
   }
-  // shortest walk for a squad of pid (walls stop all but Breach; castles and enemy groups block)
-  function walkPath(s, pid, from, to, breach) {
-    const tk = K(to.col, to.row), fk = K(from.col, from.row);
-    if (tk === fk) return [];
-    const parent = { [fk]: null }, queue = [from];
-    while (queue.length) {
-      const c = queue.shift();
-      for (let d = 0; d < 6; d++) {
-        const n = hex.neighbor(c.col, c.row, d), nk = K(n.col, n.row);
-        if (!exists(s, n) || nk in parent || castleAt(s, n) || isBlocked(s, n) || (walled(s, c, n) && !breach)) continue;
-        const g = groupAt(s, n);
-        if (g && g.pid !== pid) continue;
-        parent[nk] = K(c.col, c.row);
-        if (nk === tk) { const out = []; let k = nk; while (k !== fk) { const [cc, rr] = k.split(',').map(Number); out.unshift({ col: cc, row: rr }); k = parent[k]; } return out; }
-        queue.push(n);
+  // D-092: the way home of a returning group — over the player's own hexes wherever it can (a detour of a few steps is
+  // worth it: a step on own land costs 1, on any other 5), across other land only where it must. Returning groups (but
+  // runners) do not paint, so this keeps them on their own ground instead of cutting across neutral land.
+  function returnPath(s, sq) {
+    const w = s.players[sq.owner].warband, pid = sq.owner, breach = TYPES[sq.type].trait === 'breach';
+    const fk = K(sq.col, sq.row), tk = K(w.col, w.row);
+    if (fk === tk) return [];
+    const dist = { [fk]: 0 }, parent = { [fk]: null }, open = [{ k: fk, c: { col: sq.col, row: sq.row }, d: 0 }], done = new Set();
+    while (open.length) {
+      let bi = 0; for (let i = 1; i < open.length; i++) if (open[i].d < open[bi].d) bi = i;
+      const { k, c, d } = open.splice(bi, 1)[0];
+      if (done.has(k)) continue; done.add(k);
+      if (k === tk) { const out = []; let x = k; while (x !== fk) { const [cc, rr] = x.split(',').map(Number); out.unshift({ col: cc, row: rr }); x = parent[x]; } return out; }
+      for (let dd = 0; dd < 6; dd++) {
+        const n = hex.neighbor(c.col, c.row, dd), nk = K(n.col, n.row);
+        if (!exists(s, n) || done.has(nk) || castleAt(s, n) || isBlocked(s, n) || (walled(s, c, n) && !breach)) continue;
+        const g = groupAt(s, n); if (g && g.pid !== pid) continue;
+        const nd = d + (nk === tk || cellAt(s, n).owner === pid ? 1 : 5);
+        if (dist[nk] == null || nd < dist[nk]) { dist[nk] = nd; parent[nk] = k; open.push({ k: nk, c: n, d: nd }); }
       }
     }
     return null;
@@ -571,7 +575,7 @@ window.HB = window.HB || {};
     s.painter = { pid: sq.owner, type: sq.type };
     if (w.dead) return;
     if (hex.distance(sq, w) <= 1) { join(s, sq, 'back'); return; }
-    const path = walkPath(s, sq.owner, sq, w, TYPES[sq.type].trait === 'breach');
+    const path = returnPath(s, sq); // D-092: home over own land where it can
     if (!path) return;
     const steps = Math.min(typeStat(s, sq.owner, sq.type, 'ret'), path.length);
     const walked = path.slice(0, steps);
@@ -925,7 +929,7 @@ window.HB = window.HB || {};
   function takeEvents(s) { const e = s.events; s.events = []; return e; }
   function clone(s) { const e = s.events, l = s.log; s.events = []; s.log = []; const c = JSON.parse(JSON.stringify(s)); s.events = e; s.log = l; return c; }
 
-  HB.rules = { createGame, playCard, endTurn, passTurn, getPlay, planOf, takeEvents, clone, territory, cellCount, poiCount, totalCells,
+  HB.rules = { createGame, playCard, endTurn, passTurn, getPlay, planOf, returnPath, takeEvents, clone, territory, cellCount, poiCount, totalCells,
     scoreboard, round, occupant, groupAt, isBlocked, active, rand, stepOptions, freeStep, walled, isSwamp, isFortifiedAgainst, castleAt,
     statsAt, heroStatsAt, typeStat, typeLevel, heroStat, armyOnField, retinueHP, roadRegion, heroThreat, forecastPlay, forecastStep,
     sortieBlocked, power };
