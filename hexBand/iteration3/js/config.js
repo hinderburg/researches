@@ -1,8 +1,10 @@
 // HEXBand prototype — tunables. See docs/DECISIONS.md for the reasoning behind each value.
 window.HB = window.HB || {};
 HB.CONFIG = {
-  VERSION: '0.36.1-it3',
+  VERSION: '0.37.0-it3',
   COLS: 11,              // flat-top hex columns; odd columns are shifted down and hold one cell less (see D-002). iteration3 (D-083): 7 → 11
+  BOARD_TIP: 1.5,        // D-093: the diamond board narrows to ±1.5 hex widths (3 columns) at the castle ends
+  BOARD_SIDE: 1.5,       // D-093: and its left and right corners are blunted (3 hexes tall instead of 1)
   ROWS: 17,              // rows in even columns; odd columns have ROWS-1. iteration3 (D-083): 11 → 17 — the board is ~50 % larger each way
   // D-085 (iteration3, V4 "Overlord"): a deck of 6 — 3 Overlord cards + 1 card for each of the 3 minion types; hand of 3
   HAND_SIZE: 3,
@@ -19,11 +21,12 @@ HB.CONFIG = {
   // castles (passive bases, D-084): the castle hex; the Overlord starts on the hex in front of it
   START: { 1: { col: 5, row: 15 }, 2: { col: 5, row: 0 } },
   HERO_START: { 1: { col: 5, row: 14 }, 2: { col: 5, row: 1 } },
-  // D-085: upgrade points in the middle band, ≥ 5 hexes from both castles; mirrored pairs share a minion type
+  // D-085/D-091: recruiting posts in the middle band, ≥ 5 hexes from both castles, and the Citadel.
+  // D-093: on the diamond board the Citadel stands one step nearer to Blue (first move measured 36 % with it nearer Red)
   POINTS: {
     left: [{ col: 2, row: 5 }, { col: 2, row: 11 }],
     right: [{ col: 8, row: 5 }, { col: 8, row: 11 }],
-    citadel: { col: 5, row: 7 },
+    citadel: { col: 5, row: 8 },
   },
   COLORS: {
     grass: '#74b64b', grassAlt: '#6dae46', grassEdge: '#4f8a33', grassSide: '#4a7d2e',

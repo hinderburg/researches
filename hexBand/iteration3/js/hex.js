@@ -44,6 +44,15 @@ window.HB = window.HB || {};
     return col >= 0 && col < cols && row >= 0 && row < rowsInCol(col, rows);
   }
   function mirror(col, row, rows) { return { col, row: rowsInCol(col, rows) - 1 - row }; }
+  // D-093: the diamond board — every row of the rectangle is kept, but the width narrows linearly from the full width in
+  // the middle to ±tip (in units of the hex size, 1.5 per column) at the top and bottom ends, where the castles stand.
+  // Point-symmetric, so both sides get the same board.
+  function inDiamond(col, row, cols, rows, tip, side) {
+    if (!exists(col, row, cols, rows)) return false;
+    const X = 1.5 * col, Y = SQRT3 * (row + 0.5 * (col & 1)), Xc = 1.5 * (cols - 1) / 2, Yc = SQRT3 * (rows - 1) / 2;
+    const half = Math.min(Xc, tip + (Xc + (side || 0) - tip) * (1 - Math.abs(Y - Yc) / Yc)); // side: blunts the left and right corners
+    return Math.abs(X - Xc) <= half + 1e-6;
+  }
 
   function pixel(col, row, s) {
     return { x: s * 1.5 * col + s, y: s * SQRT3 * (row + 0.5 * (col & 1)) + s * SQRT3 / 2 };
@@ -72,5 +81,5 @@ window.HB = window.HB || {};
   const dirAngle = (dir) => -Math.PI / 2 + dir * Math.PI / 3;
 
   HB.hex = { SQRT3, DIRS, DIR_NAMES, key, toAxial, toOffset, neighbor, distance, dirBetween, relZone, inFrontArc, turn,
-    rowsInCol, exists, mirror, pixel, boardSize, corners, pixelToCell, dirAngle };
+    rowsInCol, exists, inDiamond, mirror, pixel, boardSize, corners, pixelToCell, dirAngle };
 })();

@@ -12,7 +12,7 @@ window.HB = window.HB || {};
   const MINION_TYPES = {
     brawler: { id: 'brawler', title: 'Brawlers', one: 'Brawler', color: '#c98a3a', hp: 3, atk: 2, speed: 2, capture: 1, ret: 2, range: 0, weight: 1, shield: 3, out: 2,
       grow: { hp: 0.34, atk: 0.34, out: 0.25 }, trait: 'steady', traitTitle: 'Steady', traitText: 'After winning a fight on a sortie they keep going.' },
-    runner: { id: 'runner', title: 'Runners', one: 'Runner', color: '#5cbf57', hp: 1, atk: 1, speed: 3, capture: 2, ret: 3, range: 0, weight: 1, shield: 1, out: 3,
+    runner: { id: 'runner', title: 'Runners', one: 'Runner', color: '#5cbf57', hp: 1, atk: 2, speed: 3, capture: 2, ret: 3, range: 0, weight: 1, shield: 1, out: 3,
       grow: { hp: 0.2, atk: 0.2, out: 0.25 }, trait: 'paint_back', traitTitle: 'Light-footed', traitText: 'They paint hexes on the way back too.' },
     archer: { id: 'archer', title: 'Archers', one: 'Archer', color: '#e2c24a', hp: 2, atk: 2, speed: 2, capture: 1, ret: 2, range: 2, weight: 1, shield: 1, out: 2,
       grow: { hp: 0.25, atk: 0.34, out: 0.25 }, trait: 'ranged', traitTitle: 'Ranged 2', traitText: 'They shoot an enemy group within 2 hexes instead of closing in; no retaliation.' },

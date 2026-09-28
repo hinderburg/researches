@@ -326,6 +326,7 @@ window.HB = window.HB || {};
   P.drawV4 = function (ctx, now) {
     const s = this.s;
     for (const q of s.pois) this.drawPoint(ctx, q, now);
+    for (const pid of [1, 2]) this.drawCastleRim(ctx, pid); // D-093
     for (const pid of [1, 2]) this.drawGothicCastle(ctx, pid, now);
     this.drawSquads(ctx, now);
     const order = [1, 2].sort((a, b) => s.players[a].warband.row - s.players[b].warband.row);
@@ -574,11 +575,43 @@ window.HB = window.HB || {};
   };
   // the gothic castle: dark stone, lancet windows, three towers with spires — a tower per minion type, left to right in
   // the order of the retinue sectors, with the type's colour on its spire and banner; a pit pulses when minions leave it
+  // D-093: the castle stands on a raised stone plateau of three hexes — one seamless block, no territory colour, a pale
+  // rim with merlons along its outer edges: clearly not ground anyone can walk on
+  const CASTLE_SCALE = 2.1, PLATEAU_THICK = 0.34;
+  P.drawCastleTile = function (ctx, c, p) {
+    const S = this.size, T = S * PLATEAU_THICK, t = hex.corners(p.x, p.y, S, 0), b = hex.corners(p.x, p.y + T, S, 0);
+    ctx.fillStyle = '#2c2832'; ctx.beginPath(); ctx.moveTo(t[0].x, t[0].y); for (let i = 1; i <= 3; i++) ctx.lineTo(t[i].x, t[i].y); for (let i = 3; i >= 0; i--) ctx.lineTo(b[i].x, b[i].y); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1; for (let i = 0; i < 3; i++) { const y = t[1].y + (i + 1) * T / 4; ctx.beginPath(); ctx.moveTo(t[3].x, y); ctx.lineTo(t[0].x, y); ctx.stroke(); } // stone courses
+    ctx.fillStyle = '#57525e'; ctx.beginPath(); ctx.moveTo(t[0].x, t[0].y); for (let i = 1; i < 6; i++) ctx.lineTo(t[i].x, t[i].y); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.12)'; // paving flags
+    for (let i = 0; i < 5; i++) { const fx = p.x + (((c.col * 7 + c.row * 13 + i * 5) % 9) / 9 - 0.5) * S * 1.1, fy = p.y + (((c.col * 3 + c.row * 11 + i * 7) % 7) / 7 - 0.5) * S * 1.1; ctx.fillRect(fx - S * 0.12, fy - S * 0.07, S * 0.24, S * 0.14); }
+  };
+  P.drawCastleRim = function (ctx, pid) {
+    const s = this.s, cs = s.castles && s.castles[pid]; if (!cs || !cs.cells) return;
+    const S = this.size, own = new Set(cs.cells.map(c => hex.key(c.col, c.row)));
+    for (const c of cs.cells) {
+      const p = this.cellXY(c.col, c.row), k = hex.corners(p.x, p.y, S, 0);
+      for (let d = 0; d < 6; d++) {
+        const n = hex.neighbor(c.col, c.row, d); if (own.has(hex.key(n.col, n.row))) continue;
+        const a = k[(d + 4) % 6], b2 = k[(d + 5) % 6];
+        ctx.strokeStyle = '#1e1b22'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b2.x, b2.y); ctx.stroke();
+        ctx.strokeStyle = '#9c96a4'; ctx.lineWidth = 3; ctx.stroke();
+        for (let i = 1; i <= 3; i++) { const u = i / 4, mx = a.x + (b2.x - a.x) * u, my = a.y + (b2.y - a.y) * u; ctx.fillStyle = '#9c96a4'; ctx.strokeStyle = '#1e1b22'; ctx.lineWidth = 1; ctx.fillRect(mx - S * 0.07, my - S * 0.12, S * 0.14, S * 0.12); ctx.strokeRect(mx - S * 0.07, my - S * 0.12, S * 0.14, S * 0.12); } // merlons
+      }
+    }
+  };
   P.drawGothicCastle = function (ctx, pid, now) {
     const s = this.s, c = s.castles && s.castles[pid]; if (!c) return;
     const S = this.size, p = this.cellXY(c.col, c.row), types = s.players[pid].types;
     let vis = 1; const r0 = this.castleRise[pid];
     if (r0 !== undefined) { if (now < r0) return; const k = (now - r0) / 900; if (k >= 1) delete this.castleRise[pid]; else vis = easeOut(k); }
+    // D-093: on its plateau the castle is drawn ×2.1, standing in the middle of the three hexes
+    if (c.cells && !this._castleScaled) {
+      let cx = 0, cy = 0; for (const q of c.cells) { const xy = this.cellXY(q.col, q.row); cx += xy.x; cy += xy.y; } cx /= c.cells.length; cy /= c.cells.length;
+      ctx.save(); ctx.translate(cx, cy + S * 0.55); ctx.scale(CASTLE_SCALE, CASTLE_SCALE); ctx.translate(-p.x, -(p.y + S * 0.45));
+      this._castleScaled = true; try { this.drawGothicCastle(ctx, pid, now); } finally { this._castleScaled = false; ctx.restore(); }
+      return;
+    }
     const x = p.x, base = p.y + S * 0.45, H = S * 1.9, off = (1 - vis) * H;
     const stone = '#6f6a72', stoneDark = '#3e3a44', stoneLight = '#8d8894', team = COL[pid], teamDark = COL[pid + 'Dark'];
     ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(x, base + S * 0.04, S * 1.0, S * 0.2, 0, 0, Math.PI * 2); ctx.fill();

@@ -27,7 +27,7 @@ window.HB = window.HB || {};
   const active = (s, until) => s.turnIndex < until;
   const log = (s, text) => { s.log.push(text); s.events.push({ type: 'log', text }); };
   const cellAt = (s, c) => s.cells[K(c.col, c.row)];
-  const exists = (s, c) => hex.exists(c.col, c.row, s.cols, s.rows);
+  const exists = (s, c) => !!s.cells[K(c.col, c.row)]; // D-093: the board is the set of cells (a diamond), not a rectangle
   const enemyOf = (s, pid) => s.players[3 - pid];
   const isEdge = (s, c) => { for (let d = 0; d < 6; d++) if (!exists(s, hex.neighbor(c.col, c.row, d))) return true; return false; };
   const edgeKey = (a, b) => { const ka = K(a.col, a.row), kb = K(b.col, b.row); return ka < kb ? ka + '|' + kb : kb + '|' + ka; };
@@ -96,7 +96,7 @@ window.HB = window.HB || {};
       cells: {}, pois: [], players: [null, null, null], blocked: {}, walls: {}, swamps: {}, summons: [], squads: [],
       paintBuf: [], paintedThisCard: null, events: [], log: [], stepUsed: false, castles: {},
     };
-    for (let c = 0; c < s.cols; c++) for (let r = 0; r < hex.rowsInCol(c, s.rows); r++) s.cells[K(c, r)] = { col: c, row: r, owner: 0, bonus: 0, poi: -1, paintedAt: -1 };
+    for (let c = 0; c < s.cols; c++) for (let r = 0; r < hex.rowsInCol(c, s.rows); r++) if (hex.inDiamond(c, r, s.cols, s.rows, CFG.BOARD_TIP, CFG.BOARD_SIDE)) s.cells[K(c, r)] = { col: c, row: r, owner: 0, bonus: 0, poi: -1, paintedAt: -1 };
     for (const pid of [1, 2]) {
       const o = opts.players[pid], lo = o.loadout, lv = o.levels || {};
       const types = Object.keys(lo.types), hs = CFG.HERO_START[pid];
@@ -109,10 +109,14 @@ window.HB = window.HB || {};
       };
       for (const t of types) p.retinue[t] = { n: p.comp[t], wound: 0 };
       p.warband.maxHp = p.warband.hp = heroStat(p, 'hp');
-      const st = CFG.START[pid], castle = s.cells[K(st.col, st.row)];
-      castle.castle = pid; castle.owner = pid;
-      s.castles[pid] = { col: st.col, row: st.row };
-      for (let d = 0; d < 6; d++) { const n = hex.neighbor(st.col, st.row, d); if (exists(s, n)) cellAt(s, n).owner = pid; }
+      // D-093: the castle is a plateau of three hexes at the tip of the diamond — its hex and the two behind it (farther
+      // from the middle of the board). Nobody enters it; the hexes round it are the start territory.
+      const st = CFG.START[pid], Yc = (s.rows - 1) / 2, far = c => Math.abs(c.row + 0.5 * (c.col & 1) - Yc);
+      const cells = [{ col: st.col, row: st.row }];
+      for (let d = 0; d < 6; d++) { const n = hex.neighbor(st.col, st.row, d); if (exists(s, n) && far(n) > far(st)) cells.push({ col: n.col, row: n.row }); }
+      for (const c of cells) { const cell = cellAt(s, c); cell.castle = pid; cell.owner = pid; }
+      s.castles[pid] = { col: st.col, row: st.row, cells };
+      for (const c of cells) for (let d = 0; d < 6; d++) { const n = hex.neighbor(c.col, c.row, d); if (exists(s, n) && !cellAt(s, n).castle) cellAt(s, n).owner = pid; }
     }
     // upgrade points: four recruiting posts (D-091: whoever takes one raises that type's army size) and the Citadel
     const addPoint = (c, kind) => { const q = { id: s.pois.length, col: c.col, row: c.row, kind, owner: 0, boost: null }; s.pois.push(q); s.cells[K(c.col, c.row)].poi = q.id; };
@@ -616,7 +620,7 @@ window.HB = window.HB || {};
       } else {
         let best = null, bd = Infinity, bc = Infinity;
         for (const kk of reg.set) {
-          if (kk === reg.k0 && reg.set.size > 1) continue;
+          if ((kk === reg.k0 || s.cells[kk].castle) && reg.set.size > 1) continue; // never on the castle plateau (D-093)
           const [c, r] = kk.split(',').map(Number), cell = { col: c, row: r }, g = groupAt(s, cell);
           if (g && g.pid !== p.id) continue;
           const d = hex.distance(cell, w), dc = hex.distance(cell, castle);

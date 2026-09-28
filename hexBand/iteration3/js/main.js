@@ -33,7 +33,7 @@ window.HB = window.HB || {};
     if (opt.cells) opt.cells.forEach(c => hl.push({ col: c.col, row: c.row, kind: 'burn' })); // D-087: the line of fire
     if (def.kind === 'palisade') for (const t of [-1, 0, 1]) {
       const m = hex.neighbor(opt.cell.col, opt.cell.row, hex.turn(opt.dir, t));
-      if (hex.exists(m.col, m.row, s.cols, s.rows)) hl.push({ kind: 'wall', a: opt.cell, b: m });
+      if (s.cells[hex.key(m.col, m.row)]) hl.push({ kind: 'wall', a: opt.cell, b: m });
     }
   }
   // D-087: a move's preview — a dotted route with the number of the turn at each stop, and the hexes it will capture
@@ -654,7 +654,7 @@ window.HB = window.HB || {};
         for (const o of play.options) for (const c of o.cells) hl.push({ col: c.col, row: c.row, kind: 'target', strong: o === opt });
       } else if (play.options && play.options[0] && play.options[0].side != null) {
         if (has) { const wx = rd.warbandScreenX(p.id), side = clientX < wx ? -1 : 1; const opt = play.options.find(o => o.side === side) || play.options[0]; sel.choice = opt; sel.valid = true; }
-        for (let d = 0; d < 6; d++) { const n = hex.neighbor(p.warband.col, p.warband.row, d); if (hex.exists(n.col, n.row, this.state.cols, this.state.rows)) hl.push({ col: n.col, row: n.row, kind: 'target', strong: false }); }
+        for (let d = 0; d < 6; d++) { const n = hex.neighbor(p.warband.col, p.warband.row, d); if (this.state.cells[hex.key(n.col, n.row)]) hl.push({ col: n.col, row: n.row, kind: 'target', strong: false }); }
       } else if (play.options && play.options[0] && play.options[0].cell) { // D-068: any card aimed at a hex
         const cell = has ? rd.cellFromPointer(clientX, clientY) : null;
         const opt = cell && play.options.find(o => o.cell.col === cell.col && o.cell.row === cell.row);
