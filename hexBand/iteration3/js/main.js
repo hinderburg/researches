@@ -518,11 +518,22 @@ window.HB = window.HB || {};
       if (lostM || hM) parts.push(`you −${lostM}${hM ? ` ❤${o.myHero[0]}→${o.myHero[1]}` : ''}`);
       return { text: parts.join(' · '), bad: lostM + hM > lostE + hE, long: `<b>Forecast:</b> ${parts.join(', ')}.` + (o.lost ? ' Your Overlord would fall!' : '') };
     },
+    // D-096: a move that closes a contour says so — "+N enclosed" on the plaque, and the hexes are shown on the board
+    withFill(f, o) {
+      const n = o && o.fill ? o.fill.length : 0;
+      if (!n) return f;
+      f = f ? Object.assign({}, f) : { text: '', long: '<b>Forecast:</b>' };
+      f.text = (f.text ? f.text + ' · ' : '') + `+${n} enclosed`;
+      f.long = f.long.replace(/\.$/, '') + ` Closes a contour: +${n} hexes.`;
+      f.fill = o.fill; f.gain = true;
+      return f;
+    },
     updateForecast(ctx) {
       const s = this.state, rd = this.renderer;
-      let f = null;
-      if (ctx.valid && ctx.choice && ctx.uid != null) f = this.forecastText(R.forecastPlay(s, ctx.uid, ctx.choice), s);
+      let f = null, res = null;
+      if (ctx.valid && ctx.choice && ctx.uid != null) { res = R.forecastPlay(s, ctx.uid, ctx.choice); f = this.forecastText(res, s); }
       const cell = ctx.choice ? (ctx.choice.end || ctx.choice.cell) : null;
+      f = this.withFill(f, res);
       rd.forecast = f && cell ? Object.assign({ cell }, f) : null;
       const fcEl = $('#card-desc .desc-forecast');
       if (!fcEl) return;
@@ -729,7 +740,7 @@ window.HB = window.HB || {};
         rd.highlights = []; if (opt) planHighlights(rd.highlights, this.state, { kind: 'hero_move' }, opt);
         rd.pathFrom = opt ? { col: this.state.players[this.state.current].warband.col, row: this.state.players[this.state.current].warband.row } : null;
         rd.forecast = null;
-        if (opt && opt.path[0].attack) { const f = this.forecastText(R.forecastStep(this.state, opt.dir), this.state); rd.forecast = f ? Object.assign({ cell: opt.end }, f) : null; }
+        if (opt) { const o = R.forecastStep(this.state, opt.dir), f = this.withFill(this.forecastText(o, this.state), o); rd.forecast = f ? Object.assign({ cell: opt.end }, f) : null; } // D-096: a step can close a contour too
       });
       board.addEventListener('pointerup', e => {
         if (!this.stepPress || e.pointerId !== this.stepPress.id) return;

@@ -29,7 +29,6 @@ window.HB = window.HB || {};
   const cellAt = (s, c) => s.cells[K(c.col, c.row)];
   const exists = (s, c) => !!s.cells[K(c.col, c.row)]; // D-093: the board is the set of cells (a diamond), not a rectangle
   const enemyOf = (s, pid) => s.players[3 - pid];
-  const isEdge = (s, c) => { for (let d = 0; d < 6; d++) if (!exists(s, hex.neighbor(c.col, c.row, d))) return true; return false; };
   const edgeKey = (a, b) => { const ka = K(a.col, a.row), kb = K(b.col, b.row); return ka < kb ? ka + '|' + kb : kb + '|' + ka; };
   const walled = (s, a, b) => { const w = s.walls[edgeKey(a, b)]; return !!w && active(s, w.until); };
   const isSwamp = (s, c) => active(s, s.swamps[K(c.col, c.row)] || -1);
@@ -178,23 +177,24 @@ window.HB = window.HB || {};
     if (filled.length) s.events.push({ type: 'fill', player: p.id, cells: filled, count: filled.length });
     s.paintBuf = [];
   }
-  // D-073: an area is captured only when it is surrounded by the player's own hexes (walls count, the map edge does not);
-  // the area the enemy Overlord stands in is never filled
+  // D-096: the map edge closes a contour again (as in D-049…D-056, before D-073): every area of hexes that are not the
+  // player's, cut off by his hexes (walls count) and the edge of the board, is filled — except the open field, i.e. the
+  // area the enemy Overlord stands in and the area round the enemy castle
   function enclosure(s, p) {
     if (s.phase !== 'play') return 0;
     const own = k => s.cells[k].owner === p.id;
-    const ew = enemyOf(s, p.id).warband;
+    const e = enemyOf(s, p.id), ew = e.warband;
     const seen = new Set();
     let filled = 0;
     for (const k0 in s.cells) {
       if (own(k0) || seen.has(k0)) continue;
       const comp = [], queue = [s.cells[k0]];
-      let touchesEdge = false, hasEnemy = false;
+      let hasEnemy = false;
       seen.add(k0);
       while (queue.length) {
         const c = queue.shift();
         comp.push(c);
-        if (isEdge(s, c)) touchesEdge = true;
+        if (c.castle === e.id) hasEnemy = true;
         if (!ew.dead && c.col === ew.col && c.row === ew.row) hasEnemy = true;
         for (let d = 0; d < 6; d++) {
           const n = hex.neighbor(c.col, c.row, d), nk = K(n.col, n.row);
@@ -202,7 +202,7 @@ window.HB = window.HB || {};
           seen.add(nk); queue.push(s.cells[nk]);
         }
       }
-      if (touchesEdge || hasEnemy) continue;
+      if (hasEnemy) continue;
       for (const c of comp) if (paint(s, p, c, 'fill')) filled++;
     }
     if (filled) log(s, `${p.name}: enclosure closed, +${filled} hexes.`);
@@ -920,7 +920,9 @@ window.HB = window.HB || {};
     const e = 3 - me;
     return { myArmy: [armyOnField(s, me), armyOnField(sim, me)], enemyArmy: [armyOnField(s, e), armyOnField(sim, e)],
       myHero: [s.players[me].warband.hp, sim.players[me].warband.hp], enemyHero: [s.players[e].warband.hp, sim.players[e].warband.hp],
-      won: sim.phase === 'over' && sim.winner === me, lost: sim.phase === 'over' && sim.winner === e };
+      won: sim.phase === 'over' && sim.winner === me, lost: sim.phase === 'over' && sim.winner === e,
+      // D-096: the hexes this move would take by closing a contour — shown in the preview
+      fill: sim.events.filter(x => x.type === 'fill' && x.player === me).reduce((a, x) => a.concat(x.cells.map(c => ({ col: c.col, row: c.row }))), []) };
   }
   function forecastPlay(s, uid, choice) { const sim = clone(s), me = s.current; if (!playCard(sim, uid, choice)) return null; return outcome(s, sim, me); }
   function forecastStep(s, dir) { const sim = clone(s), me = s.current; if (!freeStep(sim, dir)) return null; return outcome(s, sim, me); }

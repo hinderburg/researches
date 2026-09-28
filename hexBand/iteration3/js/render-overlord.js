@@ -700,6 +700,12 @@ window.HB = window.HB || {};
   P.drawPlanV4 = function (ctx, now, layer) {
     const hl = this.highlights; if (!hl || !hl.length) return;
     const S = this.size, pid = this.s.current, color = COL[pid], light = COL[pid + 'Light'], pulse = 0.5 + 0.5 * Math.sin(now / 180);
+    const fill = layer === 'under' && this.forecast && this.forecast.fill;
+    if (fill) for (const c of fill) { // D-096: the area this move would enclose — whole hexes washed in the team colour
+      const p = this.cellXY(c.col, c.row);
+      this.hexPath(ctx, p.x, p.y, 2); ctx.fillStyle = color; ctx.globalAlpha = 0.28 + 0.22 * pulse; ctx.fill(); ctx.globalAlpha = 1;
+      ctx.strokeStyle = 'rgba(255,236,150,0.9)'; ctx.lineWidth = 2; ctx.setLineDash([S * 0.16, S * 0.12]); ctx.stroke(); ctx.setLineDash([]);
+    }
     if (layer === 'under') {
       for (const h of hl) {
         const p = this.cellXY(h.col, h.row);
