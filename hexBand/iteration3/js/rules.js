@@ -387,6 +387,7 @@ window.HB = window.HB || {};
     log(s, `${p.name}'s Overlord steps ${opt.label}.`);
     moveHero(s, p, [dir]);
     enclosure(s, p); flushPaint(s, p);
+    joinWaiting(s, p); // D-089
     return true;
   }
 
@@ -542,16 +543,44 @@ window.HB = window.HB || {};
     }
     syncMinions(s);
   }
+  // D-089: a waiting group joins the Overlord as soon as its patch of land touches his — whether or not the road to the
+  // castle is back. landLink: the way over the player's own hexes (no castles, no enemy groups) from the group to the
+  // Overlord's hex, or null when the lands are apart
+  function landLink(s, pid, from, w) {
+    const fk = K(from.col, from.row), parent = { [fk]: null }, queue = [{ col: from.col, row: from.row }];
+    while (queue.length) {
+      const c = queue.shift(), ck = K(c.col, c.row);
+      if (hex.distance(c, w) <= 1) {
+        const out = []; let k = ck;
+        while (k !== fk) { const [cc, rr] = k.split(',').map(Number); out.unshift({ col: cc, row: rr }); k = parent[k]; }
+        if (ck !== K(w.col, w.row)) out.push({ col: w.col, row: w.row });
+        return out;
+      }
+      for (let d = 0; d < 6; d++) {
+        const n = hex.neighbor(c.col, c.row, d), nk = K(n.col, n.row);
+        if (nk in parent || !exists(s, n)) continue;
+        const cell = cellAt(s, n);
+        if (!cell || cell.owner !== pid || cell.castle || walled(s, c, n)) continue;
+        const g = groupAt(s, n); if (g && g.pid !== pid) continue;
+        parent[nk] = ck; queue.push(n);
+      }
+    }
+    return null;
+  }
   function waitCheck(s, sq) {
-    const p = s.players[sq.owner], w = p.warband; if (w.dead) return;
-    if (hex.distance(sq, w) <= 1) { join(s, sq, 'met'); return; }
-    const reg = roadRegion(s, p.id);
-    if (!reg.set.has(K(sq.col, sq.row))) return;
-    const heroOn = reg.set.has(K(w.col, w.row)) || [...reg.set].some(k => { const [c, r] = k.split(',').map(Number); return hex.distance({ col: c, row: r }, w) <= 1; });
-    if (!heroOn) return;
-    const path = walkPath(s, sq.owner, sq, w, TYPES[sq.type].trait === 'breach');
-    if (path) { s.events.push({ type: 'squadMove', player: sq.owner, id: sq.id, sqType: sq.type, path, back: true }); const last = path[path.length - 1]; sq.col = last.col; sq.row = last.row; }
+    const p = s.players[sq.owner], w = p.warband; if (w.dead || s.phase !== 'play') return false;
+    if (hex.distance(sq, w) <= 1) { join(s, sq, 'met'); return true; }
+    const path = landLink(s, p.id, sq, w);
+    if (!path) return false;
+    s.events.push({ type: 'squadMove', player: sq.owner, id: sq.id, sqType: sq.type, path, back: true });
+    const last = path[path.length - 1]; sq.col = last.col; sq.row = last.row;
+    log(s, `${p.name}: the waiting ${TYPES[sq.type].title.toLowerCase()} rejoin the Overlord — their land touches his.`);
     join(s, sq, 'road');
+    return true;
+  }
+  // after anything that changes the player's land or moves his Overlord: every waiting group that now can, rejoins
+  function joinWaiting(s, p) {
+    for (const sq of s.squads.filter(q => q.owner === p.id && q.state === 'wait')) if (s.squads.includes(sq)) waitCheck(s, sq);
   }
 
   // ---------------------------------------------------------------- card play
@@ -695,6 +724,7 @@ window.HB = window.HB || {};
     log(s, `${p.name} play ${def.title}${choice && choice.label ? ' (' + choice.label + ')' : ''}.`);
     resolve(s, p, def, choice);
     flushPaint(s, p);
+    if (s.phase === 'play') joinWaiting(s, p); // D-089: the land may have joined up
     if (p.inPlay) { p.discard.push(p.inPlay); p.inPlay = null; }
     s.playedThisTurn++;
     syncMinions(s);
@@ -743,6 +773,7 @@ window.HB = window.HB || {};
     }
     if (s.phase !== 'play') return;
     enclosure(s, np); flushPaint(s, np);
+    joinWaiting(s, np); // D-089
     muster(s, np);
     const healers = np.retinue.healer ? np.retinue.healer.n : 0;
     if (healers) heal(s, np, healers, Math.max(1, Math.floor(healers / 2)), 'Healers');

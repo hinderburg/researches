@@ -1,7 +1,7 @@
 // HEXBand prototype — tunables. See docs/DECISIONS.md for the reasoning behind each value.
 window.HB = window.HB || {};
 HB.CONFIG = {
-  VERSION: '0.33.0-it3',
+  VERSION: '0.34.0-it3',
   COLS: 11,              // flat-top hex columns; odd columns are shifted down and hold one cell less (see D-002). iteration3 (D-083): 7 → 11
   ROWS: 17,              // rows in even columns; odd columns have ROWS-1. iteration3 (D-083): 11 → 17 — the board is ~50 % larger each way
   // D-085 (iteration3, V4 "Overlord"): a deck of 6 — 3 Overlord cards + 1 card for each of the 3 minion types; hand of 3

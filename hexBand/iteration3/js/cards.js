@@ -16,7 +16,7 @@ window.HB = window.HB || {};
       grow: { hp: 0.2, atk: 0.2, out: 0.25 }, trait: 'paint_back', traitTitle: 'Light-footed', traitText: 'They paint hexes on the way back too.' },
     archer: { id: 'archer', title: 'Archers', one: 'Archer', color: '#e2c24a', hp: 2, atk: 2, speed: 1, capture: 1, ret: 2, range: 2, weight: 1, shield: 1, out: 2,
       grow: { hp: 0.25, atk: 0.34, out: 0.25 }, trait: 'ranged', traitTitle: 'Ranged 2', traitText: 'They shoot an enemy group within 2 hexes instead of closing in; no retaliation.' },
-    brute: { id: 'brute', title: 'Brutes', one: 'Brute', color: '#9a8f86', hp: 8, atk: 5, speed: 1, capture: 1, ret: 1, range: 0, weight: 3, shield: 4, out: 1,
+    brute: { id: 'brute', title: 'Brutes', one: 'Brute', color: '#9a8f86', hp: 8, atk: 5, speed: 2, capture: 1, ret: 2, range: 0, weight: 3, shield: 4, out: 1,
       grow: { hp: 1, atk: 0.5, out: 0.15 }, trait: 'breach', traitTitle: 'Breach', traitText: 'They walk through palisades and deal double damage to waiting groups.' },
     healer: { id: 'healer', title: 'Healers', one: 'Healer', color: '#b98be0', hp: 2, atk: 0, speed: 2, capture: 1, ret: 2, range: 0, weight: 1, shield: 2, out: 2,
       grow: { hp: 0.34, atk: 0, out: 0.25 }, trait: 'heal', traitTitle: 'Healing', traitText: 'While with the Overlord they heal the retinue\'s wounds and the Overlord (+1 HP per 2 healers) each turn.' },
