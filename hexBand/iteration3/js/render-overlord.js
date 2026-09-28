@@ -581,7 +581,7 @@ window.HB = window.HB || {};
   P.drawCastleTile = function (ctx, c, p) {
     const S = this.size, T = S * PLATEAU_THICK, t = hex.corners(p.x, p.y, S, 0), b = hex.corners(p.x, p.y + T, S, 0);
     ctx.fillStyle = '#2c2832'; ctx.beginPath(); ctx.moveTo(t[0].x, t[0].y); for (let i = 1; i <= 3; i++) ctx.lineTo(t[i].x, t[i].y); for (let i = 3; i >= 0; i--) ctx.lineTo(b[i].x, b[i].y); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1; for (let i = 0; i < 3; i++) { const y = t[1].y + (i + 1) * T / 4; ctx.beginPath(); ctx.moveTo(t[3].x, y); ctx.lineTo(t[0].x, y); ctx.stroke(); } // stone courses
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1; for (let i = 0; i < 3; i++) { const y = t[1].y + (i + 1) * T / 4; ctx.beginPath(); ctx.moveTo(t[2].x, y); ctx.lineTo(t[1].x, y); ctx.stroke(); } // stone courses (under the lower edge only)
     ctx.fillStyle = '#57525e'; ctx.beginPath(); ctx.moveTo(t[0].x, t[0].y); for (let i = 1; i < 6; i++) ctx.lineTo(t[i].x, t[i].y); ctx.closePath(); ctx.fill();
     ctx.fillStyle = 'rgba(0,0,0,0.12)'; // paving flags
     for (let i = 0; i < 5; i++) { const fx = p.x + (((c.col * 7 + c.row * 13 + i * 5) % 9) / 9 - 0.5) * S * 1.1, fy = p.y + (((c.col * 3 + c.row * 11 + i * 7) % 7) / 7 - 0.5) * S * 1.1; ctx.fillRect(fx - S * 0.12, fy - S * 0.07, S * 0.24, S * 0.14); }
@@ -624,7 +624,10 @@ window.HB = window.HB || {};
     for (const bx of [-0.62, 0.62]) { ctx.fillStyle = stoneDark; ctx.beginPath(); ctx.moveTo(x + bx * S - S * 0.07, base); ctx.lineTo(x + bx * S - S * 0.03, base - S * 0.55); ctx.lineTo(x + bx * S + S * 0.03, base - S * 0.55); ctx.lineTo(x + bx * S + S * 0.07, base); ctx.closePath(); ctx.fill(); }
     ctx.fillStyle = '#17141b'; ctx.beginPath(); ctx.moveTo(x - S * 0.15, base); ctx.lineTo(x - S * 0.15, base - S * 0.25); ctx.quadraticCurveTo(x - S * 0.15, base - S * 0.42, x, base - S * 0.47); ctx.quadraticCurveTo(x + S * 0.15, base - S * 0.42, x + S * 0.15, base - S * 0.25); ctx.lineTo(x + S * 0.15, base); ctx.closePath(); ctx.fill();
     // three towers: side ones shorter, the middle one tallest
-    const towers = [{ dx: -0.62, h: 1.15, w: 0.34 }, { dx: 0, h: 1.45, w: 0.4 }, { dx: 0.62, h: 1.15, w: 0.34 }];
+    // D-094: the castle at the bottom tip keeps its middle tower low — the three spires form a V, so the Overlord on the
+    // start hex just above it stays in view; the castle at the top keeps the tall middle tower
+    const low = !!(c.cells && c.row > s.rows / 2);
+    const towers = [{ dx: -0.62, h: 1.15, w: 0.34, sp: 0.75 }, low ? { dx: 0, h: 0.62, w: 0.4, sp: 0.42 } : { dx: 0, h: 1.45, w: 0.4, sp: 0.95 }, { dx: 0.62, h: 1.15, w: 0.34, sp: 0.75 }];
     // tower i holds the pit of type i (first type = middle tower, second = left, third = right: front sector ↔ middle)
     const towerType = [types[1], types[0], types[2]];
     towers.forEach((tw, i) => {
@@ -632,10 +635,10 @@ window.HB = window.HB || {};
       const pulse = t ? (now - (this.towerPulse[pid + ':' + t] || -1e9)) / 600 : 2;
       box(tx - ww / 2, base - th, ww, th, i === 1 ? stoneLight : stone);
       lancet(tx, base - th + S * 0.22, ww * 0.34, S * 0.3, pulse >= 0 && pulse < 1);
-      lancet(tx, base - th + S * 0.62, ww * 0.3, S * 0.22, false);
+      if (th > S * 0.9) lancet(tx, base - th + S * 0.62, ww * 0.3, S * 0.22, false);
       // spire in the type colour, trimmed in the team colour
       ctx.fillStyle = tc; ctx.strokeStyle = teamDark; ctx.lineWidth = 1.4;
-      ctx.beginPath(); ctx.moveTo(tx - ww * 0.62, base - th); ctx.lineTo(tx, base - th - S * (i === 1 ? 0.95 : 0.75)); ctx.lineTo(tx + ww * 0.62, base - th); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(tx - ww * 0.62, base - th); ctx.lineTo(tx, base - th - S * tw.sp); ctx.lineTo(tx + ww * 0.62, base - th); ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.strokeStyle = team; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(tx - ww * 0.62, base - th); ctx.lineTo(tx + ww * 0.62, base - th); ctx.stroke();
       // banner with the type emblem
       if (t) {
