@@ -549,7 +549,7 @@ window.HB = window.HB || {};
             this.schedule(t, () => {
               ev.line.forEach((c, i) => this.schedule(i * 90, () => { this.flashCell(c.col, c.row, '#ff9a3a', 600); const p = this.cellXY(c.col, c.row); this.spawnFight(p.x, p.y); }));
               ev.cells.forEach(c => this.schedule(120, () => this.flipCell(c.col, c.row, c.from, 0)));
-              const w = this.s.players[ev.player].warband; this.addText(w.col, w.row, 'SCORCH!', '#ffb347', { dy: -this.size * 1.9, big: true, dur: 1300 });
+              const w = ev.col != null ? ev : this.s.players[ev.player].warband; // D-090: Fire Arrows are shot by the archers where they stand this.addText(w.col, w.row, 'SCORCH!', '#ffb347', { dy: -this.size * 1.9, big: true, dur: 1300 });
             });
             t += 900;
             break;

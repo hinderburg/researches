@@ -41,6 +41,9 @@ window.HB = window.HB || {};
     const plan = R.planOf(s, def, opt);
     for (const c of plan.steps) hl.push({ col: c.col, row: c.row, kind: 'path', label: c.stop ? c.turn : null, strong: true, attack: c.attack });
     for (const c of plan.capture) hl.push({ col: c.col, row: c.row, kind: 'capture' });
+    if (plan.zone) hl.push(Object.assign({ kind: 'zone' }, plan.zone)); // D-090: sortie effects
+    if (plan.burn) plan.burn.forEach(c => hl.push({ col: c.col, row: c.row, kind: 'burn' }));
+    if (plan.walls) plan.walls.forEach(e => hl.push({ kind: 'wall', a: e.a, b: e.b }));
   }
   const defaultLevels = () => Object.assign({ hero: 1 }, ...TYPE_ORDER.map(t => ({ [t]: 1 })));
 
@@ -820,7 +823,7 @@ window.HB = window.HB || {};
       if (g && g.kind === 'hero') {
         const p = s.players[g.pid], ret = p.types.map(t => `${p.retinue[t].n} ${TYPES[t].title.toLowerCase()}`).join(', ');
         txt += ` · ${p.name} Overlord ❤${p.warband.hp}/${p.warband.maxHp}, with ${ret || 'no one'}`;
-      } else if (g) txt += ` · ${s.players[g.pid].name} ${TYPES[g.sq.type].title.toLowerCase()} ×${g.sq.n} (${{ out: 'on a sortie', return: 'on the way back', wait: 'waiting for a road' }[g.sq.state]})`;
+      } else if (g) txt += ` · ${s.players[g.pid].name} ${TYPES[g.sq.type].title.toLowerCase()} ×${g.sq.n} (${{ out: 'on a sortie', return: 'on the way back', wait: 'waiting for a road', hold: 'lying in wait' }[g.sq.state]})`;
       $('#status-line').textContent = txt;
     },
 

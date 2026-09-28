@@ -7,7 +7,7 @@ window.HB = window.HB || {};
   const P = HB.Renderer.prototype, hex = HB.hex, CFG = HB.CONFIG, COL = CFG.COLORS, TYPES = HB.cards.MINION_TYPES, R = HB.rules;
   const easeOut = k => 1 - Math.pow(1 - k, 3);
   const easeOutBack = u => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(u - 1, 3) + c1 * Math.pow(u - 1, 2); };
-  const V4_EVENTS = new Set(['sortie', 'squadMove', 'fight', 'shoot', 'join', 'muster', 'heal', 'heroDown', 'poi', 'buff']);
+  const V4_EVENTS = new Set(['sortie', 'squadMove', 'fight', 'shoot', 'join', 'muster', 'heal', 'heroDown', 'poi', 'buff', 'hold']);
   P.isV4 = function () { return !!(this.s && this.s.variant === 'overlord'); };
   P.v4Handles = function (ev) { return this.isV4() && V4_EVENTS.has(ev.type); };
 
@@ -94,6 +94,7 @@ window.HB = window.HB || {};
           if (ev.d.before.kind === 'hero') this.shake[ev.defender] = performance.now();
           this.applySide(ev.d, at, 1);
           this.addText(ev.at.col, ev.at.row, `−${ev.dmg}`, '#ffd45a', { dy: -S * 1.9, big: true, dur: 1300, pop: true });
+          if (ev.ambush) this.addText(ev.at.col, ev.at.row, 'AMBUSH!', COL[ev.attacker + 'Light'], { dy: -S * 2.6, big: true, dur: 1500 }); // D-090
         });
         return t + flight + 520;
       }
@@ -158,6 +159,15 @@ window.HB = window.HB || {};
         });
         return t + 250;
       }
+      case 'hold': { // D-090: archers lie in wait — their range shows round them until the ambush is over
+        this.schedule(t, () => {
+          const q = this.view && this.view.squads[ev.id]; if (q) q.state = 'hold';
+          const xy = this.cellXY(ev.col, ev.row);
+          this.fx.push({ type: 'ring', x: xy.x, y: xy.y, color: COL[ev.player + 'Light'], t0: performance.now(), dur: 600, big: true });
+          this.addText(ev.col, ev.row, 'IN AMBUSH', COL[ev.player + 'Light'], { dy: -S * 1.6, big: true, dur: 1400 });
+        });
+        return t + 300;
+      }
       case 'buff': {
         this.schedule(t, () => {
           const xy = this.cellXY(ev.col, ev.row);
@@ -199,11 +209,11 @@ window.HB = window.HB || {};
   P.laneKeys = function (ev) {
     const side = b => b.kind === 'hero' ? 'h' + b.pid : 'q' + b.id;
     switch (ev.type) {
-      case 'sortie': case 'squadMove': case 'join': return ['q' + ev.id];
+      case 'sortie': case 'squadMove': case 'join': case 'hold': return ['q' + ev.id];
       case 'fight': return [side(ev.a.before), side(ev.d.before)];
       case 'shoot': return ['@last', side(ev.d.before)];
       case 'muster': return ['m' + ev.player + ev.sqType];
-      case 'paint': case 'fill': case 'poi': return ['@last']; // they follow the group that just moved
+      case 'paint': case 'fill': case 'poi': case 'scorch': case 'walls': return ['@last']; // they follow the group that just moved
       case 'heal': return ['h' + ev.player];
       case 'heroDown': case 'gameover': return ['@all'];
       default: return []; // logs, draws — no time of their own
@@ -376,7 +386,7 @@ window.HB = window.HB || {};
     ax /= m; ay /= m; // the shadow follows the (trailing) crowd
     ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(ax, ay + r * 1.2, r * (1.3 + Math.min(m, 5) * 0.3), r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
     for (const f of list) this.drawMinion(ctx, f.x, f.y, r, pid, type, now, f.i + (o.seed || 0));
-    if (o.plaque) this.drawTypePlaque(ctx, pid, type, n, cx, cy - r * 2.9 - (o.scale > 1 ? S * 0.1 : 0), o.plaque === 'wait', o.scale);
+    if (o.plaque) this.drawTypePlaque(ctx, pid, type, n, cx, cy - r * 2.9 - (o.scale > 1 ? S * 0.1 : 0), o.plaque === 'wait' ? '⏳' : o.plaque === 'hold' ? '🎯' : '', o.scale);
   };
   // emblem + number; at a distance the plaques carry the information, close up the figures do.
   // D-088: groups away from the Overlord carry them 1.5× larger (scale)
@@ -384,7 +394,7 @@ window.HB = window.HB || {};
     const S = this.size, z = this.zoom || 1, sc = (z > 1.6 ? 0.85 : 1.1) * (scale || 1);
     const h = S * 0.36 * sc, fs = Math.round(S * 0.27 * sc);
     ctx.font = `900 ${fs}px system-ui, sans-serif`;
-    const txt = (waiting ? '⏳' : '') + String(n), tw = ctx.measureText(txt).width, w = h + tw + S * 0.2 * sc;
+    const txt = (typeof waiting === 'string' ? waiting : waiting ? '⏳' : '') + String(n), tw = ctx.measureText(txt).width, w = h + tw + S * 0.2 * sc;
     const bx = x - w / 2, by = y - h / 2;
     ctx.fillStyle = 'rgba(20,12,6,0.82)'; ctx.strokeStyle = COL[pid + 'Light']; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.roundRect(bx, by, w, h, h / 2); ctx.fill(); ctx.stroke();
@@ -544,7 +554,12 @@ window.HB = window.HB || {};
         const w = this.s.players[q.owner].warband, h = this.warbandPos(this.s.players[q.owner], now);
         if (!w.dead) { ctx.strokeStyle = COL[q.owner + 'Light']; ctx.globalAlpha = 0.6; ctx.lineWidth = 2; ctx.setLineDash([4, 5]); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); ctx.lineTo(h.x, h.y); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; }
       }
-      this.drawCrowd(ctx, q.owner, q.type, q.n, pos.x, pos.y, now, { plaque: q.state === 'wait' ? 'wait' : true, scale: 1.5, lag: 'q' + q.id, seed: q.id }); // D-088: big plaques away from the Overlord; figures trail the group
+      if (q.state === 'hold') { // D-090: the reach of the ambush
+        const real = this.s.squads.find(x => x.id === q.id), rr = ((real && real.holdRange) || 3) * Math.sqrt(3) * S + S * 0.6;
+        ctx.strokeStyle = COL[q.owner + 'Light']; ctx.globalAlpha = 0.35 + 0.15 * Math.sin(now / 300); ctx.lineWidth = 2; ctx.setLineDash([6, 8]);
+        ctx.beginPath(); ctx.arc(pos.x, pos.y, rr, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      }
+      this.drawCrowd(ctx, q.owner, q.type, q.n, pos.x, pos.y, now, { plaque: q.state === 'wait' || q.state === 'hold' ? q.state : true, scale: 1.5, lag: 'q' + q.id, seed: q.id }); // D-088: big plaques away from the Overlord; figures trail the group
     }
   };
   // the gothic castle: dark stone, lancet windows, three towers with spires — a tower per minion type, left to right in
@@ -639,6 +654,10 @@ window.HB = window.HB || {};
         } else if (h.kind === 'target') {
           ctx.strokeStyle = `rgba(255,255,255,${(h.strong ? 0.85 : 0.45) + 0.15 * pulse})`; ctx.lineWidth = h.strong ? 3 : 2;
           ctx.beginPath(); ctx.arc(p.x, p.y, S * 0.3, 0, Math.PI * 2); ctx.stroke();
+        } else if (h.kind === 'zone') { // D-090: the reach of an ambush / volley (gold) or a blessing (green)
+          const rr = h.r * Math.sqrt(3) * S + S * 0.6, col = h.tone === 'heal' ? '156,255,138' : '255,212,90';
+          ctx.fillStyle = `rgba(${col},${0.08 + 0.05 * pulse})`; ctx.strokeStyle = `rgba(${col},0.85)`; ctx.lineWidth = 2.5; ctx.setLineDash([8, 7]);
+          ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
         } else if (h.kind === 'burn') {
           ctx.fillStyle = `rgba(255,120,40,${0.35 + 0.25 * pulse})`; ctx.beginPath(); ctx.arc(p.x, p.y, S * 0.42, 0, Math.PI * 2); ctx.fill();
           ctx.font = `${Math.round(S * 0.5)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🔥', p.x, p.y + 1);

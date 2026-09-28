@@ -14,7 +14,7 @@ window.HB = window.HB || {};
       grow: { hp: 0.34, atk: 0.34, out: 0.25 }, trait: 'steady', traitTitle: 'Steady', traitText: 'After winning a fight on a sortie they keep going.' },
     runner: { id: 'runner', title: 'Runners', one: 'Runner', color: '#5cbf57', hp: 1, atk: 1, speed: 3, capture: 2, ret: 3, range: 0, weight: 1, shield: 1, out: 3,
       grow: { hp: 0.2, atk: 0.2, out: 0.25 }, trait: 'paint_back', traitTitle: 'Light-footed', traitText: 'They paint hexes on the way back too.' },
-    archer: { id: 'archer', title: 'Archers', one: 'Archer', color: '#e2c24a', hp: 2, atk: 2, speed: 1, capture: 1, ret: 2, range: 2, weight: 1, shield: 1, out: 2,
+    archer: { id: 'archer', title: 'Archers', one: 'Archer', color: '#e2c24a', hp: 2, atk: 2, speed: 2, capture: 1, ret: 2, range: 2, weight: 1, shield: 1, out: 2,
       grow: { hp: 0.25, atk: 0.34, out: 0.25 }, trait: 'ranged', traitTitle: 'Ranged 2', traitText: 'They shoot an enemy group within 2 hexes instead of closing in; no retaliation.' },
     brute: { id: 'brute', title: 'Brutes', one: 'Brute', color: '#9a8f86', hp: 8, atk: 5, speed: 2, capture: 1, ret: 2, range: 0, weight: 3, shield: 4, out: 1,
       grow: { hp: 1, atk: 0.5, out: 0.15 }, trait: 'breach', traitTitle: 'Breach', traitText: 'They walk through palisades and deal double damage to waiting groups.' },
@@ -38,18 +38,18 @@ window.HB = window.HB || {};
     r_raid: { id: 'r_raid', title: 'Raid', type: 'Runners', owner: 'runner', kind: 'sortie', pattern: [0, 0, 1, 1], mirror: true, req: 4, icon: 'v_raid', text: 'All runners with the Overlord run 4 hexes: 2 straight, then 2 after one bend. They capture a 2-hex-wide strip on the inner side of the bend. Needs 4+ runners.' },
     r_weave: { id: 'r_weave', title: 'Weave', type: 'Runners', owner: 'runner', kind: 'sortie', pattern: [0, 2, 0], mirror: true, req: 1, icon: 'v_weave', text: 'All runners with the Overlord zigzag 3 hexes.' },
     r_sweep: { id: 'r_sweep', title: 'Sweep', type: 'Runners', owner: 'runner', kind: 'sortie', pattern: [0, 0], wide: true, req: 2, icon: 'v_sweep', text: 'All runners with the Overlord run 2 hexes straight and capture the hexes on both sides. Needs 2+ runners.' },
-    // ---- Archers
-    a_volley: { id: 'a_volley', title: 'Volley', type: 'Archers', owner: 'archer', kind: 'volley', range: 2, req: 1, icon: 'volley', text: 'The archers with the Overlord shoot an enemy group within 2 hexes: archers × Attack damage, no retaliation. They stay with the Overlord.' },
-    a_ambush: { id: 'a_ambush', title: 'Ambush', type: 'Archers', owner: 'archer', kind: 'sortie', pattern: [0, 0], atkBonus: 1, req: 3, icon: 'v_ambush', text: 'All archers with the Overlord walk 2 hexes (slowly) and shoot the first enemy group within 2 hexes with +1 Attack. Needs 3+ archers.' },
-    a_fire: { id: 'a_fire', title: 'Fire Arrows', type: 'Archers', owner: 'archer', kind: 'scorch', range: 3, req: 4, icon: 'scorch', text: 'Burn a line of 3 hexes from the Overlord: enemy hexes on it turn neutral. Needs archers with the Overlord and 4+ in the army.' },
+    // ---- Archers (D-090: every minion card is a sortie — the group leaves the Overlord; `fx` is what it does at the end)
+    a_volley: { id: 'a_volley', title: 'Volley', type: 'Archers', owner: 'archer', kind: 'sortie', pattern: [0], range: 3, atkBonus: 1, req: 1, icon: 'volley', text: 'All archers with the Overlord step 1 hex out and shoot the nearest enemy group within 3 hexes on the way with +1 Attack (no retaliation). Then they come back.' },
+    a_ambush: { id: 'a_ambush', title: 'Ambush', type: 'Archers', owner: 'archer', kind: 'sortie', pattern: [0, 0], fx: 'hold', range: 3, req: 3, icon: 'v_ambush', text: 'All archers with the Overlord walk 2 hexes and lie in wait until your next turn: they shoot the first enemy group that comes within 3 hexes. Then they come back. Needs 3+ archers.' },
+    a_fire: { id: 'a_fire', title: 'Fire Arrows', type: 'Archers', owner: 'archer', kind: 'sortie', pattern: [0], fx: 'scorch', range: 3, req: 4, icon: 'scorch', text: 'All archers with the Overlord step 1 hex out and burn the line of 3 hexes beyond: enemy hexes on it turn neutral. Needs 4+ archers.' },
     // ---- Brutes
     u_ram: { id: 'u_ram', title: 'Ram', type: 'Brutes', owner: 'brute', kind: 'sortie', pattern: [0, 0], atkBonus: 2, req: 1, icon: 'v_ram', text: 'All brutes with the Overlord smash 2 hexes straight, +2 Attack in fights on the way.' },
-    u_earthworks: { id: 'u_earthworks', title: 'Earthworks', type: 'Brutes', owner: 'brute', kind: 'palisade', rounds: 2, req: 1, icon: 'palisade', text: 'The brutes throw up a wall along the three far edges of a neighbouring hex for 2 rounds. They stay with the Overlord.' },
+    u_earthworks: { id: 'u_earthworks', title: 'Earthworks', type: 'Brutes', owner: 'brute', kind: 'sortie', pattern: [0], fx: 'palisade', rounds: 2, req: 1, icon: 'palisade', text: 'All brutes with the Overlord step 1 hex out and throw up a wall along its three far edges for 2 rounds. Then they come back.' },
     u_smash: { id: 'u_smash', title: 'Smash', type: 'Brutes', owner: 'brute', kind: 'sortie', pattern: [0, 1], mirror: true, req: 2, icon: 'v_smash', text: 'All brutes with the Overlord go 2 hexes with a 60° turn. Needs 2+ brutes.' },
     // ---- Healers
-    h_bless: { id: 'h_bless', title: 'Blessing', type: 'Healers', owner: 'healer', kind: 'bless', req: 1, icon: 'prayer', text: 'Every wounded minion with the Overlord is healed and the Overlord gets +1 HP per healer with him.' },
+    h_bless: { id: 'h_bless', title: 'Blessing', type: 'Healers', owner: 'healer', kind: 'sortie', pattern: [0], fx: 'bless', radius: 2, req: 1, icon: 'prayer', text: 'All healers with the Overlord step 1 hex out and bless: the Overlord gets +1 HP per healer and the wounds of the retinue and of your groups within 2 hexes are healed.' },
     h_pilgrims: { id: 'h_pilgrims', title: 'Pilgrims', type: 'Healers', owner: 'healer', kind: 'sortie', pattern: [0, 2], mirror: true, req: 1, icon: 'zigzag', text: 'All healers with the Overlord walk 2 hexes with a 120° turn, capturing on the way.' },
-    h_call: { id: 'h_call', title: 'Call to Arms', type: 'Healers', owner: 'healer', kind: 'call', req: 2, icon: 'v_call', text: 'Every pit sends up to 2 more minions now (never above the army size), by the road rule. Needs 2+ healers.' },
+    h_call: { id: 'h_call', title: 'Call to Arms', type: 'Healers', owner: 'healer', kind: 'sortie', pattern: [0, 0], fx: 'call', req: 2, icon: 'v_call', text: 'All healers with the Overlord walk 2 hexes and sound the call: every pit sends up to 2 more minions (never above the army size), by the road rule. Needs 2+ healers.' },
   };
   for (const id in CARDS) CARDS[id].ru = CARDS[id].title;
   const HERO_POOL = ['stride', 'detour', 'recall', 'war_cry', 'standard'];

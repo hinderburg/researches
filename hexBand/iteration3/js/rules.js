@@ -75,7 +75,7 @@ window.HB = window.HB || {};
   }
   const retinueHP = (s, p) => p.types.reduce((a, t) => a + Math.max(0, p.retinue[t].n * typeStat(s, p.id, t, 'hp') - p.retinue[t].wound), 0);
   function syncMinions(s) { for (const pid of [1, 2]) s.players[pid].warband.minions = armyOnField(s, pid); }
-  const sortieBlocked = (s, p, t) => s.squads.some(q => q.owner === p.id && q.type === t && (q.state === 'out' || q.state === 'return'));
+  const sortieBlocked = (s, p, t) => s.squads.some(q => q.owner === p.id && q.type === t && (q.state === 'out' || q.state === 'return' || q.state === 'hold'));
 
   function makeCard(s, defId) { return { uid: s.nextUid++, def: defId, poi: -1 }; }
   function newStatus() { return { warCryUntil: -1, attackBonus: 0, formationUntil: -1 }; }
@@ -364,6 +364,8 @@ window.HB = window.HB || {};
       w.col = n.col; w.row = n.row; path.push({ col: n.col, row: n.row });
       paint(s, p, n, 'walk');
       for (const q of squadsAt(s, n).filter(x => x.owner === p.id && x.state !== 'out')) join(s, q, 'met'); // walking onto his own group gathers it
+      // D-090: an enemy ambush shoots him on the way
+      if (ambushAt(s, p.id, n, () => ({ kind: 'hero', pid: p.id }), () => { if (path.length) s.events.push({ type: 'move', player: p.id, path: path.splice(0) }); flushPaint(s, p); }) && (s.phase !== 'play' || w.dead)) return;
       if (isSwamp(s, n)) break;
     }
     if (path.length) s.events.push({ type: 'move', player: p.id, path });
@@ -408,7 +410,8 @@ window.HB = window.HB || {};
   function launchSortie(s, p, def, dirs, bend) {
     const t = def.owner, r = p.retinue[t], w = p.warband;
     const sq = { id: s.nextSquadId++, owner: p.id, type: t, n: r.n, wound: r.wound, col: w.col, row: w.row, state: 'out', dirs: dirs.slice(), orig: dirs.slice(), walked: 0,
-      bonus: def.atkBonus || 0, curl: !!def.curl, wide: !!def.wide, bend: bend || 1, start: { col: w.col, row: w.row }, shot: false, card: def.id };
+      bonus: def.atkBonus || 0, curl: !!def.curl, wide: !!def.wide, bend: bend || 1, start: { col: w.col, row: w.row }, shot: false, card: def.id,
+      range: (!def.fx && def.range) || 0 }; // D-090: Volley shoots farther on the way
     r.n = 0; r.wound = 0;
     s.squads.push(sq);
     s.events.push({ type: 'sortie', player: p.id, id: sq.id, sqType: t, n: sq.n, col: w.col, row: w.row });
@@ -430,7 +433,7 @@ window.HB = window.HB || {};
       if (sq.wide) for (const tt of [2, -2]) { const side = hex.neighbor(n.col, n.row, hex.turn(d, tt)); if (exists(s, side) && !groupAt(s, side)) paint(s, p, side, 'split'); }
     };
     const shootNow = () => {
-      const near = enemyGroupsNear(s, sq.owner, sq, d0.range);
+      const near = enemyGroupsNear(s, sq.owner, sq, sq.range || d0.range);
       if (!near.length) return false;
       flush(); flushPaint(s, p);
       shoot(s, me(), near[0].g, sq.n * (typeStat(s, sq.owner, sq.type, 'atk') + sq.bonus + warCry(s, p)));
@@ -458,17 +461,78 @@ window.HB = window.HB || {};
         sq.dirs = []; break;
       }
       step(n, d, true);
+      // D-090: walking past an enemy ambush draws its arrows
+      if (ambushAt(s, sq.owner, n, me, () => { flush(); flushPaint(s, p); }) && (s.phase !== 'play' || !s.squads.includes(sq))) return;
       if (isSwamp(s, n)) { sq.dirs = []; break; }
     }
     flush();
     if (sq.state === 'out' && !sq.dirs.length) {
       if (sq.curl && sq.walked === sq.orig.length) { const c = hex.neighbor(sq.start.col, sq.start.row, sq.orig[1]); if (exists(s, c) && !groupAt(s, c)) paint(s, p, c, 'split'); }
       if (ranged && !sq.shot && s.phase === 'play') shootNow();
-      if (s.squads.includes(sq)) sq.state = 'return';
+      if (s.phase === 'play' && s.squads.includes(sq)) { flushPaint(s, p); sortieEnd(s, sq); }
+      if (s.squads.includes(sq) && sq.state === 'out') sq.state = 'return';
     }
     if (s.phase !== 'play') return;
     enclosure(s, p); flushPaint(s, p);
     if (s.squads.includes(sq) && sq.state === 'return' && !p.warband.dead && hex.distance(sq, p.warband) === 0) join(s, sq, 'back');
+  }
+  // D-090: what a sortie does where its route ends (the card's `fx`); the direction is that of its last step
+  function sortieEnd(s, sq) {
+    const p = s.players[sq.owner], def = CARDS[sq.card]; if (!def || !def.fx) return;
+    const dir = sq.orig[Math.max(0, Math.min(sq.orig.length, sq.walked) - 1)], T = s.turnIndex, e = enemyOf(s, p.id), name = TYPES[sq.type].title.toLowerCase();
+    switch (def.fx) {
+      case 'hold': // Ambush: they stay until the owner's next turn and shoot the first enemy group that comes within range
+        sq.state = 'hold'; sq.holdUntil = T + 2; sq.holdRange = def.range; sq.firedAt = -1;
+        s.events.push({ type: 'hold', player: p.id, id: sq.id, sqType: sq.type, col: sq.col, row: sq.row, range: def.range });
+        log(s, `${p.name}: the ${name} lie in wait — anyone within ${def.range} hexes will be shot.`);
+        break;
+      case 'scorch': { // Fire Arrows: the line of hexes beyond them
+        const line = [], burnt = []; let c = sq;
+        for (let i = 0; i < def.range; i++) { c = hex.neighbor(c.col, c.row, dir); if (!exists(s, c)) break; line.push({ col: c.col, row: c.row }); }
+        for (const q of line) {
+          const cell = cellAt(s, q);
+          if (!cell || cell.castle || heroAtCell(s, q) || cell.poi >= 0 || cell.owner !== e.id || isFortifiedAgainst(s, cell, p.id)) continue;
+          burnt.push({ col: cell.col, row: cell.row, from: cell.owner }); cell.owner = 0; cell.bonus = 0;
+        }
+        s.events.push({ type: 'scorch', player: p.id, cells: burnt, line, col: sq.col, row: sq.row });
+        log(s, `${p.name}: ${def.title} — ${burnt.length} enemy hexes burnt.`);
+        break;
+      }
+      case 'palisade': { // Earthworks: walls along the three far edges of their hex
+        const edges = [];
+        for (const t of [-1, 0, 1]) {
+          const n = hex.neighbor(sq.col, sq.row, hex.turn(dir, t)); if (!exists(s, n)) continue;
+          const a = { col: sq.col, row: sq.row }, b = { col: n.col, row: n.row };
+          s.walls[edgeKey(a, b)] = { owner: p.id, until: T + 2 * def.rounds, a, b }; edges.push({ a, b });
+        }
+        s.events.push({ type: 'walls', player: p.id, edges });
+        log(s, `${p.name}: ${def.title} — ${edges.length} walls.`);
+        break;
+      }
+      case 'bless': { // Blessing: the Overlord and your groups within the radius
+        const w = p.warband;
+        for (const q of s.squads) if (q.owner === p.id && hex.distance(q, sq) <= def.radius) q.wound = 0;
+        if (!w.dead && hex.distance(w, sq) <= def.radius) heal(s, p, 1, sq.n, 'Blessing');
+        break;
+      }
+      case 'call': muster(s, p, 2); break; // Call to Arms
+    }
+  }
+  // D-090: archers lying in wait shoot the first enemy group that comes within their range — once per turn. The mover is
+  // `moverPid`'s group at `pos` (target() gives it for the fight rules); before() flushes the movement shown so far.
+  // Returns true when someone shot.
+  function ambushAt(s, moverPid, pos, target, before) {
+    let hit = false;
+    for (const q of s.squads.slice()) {
+      if (s.phase !== 'play' || q.owner === moverPid || q.state !== 'hold' || q.firedAt === s.turnIndex || !s.squads.includes(q)) continue;
+      if (hex.distance(q, pos) > (q.holdRange || 3)) continue;
+      const D = target(); if (D.kind === 'squad' && !s.squads.includes(D.sq)) break;
+      if (before && !hit) before();
+      q.firedAt = s.turnIndex; hit = true;
+      shoot(s, { kind: 'squad', pid: q.owner, sq: q }, D, q.n * typeStat(s, q.owner, q.type, 'atk'));
+      const ev = s.events.filter(x => x.type === 'shoot').pop(); if (ev) ev.ambush = true;
+    }
+    return hit;
   }
   // shortest walk for a squad of pid (walls stop all but Breach; castles and enemy groups block)
   function walkPath(s, pid, from, to, breach) {
@@ -497,8 +561,15 @@ window.HB = window.HB || {};
     if (!path) return;
     const steps = Math.min(typeStat(s, sq.owner, sq.type, 'ret'), path.length);
     const walked = path.slice(0, steps);
-    for (const c of walked) { sq.col = c.col; sq.row = c.row; if (TYPES[sq.type].trait === 'paint_back') paint(s, p, c, 'walk'); }
-    if (walked.length) s.events.push({ type: 'squadMove', player: sq.owner, id: sq.id, sqType: sq.type, path: walked, back: true });
+    let seg = [];
+    const flushSeg = () => { if (seg.length) s.events.push({ type: 'squadMove', player: sq.owner, id: sq.id, sqType: sq.type, path: seg, back: true }); seg = []; };
+    for (const c of walked) {
+      sq.col = c.col; sq.row = c.row; seg.push(c);
+      if (TYPES[sq.type].trait === 'paint_back') paint(s, p, c, 'walk');
+      // D-090: coming back past an enemy ambush
+      if (ambushAt(s, sq.owner, c, () => ({ kind: 'squad', pid: sq.owner, sq }), () => { flushSeg(); flushPaint(s, p); }) && (s.phase !== 'play' || !s.squads.includes(sq))) return;
+    }
+    flushSeg();
     if (hex.distance(sq, w) <= 1) join(s, sq, 'back');
   }
   function join(s, sq, how) {
@@ -619,6 +690,15 @@ window.HB = window.HB || {};
       if (def.wide) for (const tt of [2, -2]) { const side = hex.neighbor(c.col, c.row, hex.turn(d, tt)); if (exists(s, side)) cap(side); }
     });
     if (sortie && def.curl && n === def.pattern.length && !opt.path[n - 1].attack) { const c = hex.neighbor(w.col, w.row, opt.dirs[1]); if (exists(s, c)) cap(c); }
+    // D-090: what the sortie does at the end of its route — the ambush / volley / blessing zone, the line of fire, the walls
+    if (sortie) {
+      const walk = opt.path.filter(c => !c.attack), end = walk.length ? walk[walk.length - 1] : { col: w.col, row: w.row };
+      const dir = opt.dirs[Math.max(0, walk.length - 1)];
+      if (def.fx === 'hold' || (!def.fx && def.range)) out.zone = { col: end.col, row: end.row, r: def.range, tone: 'shot' };
+      if (def.fx === 'bless') out.zone = { col: end.col, row: end.row, r: def.radius, tone: 'heal' };
+      if (def.fx === 'scorch') { out.burn = []; let c = end; for (let i = 0; i < def.range; i++) { c = hex.neighbor(c.col, c.row, dir); if (!exists(s, c)) break; out.burn.push({ col: c.col, row: c.row }); } }
+      if (def.fx === 'palisade') { out.walls = []; for (const t of [-1, 0, 1]) { const m = hex.neighbor(end.col, end.row, hex.turn(dir, t)); if (exists(s, m)) out.walls.push({ a: { col: end.col, row: end.row }, b: m }); } }
+    }
     return out;
   }
   function getPlay(s, card) {
@@ -770,6 +850,7 @@ window.HB = window.HB || {};
       if (sq.state === 'out') advanceSquad(s, sq, typeStat(s, np.id, sq.type, 'speed'));
       else if (sq.state === 'return') returnSquad(s, sq);
       else if (sq.state === 'wait') waitCheck(s, sq);
+      else if (sq.state === 'hold' && s.turnIndex >= sq.holdUntil) { sq.state = 'return'; returnSquad(s, sq); } // D-090: the ambush is over
     }
     if (s.phase !== 'play') return;
     enclosure(s, np); flushPaint(s, np);
