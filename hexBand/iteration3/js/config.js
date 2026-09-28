@@ -1,14 +1,14 @@
 // HEXBand prototype — tunables. See docs/DECISIONS.md for the reasoning behind each value.
 window.HB = window.HB || {};
 HB.CONFIG = {
-  VERSION: '0.28.0-it3',
+  VERSION: '0.29.0-it3',
   COLS: 11,              // flat-top hex columns; odd columns are shifted down and hold one cell less (see D-002). iteration3 (D-083): 7 → 11
   ROWS: 17,              // rows in even columns; odd columns have ROWS-1. iteration3 (D-083): 11 → 17 — the board is ~50 % larger each way
   HAND_SIZE: 4,
   DECK_SIZE: 8,
   POI_PICKS: 2,          // D-058: two outposts per player, both start captured
   CITADEL_MODE: 'fixed', // D-061: 'fixed' = always Muster (default), 'once' = one random card for the whole match, 'reroll' = a new one after each capture
-  ROUND_LIMIT: 10,       // GDD §23: 10 rounds per player for the first prototype
+  ROUND_LIMIT: 12,       // GDD §23 had 10; iteration3 (D-084): 12 on the 11 × 17 board
   START_MINIONS: 24,     // iteration2: overridden by the army strength below (16 + 4 per outpost + 6 for the citadel = 24 at the start)
   // D-074 (iteration2): castles. Defence = base + 1 per owned hex (castle hex excluded) + 2 per outpost + 4 for the citadel.
   CASTLE_BASE: 20, CASTLE_PER_HEX: 1, CASTLE_PER_POI: 2, CASTLE_PER_CITADEL: 4,
