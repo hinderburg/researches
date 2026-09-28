@@ -1,7 +1,7 @@
 // HEXBand prototype — tunables. See docs/DECISIONS.md for the reasoning behind each value.
 window.HB = window.HB || {};
 HB.CONFIG = {
-  VERSION: '0.35.0-it3',
+  VERSION: '0.36.0-it3',
   COLS: 11,              // flat-top hex columns; odd columns are shifted down and hold one cell less (see D-002). iteration3 (D-083): 7 → 11
   ROWS: 17,              // rows in even columns; odd columns have ROWS-1. iteration3 (D-083): 11 → 17 — the board is ~50 % larger each way
   // D-085 (iteration3, V4 "Overlord"): a deck of 6 — 3 Overlord cards + 1 card for each of the 3 minion types; hand of 3
@@ -14,7 +14,7 @@ HB.CONFIG = {
   // D-085: the Overlord. Direct numbers: what the camp shows is what the match uses. Level L adds floor((L−1) × grow).
   HERO: { hp: 40, hpGrow: 3, atk: 3, atkGrow: 0.25, command: 23, commandGrow: 1 },
   MAX_LEVEL: 10,
-  POINT_LEVEL_CAP: 2,    // D-085: upgrade points add at most +2 levels to a minion type during a match
+  POST_BOOST: 0.1,       // D-091: a recruiting post raises the army size of the type that took it by 10 % (at least 1)
   CITADEL_HEAL: 5,       // D-085: taking the Citadel heals the Overlord
   // castles (passive bases, D-084): the castle hex; the Overlord starts on the hex in front of it
   START: { 1: { col: 5, row: 15 }, 2: { col: 5, row: 0 } },

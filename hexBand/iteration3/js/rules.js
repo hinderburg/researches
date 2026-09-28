@@ -47,8 +47,13 @@ window.HB = window.HB || {};
   }
   function heroStatsAt(L) { const H = CFG.HERO; return { hp: H.hp + lvlAdd(L, H.hpGrow), atk: H.atk + lvlAdd(L, H.atkGrow), command: H.command + lvlAdd(L, H.commandGrow) }; }
   const citadelHeld = (s, pid) => s.pois.some(q => q.kind === 'citadel' && q.owner === pid);
-  function pointBonus(s, pid, t) { let n = 0; for (const q of s.pois) if (q.owner === pid && q.kind === t) n++; return Math.min(CFG.POINT_LEVEL_CAP, n); }
-  const typeLevel = (s, pid, t) => (s.players[pid].levels[t] || 1) + pointBonus(s, pid, t);
+  // D-091: a recruiting post raises the army size of the type that took it by 10 % (at least 1) while the player holds it
+  function postBoost(s, p, t) {
+    const n = s.pois.filter(q => q.kind === 'post' && q.owner === p.id && q.boost === t).length;
+    return n ? Math.max(1, Math.round(p.baseComp[t] * CFG.POST_BOOST * n)) : 0;
+  }
+  function recomputeComp(s) { for (const pid of [1, 2]) { const p = s.players[pid]; for (const t of p.types) p.comp[t] = p.baseComp[t] + postBoost(s, p, t); } }
+  const typeLevel = (s, pid, t) => s.players[pid].levels[t] || 1;
   function typeStat(s, pid, t, key) {
     const st = statsAt(t, typeLevel(s, pid, t));
     return key === 'out' ? st.out + (citadelHeld(s, pid) ? 1 : 0) : st[key];
@@ -97,7 +102,7 @@ window.HB = window.HB || {};
       const types = Object.keys(lo.types), hs = CFG.HERO_START[pid];
       const p = s.players[pid] = {
         id: pid, name: o.name || (pid === 1 ? 'Blue' : 'Red'), bot: !!o.bot, army: o.preset || null,
-        deckIds: lo.hero.concat(lo.minion), types, comp: Object.assign({}, lo.types),
+        deckIds: lo.hero.concat(lo.minion), types, comp: Object.assign({}, lo.types), baseComp: Object.assign({}, lo.types), // D-091: comp = base + posts
         levels: Object.assign({ hero: lv.hero || 1 }, ...types.map(t => ({ [t]: lv[t] || 1 }))),
         warband: { col: hs.col, row: hs.row, hp: 0, maxHp: 0, minions: 0, dead: false },
         retinue: {}, status: newStatus(), deck: [], hand: [], discard: [], inPlay: null, gained: 0, gainedLastRound: 0,
@@ -109,14 +114,9 @@ window.HB = window.HB || {};
       s.castles[pid] = { col: st.col, row: st.row };
       for (let d = 0; d < 6; d++) { const n = hex.neighbor(st.col, st.row, d); if (exists(s, n)) cellAt(s, n).owner = pid; }
     }
-    // D-085: upgrade points — the two mirrored pairs belong to minion types in play (shared types first), plus the Citadel
-    const inPlay = [...new Set(s.players[1].types.concat(s.players[2].types))];
-    const shared = inPlay.filter(t => s.players[1].types.includes(t) && s.players[2].types.includes(t));
-    const rest = shuffle(s, inPlay.filter(t => !shared.includes(t)));
-    const order = shuffle(s, shared.slice()).concat(rest);
-    const kinds = { left: order[0], right: order[1] || order[0] };
-    const addPoint = (c, kind) => { const q = { id: s.pois.length, col: c.col, row: c.row, kind, type: kind, owner: 0 }; s.pois.push(q); s.cells[K(c.col, c.row)].poi = q.id; };
-    for (const side of ['left', 'right']) for (const c of CFG.POINTS[side]) addPoint(c, kinds[side]);
+    // upgrade points: four recruiting posts (D-091: whoever takes one raises that type's army size) and the Citadel
+    const addPoint = (c, kind) => { const q = { id: s.pois.length, col: c.col, row: c.row, kind, owner: 0, boost: null }; s.pois.push(q); s.cells[K(c.col, c.row)].poi = q.id; };
+    for (const side of ['left', 'right']) for (const c of CFG.POINTS[side]) addPoint(c, 'post');
     addPoint(CFG.POINTS.citadel, 'citadel');
     for (const pid of [1, 2]) {
       const p = s.players[pid];
@@ -205,9 +205,20 @@ window.HB = window.HB || {};
     const prev = q.owner;
     q.owner = p.id;
     const def = PK[q.kind];
-    s.events.push({ type: 'poi', player: p.id, poiId: id, kind: q.kind, title: def.title, from: prev, col: q.col, row: q.row });
-    log(s, `${p.name} take the ${def.title}${q.kind !== 'citadel' ? ` (${TYPES[q.kind].title})` : ''}.`);
+    if (q.kind === 'post') { q.boost = painterType(s, p); recomputeComp(s); } // D-091: the taker's type grows; the loser's shrinks back
+    const add = q.boost ? p.comp[q.boost] - p.baseComp[q.boost] : 0;
+    s.events.push({ type: 'poi', player: p.id, poiId: id, kind: q.kind, title: def.title, from: prev, col: q.col, row: q.row, boost: q.kind === 'post' ? q.boost : null });
+    log(s, `${p.name} take the ${def.title}${q.kind === 'post' && q.boost ? ` — ${TYPES[q.boost].title.toLowerCase()} army ${p.baseComp[q.boost]} → ${p.comp[q.boost]} (+${add})` : ''}.`);
     if (q.kind === 'citadel') heal(s, p, 0, CFG.CITADEL_HEAL, 'Citadel');
+  }
+  // D-091: which of the player's types took a hex — the group that is painting (s.painter, set by whoever moves), or, for
+  // the Overlord, the largest type with him
+  function painterType(s, p) {
+    const pt = s.painter;
+    if (pt && pt.pid === p.id && pt.type) return pt.type;
+    let best = null, bn = 0;
+    for (const t of p.types) if (p.retinue[t].n > bn) { bn = p.retinue[t].n; best = t; }
+    return best;
   }
   const territory = (s, pid) => { let t = 0; for (const k in s.cells) { const c = s.cells[k]; if (c.owner === pid) t += 1 + c.bonus; } return t; };
   const cellCount = (s, pid) => { let t = 0; for (const k in s.cells) if (s.cells[k].owner === pid) t++; return t; };
@@ -344,6 +355,7 @@ window.HB = window.HB || {};
     return path;
   }
   function moveHero(s, p, dirs) {
+    s.painter = { pid: p.id, type: null }; // D-091: the Overlord paints
     const w = p.warband, path = [];
     for (const d of dirs) {
       const n = hex.neighbor(w.col, w.row, d);
@@ -420,6 +432,7 @@ window.HB = window.HB || {};
   }
   function advanceSquad(s, sq, steps) {
     const p = s.players[sq.owner], d0 = TYPES[sq.type], ranged = d0.range > 0, breach = d0.trait === 'breach';
+    s.painter = { pid: sq.owner, type: sq.type }; // D-091: this group paints
     let path = [], moved = 0;
     const flush = () => { if (path.length) { s.events.push({ type: 'squadMove', player: sq.owner, id: sq.id, sqType: sq.type, path }); path = []; } };
     const me = () => ({ kind: 'squad', pid: sq.owner, sq });
@@ -555,6 +568,7 @@ window.HB = window.HB || {};
   }
   function returnSquad(s, sq) {
     const p = s.players[sq.owner], w = p.warband;
+    s.painter = { pid: sq.owner, type: sq.type };
     if (w.dead) return;
     if (hex.distance(sq, w) <= 1) { join(s, sq, 'back'); return; }
     const path = walkPath(s, sq.owner, sq, w, TYPES[sq.type].trait === 'breach');

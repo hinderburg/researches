@@ -55,13 +55,9 @@ window.HB = window.HB || {};
   const HERO_POOL = ['stride', 'detour', 'recall', 'war_cry', 'standard'];
   const MINION_CARDS = t => Object.keys(CARDS).filter(id => CARDS[id].owner === t);
 
-  // ---- upgrade points (D-085): each mirrored pair belongs to a minion type chosen at the start of a match
+  // ---- upgrade points: four recruiting posts (D-091) and the Citadel (D-085)
   const POINT_KINDS = {
-    brawler: { title: 'Forge', text: '+1 level to your brawlers while you hold it.' },
-    runner: { title: 'Nest', text: '+1 level to your runners while you hold it.' },
-    archer: { title: 'Archery Range', text: '+1 level to your archers while you hold it.' },
-    brute: { title: 'Quarry', text: '+1 level to your brutes while you hold it.' },
-    healer: { title: 'Well', text: '+1 level to your healers while you hold it.' },
+    post: { title: 'Recruiting Post', text: 'The minion type that takes it gets +10 % army size (at least +1) while you hold it; the new minions come from the pits. Lose it and the extra minions stay, but the pits stop replacing them.' },
     citadel: { title: 'Citadel', text: 'Taking it heals your Overlord by 5; while you hold it every pit sends 1 more minion per turn.' },
   };
 

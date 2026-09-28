@@ -154,8 +154,8 @@ window.HB = window.HB || {};
       case 'poi': {
         this.schedule(t, () => {
           this.flashCell(ev.col, ev.row, '#ffe27a', 800);
-          const txt = ev.kind === 'citadel' ? 'CITADEL TAKEN!' : `${ev.title.toUpperCase()}: ${TYPES[ev.kind].title.toUpperCase()} +1`;
-          this.addText(ev.col, ev.row, txt, ev.kind === 'citadel' ? '#ffe27a' : TYPES[ev.kind].color, { dy: -S * 1.9, dur: 1600, big: true });
+          const txt = ev.kind === 'citadel' ? 'CITADEL TAKEN!' : ev.boost ? `${TYPES[ev.boost].title.toUpperCase()} +10% ARMY` : 'POST TAKEN'; // D-091
+          this.addText(ev.col, ev.row, txt, ev.kind === 'citadel' ? '#ffe27a' : ev.boost ? TYPES[ev.boost].color : '#ffe9a8', { dy: -S * 1.9, dur: 1600, big: true });
         });
         return t + 250;
       }
@@ -394,14 +394,16 @@ window.HB = window.HB || {};
     const S = this.size, z = this.zoom || 1, sc = (z > 1.6 ? 0.85 : 1.1) * (scale || 1);
     const h = S * 0.36 * sc, fs = Math.round(S * 0.27 * sc);
     ctx.font = `900 ${fs}px system-ui, sans-serif`;
-    const txt = (typeof waiting === 'string' ? waiting : waiting ? '⏳' : '') + String(n), tw = ctx.measureText(txt).width, w = h + tw + S * 0.2 * sc;
+    // D-091: a type whose army is above its base size (a recruiting post, or extras kept after losing one) — gold number and ▲
+    const Pl = this.s && this.s.players && this.s.players[pid], boosted = !!(Pl && Pl.baseComp && Pl.baseComp[type] != null && (Pl.comp[type] > Pl.baseComp[type] || R.armyOnField(this.s, pid, type) > Pl.baseComp[type]));
+    const txt = (typeof waiting === 'string' ? waiting : waiting ? '⏳' : '') + String(n) + (boosted ? '▲' : ''), tw = ctx.measureText(txt).width, w = h + tw + S * 0.2 * sc;
     const bx = x - w / 2, by = y - h / 2;
-    ctx.fillStyle = 'rgba(20,12,6,0.82)'; ctx.strokeStyle = COL[pid + 'Light']; ctx.lineWidth = 1.5;
+    ctx.fillStyle = 'rgba(20,12,6,0.82)'; ctx.strokeStyle = boosted ? '#ffd45a' : COL[pid + 'Light']; ctx.lineWidth = boosted ? 2.2 : 1.5;
     ctx.beginPath(); ctx.roundRect(bx, by, w, h, h / 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = TYPES[type].color; ctx.beginPath(); ctx.arc(bx + h / 2, y, h * 0.42, 0, Math.PI * 2); ctx.fill();
     const img = HB.icons.image('t_' + type, '#2a1d0e'), is = h * 0.62;
     if (img.complete && img.naturalWidth) ctx.drawImage(img, bx + h / 2 - is / 2, y - is / 2, is, is);
-    ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(txt, bx + h + S * 0.04, y + 1);
+    ctx.fillStyle = boosted ? '#ffd45a' : '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(txt, bx + h + S * 0.04, y + 1);
   };
   // D-087: the Overlord as a dark lord in the manner of Sauron — black plate armour, a crown of iron spikes over a closed
   // helm with a burning eye slit, spiked pauldrons, a flanged mace, a cape in the team colour (the team reads by the cape,
@@ -609,20 +611,22 @@ window.HB = window.HB || {};
     ctx.fillStyle = '#4c3f33'; ctx.beginPath(); ctx.ellipse(x, base + S * 0.01, S * 0.95, S * 0.08, 0, 0, Math.PI); ctx.fill();
   };
   // upgrade points: a landmark per kind and a floating tag with the type emblem ("+1") or the Citadel's crown
-  const LANDMARK = { brawler: 'workshop', runner: 'scout_camp', archer: 'watchtower', brute: 'mine', healer: 'shrine', citadel: 'citadel' };
+  const LANDMARK = { post: 'war_banner', citadel: 'citadel' }; // D-091: recruiting posts fly a war banner
   P.drawPoint = function (ctx, q, now) {
     const S = this.size, p = this.cellXY(q.col, q.row), owner = q.owner;
     this.drawLandmark(ctx, LANDMARK[q.kind] || 'village', p.x, p.y, S, owner);
     const bob = Math.sin(now / 520 + q.id) * S * 0.04, cy = p.y - S * 1.35 + bob, r = S * 0.34;
-    const citadel = q.kind === 'citadel', fill = citadel ? '#d9a516' : TYPES[q.kind].color;
+    const citadel = q.kind === 'citadel', bt = !citadel && owner && q.boost ? q.boost : null; // D-091: a post shows the type it boosts
+    const fill = citadel ? '#d9a516' : bt ? TYPES[bt].color : '#c9b48a';
     if (owner) { ctx.shadowColor = COL[owner + 'Light']; ctx.shadowBlur = S * 0.35; }
     ctx.fillStyle = fill; ctx.strokeStyle = owner ? COL[owner] : '#3a2a12'; ctx.lineWidth = owner ? 3 : 2;
     ctx.beginPath(); ctx.arc(p.x, cy, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0;
     if (citadel) { ctx.fillStyle = '#fff'; ctx.font = `900 ${Math.round(S * 0.34)}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('❤', p.x, cy + 1); }
-    else { const img = HB.icons.image('t_' + q.kind, '#2a1d0e'), is = r * 1.3; if (img.complete && img.naturalWidth) ctx.drawImage(img, p.x - is / 2, cy - is / 2, is, is); }
+    else if (bt) { const img = HB.icons.image('t_' + bt, '#2a1d0e'), is = r * 1.3; if (img.complete && img.naturalWidth) ctx.drawImage(img, p.x - is / 2, cy - is / 2, is, is); }
+    else { ctx.fillStyle = '#2a1d0e'; ctx.font = `900 ${Math.round(S * 0.3)}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('⚑', p.x, cy + 1); }
     ctx.font = `900 ${Math.round(S * 0.22)}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(20,12,6,0.9)';
-    const lbl = citadel ? '+5❤ · +1/turn' : '+1 lvl';
+    const lbl = citadel ? '+5❤ · +1/turn' : '+10% army';
     ctx.strokeText(lbl, p.x, cy + r + S * 0.16); ctx.fillStyle = '#fff'; ctx.fillText(lbl, p.x, cy + r + S * 0.16);
   };
   // forecast while aiming: a plaque over the target cell (set by the UI from R.forecastPlay)
