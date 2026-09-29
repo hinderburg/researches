@@ -158,7 +158,7 @@ select, input[type=text] { background: var(--panel2); color: var(--text); border
 .fly-card.k-move .card-name { background: #2f5ea3; } .fly-card.k-combat .card-name { background: #a3352c; } .fly-card.k-reinf .card-name { background: #b57f10; } .fly-card.k-def .card-name { background: #3d7a3c; } .fly-card.k-terr .card-name { background: #66489a; } .fly-card.k-summon .card-name { background: #23766e; }
 .fly-card.k-summon .card-name { background: #23766e; } .fly-card.k-util .card-name { background: #5a4a30; }
 .fly-card.stack { border-color: #c99a5b; }
-#status-row { display: flex; align-items: center; justify-content: center; gap: 8px; height: 22px; overflow: hidden; }
+#status-row { display: flex; align-items: center; justify-content: center; gap: 8px; height: 30px; overflow: hidden; /* D-099: room for the coins */ }
 .btn.end-fb { background: repeating-linear-gradient(135deg, #b8433a 0 6px, #a3352c 6px 12px); color: #fff; border-color: #ffd766; padding: 1px 10px; }
 #status-line { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* description of the dragged card: a translucent panel over the hand zone itself (the card is under the finger anyway) */
@@ -258,20 +258,21 @@ select.lvl { padding: 3px 6px; font-size: 12px; margin-left: auto; }
 /* ---- D-097: coins — the economy line under the territory count, card prices, the burn slot */
 .hud-col { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
 .hud-side.p2 .hud-col { align-items: flex-end; }
-.hud-eco { font-size: 13px; color: var(--muted); white-space: nowrap; line-height: 1.05; margin-top: 2px; } /* D-098: coins and income ×2 */
-.hud-eco b { color: #ffd766; font-size: 22px; font-weight: 900; vertical-align: -2px; }
-.hud-eco .coin-ic { font-size: 20px; vertical-align: -2px; }
-.hud-eco .hud-next { color: var(--muted); }
 .card-cost { position: absolute; top: 19px; right: 2px; min-width: 20px; height: 18px; padding: 0 4px; border-radius: 9px; background: linear-gradient(#ffe38a, #d9a516); border: 1.5px solid #7a5608; color: #2b1d05; font-size: 11px; font-weight: 900; line-height: 15px; text-align: center; z-index: 2; box-shadow: 0 1px 2px rgba(0,0,0,.35); }
 .card.poor .card-cost { background: linear-gradient(#ff9a8a, #c0392b); border-color: #6b1a12; color: #fff; }
 #hand-frame { display: flex; gap: 5px; align-items: stretch; }
 #hand-frame #hand { flex: 1 1 auto; min-width: 0; }
-#burn-slot { flex: 0 0 48px; border-radius: 9px; border: 2px dashed #8a4a1c; background: rgba(120,40,10,.25); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #ffb37a; cursor: pointer; transition: background .12s, box-shadow .12s, transform .12s; }
-#burn-slot .burn-icon { font-size: 20px; line-height: 1; }
-#burn-slot .burn-label { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
-#burn-slot .burn-gain { font-size: 11px; font-weight: 900; color: #ffd766; min-height: 13px; }
-#burn-slot.hot { background: rgba(255,120,40,.45); box-shadow: 0 0 0 2px #ffb347, 0 0 14px rgba(255,140,60,.7); transform: scale(1.05); }
-#burn-slot.armed { box-shadow: 0 0 0 2px rgba(255,179,71,.8); }
-#burn-slot.off { opacity: .35; cursor: default; }
-/* D-098: on a phone the names give way to the bigger coins — the colours tell the sides apart */
-@media (max-width: 560px) { .hud-name { display: none; } .hud-eco { font-size: 12px; } .hud-eco b { font-size: 20px; } .hud-eco .coin-ic { font-size: 18px; } }
+/* D-099: the end-turn button stands right of the hand (where the burn slot was); cards are burnt on the discard pile;
+   the coins sit in the card panel */
+.btn.end-slot { flex: 0 0 52px; margin: 0; border-radius: 9px; padding: 4px; font-size: 12px; line-height: 1.15; font-weight: 900; }
+.btn.end-slot:disabled { opacity: .35; cursor: default; filter: grayscale(.6); }
+.btn.end-slot:not(:disabled) { box-shadow: 0 0 0 2px rgba(255,215,102,.7), 0 0 12px rgba(255,200,60,.45); }
+.burn-col { position: relative; }
+.burn-col .pile-label { color: #ffb37a; }
+.burn-col .burn-gain { position: absolute; left: 0; right: 0; top: 38px; text-align: center; font-size: 13px; font-weight: 900; color: #ffd766; text-shadow: 0 1px 2px #000; pointer-events: none; }
+.burn-col.hot .pile { background: rgba(255,120,40,.45); border-color: #ffb347; box-shadow: 0 0 0 2px #ffb347, 0 0 14px rgba(255,140,60,.7); transform: scale(1.06); }
+.burn-col.armed .pile { box-shadow: 0 0 0 2px rgba(255,179,71,.85); }
+#eco-bar { flex: 0 0 auto; display: inline-flex; align-items: baseline; gap: 3px; margin-right: 8px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+#eco-bar b { color: #ffd766; font-size: 22px; font-weight: 900; line-height: 1; }
+#eco-bar .coin-ic { font-size: 20px; line-height: 1; margin-right: 4px; }
+#eco-bar .eco-unit { margin-right: 6px; }

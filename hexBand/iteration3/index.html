@@ -95,16 +95,14 @@
     <header class="hud">
       <div class="hud-side p1" id="hud-1">
         <span class="hud-name">Blue</span>
-        <span class="hud-col"><span class="hud-stats"><b class="hud-terr">0</b> <span class="hud-pct">(0%)</span> · <b class="hud-hp">40</b>❤ · <b class="hud-min">23</b>⚔ · <span class="hud-poi">0</span>⚑</span>
-          <span class="hud-eco"><b class="hud-coins">0</b><span class="coin-ic">🪙</span> <b class="hud-inc">+0</b>/turn <span class="hud-next"></span></span></span>
+        <span class="hud-col"><span class="hud-stats"><b class="hud-terr">0</b> <span class="hud-pct">(0%)</span> · <b class="hud-hp">40</b>❤ · <b class="hud-min">23</b>⚔ · <span class="hud-poi">0</span>⚑</span></span>
       </div>
       <div class="hud-center">
         <span id="hud-round">Round 1</span>
         <button class="btn tiny ghost" id="btn-help-game">?</button><button class="btn tiny ghost" id="btn-quit">≡</button>
       </div>
       <div class="hud-side p2" id="hud-2">
-        <span class="hud-col"><span class="hud-stats"><span class="hud-poi">0</span>⚑ · <b class="hud-min">23</b>⚔ · <b class="hud-hp">40</b>❤ · <span class="hud-pct">(0%)</span> <b class="hud-terr">0</b></span>
-          <span class="hud-eco"><span class="hud-next"></span> <b class="hud-inc">+0</b>/turn <b class="hud-coins">0</b><span class="coin-ic">🪙</span></span></span>
+        <span class="hud-col"><span class="hud-stats"><span class="hud-poi">0</span>⚑ · <b class="hud-min">23</b>⚔ · <b class="hud-hp">40</b>❤ · <span class="hud-pct">(0%)</span> <b class="hud-terr">0</b></span></span>
         <span class="hud-name">Red</span>
       </div>
     </header>
@@ -114,11 +112,11 @@
     <div id="hand-area">
       <div id="card-desc" hidden></div>
       <div id="hand-row">
-        <div class="pile-col"><div class="pile-count" id="discard-count">0</div><div class="pile discard" id="pile-discard"></div><div class="pile-label">discard</div></div>
-        <div id="hand-frame"><div id="hand"></div><div id="burn-slot" title="Burn a card: drop it here to discard it for 35 % of its cost"><span class="burn-icon">🔥</span><span class="burn-label">Burn</span><span class="burn-gain"></span></div></div>
+        <div class="pile-col burn-col" title="Burn a card: drop it on the discard pile to discard it for 35 % of its cost"><div class="pile-count" id="discard-count">0</div><div class="pile discard" id="pile-discard"></div><div class="pile-label">🔥 burn</div><div class="burn-gain" id="burn-gain"></div></div>
+        <div id="hand-frame"><div id="hand"></div><button class="btn end-slot" id="end-slot" disabled>End<br>turn</button></div>
         <div class="pile-col"><div class="pile-count" id="deck-count">0</div><div class="pile deck" id="pile-deck"></div><div class="pile-label">deck</div></div>
       </div>
-      <div id="status-row"><span id="status-line" class="muted"></span><button class="btn tiny ghost" id="btn-pass" hidden>No moves — burn a card</button><button class="btn tiny end-fb" id="btn-end-fb" hidden>End turn</button></div>
+      <div id="status-row"><span id="eco-bar" title="coins · income a turn · hexes to the next +1"><b id="eco-coins">0</b><span class="coin-ic">🪙</span> <b id="eco-inc">+0</b><span class="eco-unit">/turn</span> <span id="eco-next"></span></span><span id="status-line" class="muted"></span><button class="btn tiny ghost" id="btn-pass" hidden>No moves — burn a card</button><button class="btn tiny end-fb" id="btn-end-fb" hidden>End turn</button></div>
     </div>
 
     <details id="log"><summary>Match log</summary><div id="log-lines"></div></details>
