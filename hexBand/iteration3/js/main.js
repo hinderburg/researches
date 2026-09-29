@@ -519,6 +519,9 @@ window.HB = window.HB || {};
         ? `<span class="desc-cancel-ic">✕</span><span>${needsTarget ? 'Tap a highlighted hex on the board to play' : 'Tap the board to play'}. Changed your mind? Tap this panel — the card stays in your hand.</span>`
         : `<span class="desc-cancel-ic">↩</span><span>Changed your mind? Release the card here — it returns to your hand</span>`;
       $('#card-desc').innerHTML = `<div class="desc-body"><b>${title}</b><span>${text}</span><div class="desc-forecast" hidden></div></div><div class="desc-cancel">${hint}</div>`;
+      // D-098: the panel stops short of the burn slot — the slot (and the deck) stay in view and within reach
+      const area = rectOf($('#hand-area')), bs = rectOf($('#burn-slot'));
+      $('#card-desc').style.right = (bs.width ? Math.max(6, area.right - bs.left + 5) : 6) + 'px';
       $('#card-desc').hidden = false;
     },
     // D-047 / D-085: the forecast while a card is aimed — the move is played on a copy of the match, so it is always true:
