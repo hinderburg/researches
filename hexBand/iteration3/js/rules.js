@@ -136,20 +136,26 @@ window.HB = window.HB || {};
     s.paintBuf = []; s.events = [];
     log(s, `Match started. Seed ${seed}, ${s.roundLimit} rounds.`);
     s.events.push({ type: 'turn', player: 1, round: 1 });
+    s.trackStart = territory(s, 1); // D-100: the land track counts from the starting territory (the same for both)
     s.players[2].coins += CFG.COINS_SECOND; // D-097: the second player's purse makes up for moving second
     collectIncome(s, s.players[1]); // D-097: the first player's first turn
     return s;
   }
 
-  // ---------------------------------------------------------------- coins (D-097)
-  // Income at the start of each own turn: a base, +1 for every territory step reached (5, 8, 13, 21, 34, 55, 89 — the
-  // steps grow like Fibonacci, so each next +1 takes more land) and +1 for every gold mine held.
+  // ---------------------------------------------------------------- coins (D-097, D-100)
+  // Income at the start of each own turn: a base, +1 for every level of the land track and +1 for every gold mine held.
+  // D-100: the land track is a straight progression — from the starting territory, the next level takes as many more
+  // hexes as the land income is now (base + level), at most 10. Losing land moves the track back.
   const cardCost = def => def.cost || 0;
-  const incomeSteps = (s, pid) => { const t = territory(s, pid); return CFG.INCOME_STEPS.filter(x => t >= x).length; };
   const minesHeld = (s, pid) => s.pois.filter(q => q.kind === 'mine' && q.owner === pid).length;
-  function incomeOf(s, pid) { return CFG.INCOME_BASE + incomeSteps(s, pid) + CFG.MINE_INCOME * minesHeld(s, pid); }
-  // how many more hexes of territory until the next +1 (null when every step is reached)
-  function nextIncomeStep(s, pid) { const t = territory(s, pid), n = CFG.INCOME_STEPS.find(x => x > t); return n == null ? null : n - t; }
+  function incomeTrack(s, pid) {
+    const t = territory(s, pid);
+    let level = 0, from = s.trackStart || 0, step = Math.min(CFG.INCOME_TRACK_MAX, CFG.INCOME_BASE);
+    while (t >= from + step) { from += step; level++; step = Math.min(CFG.INCOME_TRACK_MAX, CFG.INCOME_BASE + level); }
+    return { level, step, left: from + step - t }; // left: hexes still to take for the next +1
+  }
+  function incomeOf(s, pid) { return CFG.INCOME_BASE + incomeTrack(s, pid).level + CFG.MINE_INCOME * minesHeld(s, pid); }
+  function nextIncomeStep(s, pid) { return incomeTrack(s, pid).left; }
   function collectIncome(s, p) {
     const amount = incomeOf(s, p.id);
     p.coins += amount;
@@ -975,7 +981,7 @@ window.HB = window.HB || {};
   function takeEvents(s) { const e = s.events; s.events = []; return e; }
   function clone(s) { const e = s.events, l = s.log; s.events = []; s.log = []; const c = JSON.parse(JSON.stringify(s)); s.events = e; s.log = l; return c; }
 
-  HB.rules = { createGame, playCard, endTurn, passTurn, burnCard, burnValue, cardCost, incomeOf, nextIncomeStep, getPlay, planOf, returnPath, takeEvents, clone, territory, cellCount, poiCount, totalCells,
+  HB.rules = { createGame, playCard, endTurn, passTurn, burnCard, burnValue, cardCost, incomeOf, incomeTrack, nextIncomeStep, getPlay, planOf, returnPath, takeEvents, clone, territory, cellCount, poiCount, totalCells,
     scoreboard, round, occupant, groupAt, isBlocked, active, rand, stepOptions, freeStep, walled, isSwamp, isFortifiedAgainst, castleAt,
     statsAt, heroStatsAt, typeStat, typeLevel, heroStat, armyOnField, retinueHP, roadRegion, heroThreat, forecastPlay, forecastStep,
     sortieBlocked, power };

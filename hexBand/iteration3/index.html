@@ -110,13 +110,14 @@
     <div id="board-wrap"><canvas id="board"></canvas></div>
 
     <div id="hand-area">
+      <div id="eco-track" title="coins · income a turn · the land track: take these hexes for the next +1"><span class="eco-coins"><b id="eco-coins">0</b><span class="coin-ic">🪙</span></span><span class="eco-inc"><b id="eco-inc">+0</b><span class="eco-unit">/turn</span></span><span id="eco-run"><span id="eco-hexes"></span><span id="eco-plus">+1</span></span></div>
       <div id="card-desc" hidden></div>
       <div id="hand-row">
         <div class="pile-col burn-col" title="Burn a card: drop it on the discard pile to discard it for 35 % of its cost"><div class="pile-count" id="discard-count">0</div><div class="pile discard" id="pile-discard"></div><div class="pile-label">🔥 burn</div><div class="burn-gain" id="burn-gain"></div></div>
         <div id="hand-frame"><div id="hand"></div><button class="btn end-slot" id="end-slot" disabled>End<br>turn</button></div>
         <div class="pile-col"><div class="pile-count" id="deck-count">0</div><div class="pile deck" id="pile-deck"></div><div class="pile-label">deck</div></div>
       </div>
-      <div id="status-row"><span id="eco-bar" title="coins · income a turn · hexes to the next +1"><b id="eco-coins">0</b><span class="coin-ic">🪙</span> <b id="eco-inc">+0</b><span class="eco-unit">/turn</span> <span id="eco-next"></span></span><span id="status-line" class="muted"></span><button class="btn tiny ghost" id="btn-pass" hidden>No moves — burn a card</button><button class="btn tiny end-fb" id="btn-end-fb" hidden>End turn</button></div>
+      <div id="status-row"><span id="status-line" class="muted"></span><button class="btn tiny ghost" id="btn-pass" hidden>No moves — burn a card</button><button class="btn tiny end-fb" id="btn-end-fb" hidden>End turn</button></div>
     </div>
 
     <details id="log"><summary>Match log</summary><div id="log-lines"></div></details>

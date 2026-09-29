@@ -98,7 +98,7 @@ window.HB = window.HB || {};
         <div class="intro-item">${ic('cordon')}<div><b>Claim territory.</b> Every hex your Overlord or minions walk through becomes yours. Surround an area with your own hexes and everything inside becomes yours too — the map edge does not count as a wall, and an area with the enemy Overlord in it stays theirs.</div></div>
         <div class="intro-item">${ic('recruitment')}<div><b>Pits and the road.</b> Each minion type has a pit in a tower of your castle. Fallen minions return to it, and every turn it sends new ones out while you have fewer than your army size. If your own hexes connect the castle to the Overlord, they run straight to him; if not, they wait at your hex nearest to him — cut the enemy road and his reinforcements get stuck.</div></div>
         <div class="intro-item">${ic('t_archer')}<div><b>Upgrade points.</b> In the middle of the map: a recruiting post gives +10 % army size to the minion type that takes it (the new ones come from the pits; a boosted count shows gold with ▲); the Citadel heals your Overlord and speeds up every pit. The castle itself is a passive base — nobody can take it.</div></div>
-        <div class="intro-item">${ic('coin')}<div><b>Coins.</b> Cards cost coins. Your income grows with your land (each next +1 needs more hexes) and with gold mines. No coins? Drop a card on the discard pile to burn it for a third of its price. End the turn with the button right of your hand.</div></div>
+        <div class="intro-item">${ic('coin')}<div><b>Coins.</b> Cards cost coins. Your income grows with your land — the track above your cards shows the hexes still to take for the next +1 — and with gold mines. No coins? Drop a card on the discard pile to burn it for a third of its price. End the turn with the button right of your hand.</div></div>
         <div class="intro-item">${ic('battle_cry')}<div><b>Win.</b> Slay the enemy Overlord — or hold more territory when round ${this.setup.rounds} ends. The board is big: zoom with the mouse wheel or a two-finger pinch, drag it to scroll, or use + / − / ⤢.</div></div>
         <button class="btn primary" id="btn-intro-close">${manual ? 'Got it' : 'To settings'}</button></div>`);
       $('#btn-intro-close').addEventListener('click', () => { ov.hidden = true; });
@@ -219,7 +219,7 @@ window.HB = window.HB || {};
     // ------------------------------------------------------------ game
     startGame(opts) {
       this.state = R.createGame(opts);
-      this.lastActor = null; this.handoverPending = false; this.busy = false; this.lastEvents = []; this.pendingIncoming = new Set();
+      this.lastActor = null; this.handoverPending = false; this.busy = false; this.trackShown = null; // D-100 this.lastEvents = []; this.pendingIncoming = new Set();
       $('#setup').hidden = true; $('#menu').hidden = true; $('#game').hidden = false; $('#overlay').hidden = true;
       if (!this.renderer) {
         this.renderer = new HB.Renderer($('#board'));
@@ -426,17 +426,55 @@ window.HB = window.HB || {};
       this.renderer.stepHint = s.phase === 'play' ? { pid: s.current, used: s.stepUsed, targets: canStep ? R.stepOptions(s).map(o => ({ col: o.end.col, row: o.end.row, attack: !!o.path[0].attack })) : [] } : null;
       $('#status-line').textContent = busy ? (!mine && s.phase === 'play' ? `${this.current().name}'s turn…` : '') : this.statusText(p);
       $('#btn-pass').hidden = busy || s.playedThisTurn > 0 || playable.some(x => x);
-      // D-099: the coins of the player whose hand this is sit in the card panel — coins, income a turn, hexes to the next +1
-      const nx = R.nextIncomeStep(s, p.id);
+      // D-100: the coins and the land track of the player whose hand this is, above the cards; it moves once the board
+      // animation is over, so the hexes drop out as the land is seen taken
       $('#eco-coins').textContent = p.coins;
-      $('#eco-inc').textContent = '+' + R.incomeOf(s, p.id);
-      $('#eco-next').textContent = nx == null ? 'max income' : `${nx}⬡ → +1`;
+      if (!busy || !this.trackShown || this.trackShown.pid !== p.id) this.renderTrack(p);
       // D-099: the end-turn button right of the hand; the discard pile burns cards (armed while a card is selected in tap mode)
       $('#end-slot').disabled = busy || s.playedThisTurn < 1;
       const selDef = this.sel && CARDS[(p.hand.find(c => c.uid === this.sel.uid) || {}).def];
       $('.burn-col').classList.toggle('armed', !busy && !!selDef);
       $('#burn-gain').textContent = selDef && !busy ? `+${R.burnValue(selDef)}🪙` : '';
       $('#btn-end-fb').hidden = true;
+    },
+    // D-100: the land track — the hexes still to take for the next +1 (in the player's colour) and the +1.
+    // A captured hex drops out from the left and the rest close up; when the last one goes, the +1 flies into the income
+    // and a new track slides in from the left. Land lost, or a new player's hand: redrawn at once.
+    renderTrack(p) {
+      const s = this.state, tr = R.incomeTrack(s, p.id), inc = R.incomeOf(s, p.id), prev = this.trackShown;
+      const cur = { pid: p.id, level: tr.level, left: tr.left, inc };
+      if (prev && prev.pid === cur.pid && prev.level === cur.level && prev.left === cur.left && prev.inc === cur.inc) return;
+      this.trackShown = cur;
+      const token = (this.trackToken = (this.trackToken || 0) + 1), live = () => token === this.trackToken;
+      const draw = (n, v, pop) => {
+        $('#eco-inc').textContent = '+' + v;
+        const hx = $('#eco-hexes'); hx.innerHTML = '';
+        for (let i = 0; i < n; i++) { const h = el('span', 'eco-hex p' + p.id + (pop ? ' pop' : '')); if (pop) h.style.animationDelay = (i * 45) + 'ms'; hx.appendChild(h); }
+        const plus = $('#eco-plus'); plus.style.transition = 'none'; plus.classList.remove('flying'); plus.style.transform = ''; void plus.offsetWidth; plus.style.transition = '';
+      };
+      if (!prev || prev.pid !== cur.pid || cur.level < prev.level || (cur.level === prev.level && cur.left >= prev.left)) { draw(cur.left, inc, false); return; }
+      const hexes = [...$('#eco-hexes').children];
+      if (cur.level === prev.level) { // hexes taken: the leftmost ones drop out, the rest close up
+        const k = prev.left - cur.left;
+        hexes.slice(0, k).forEach((h, i) => setTimeout(() => live() && h.classList.add('gone'), i * 90));
+        setTimeout(() => { if (live()) draw(cur.left, inc, false); }, k * 90 + 280);
+        return;
+      }
+      // a level up: the last hexes go, the +1 flies into the income, a new track slides in from the left
+      hexes.forEach((h, i) => setTimeout(() => live() && h.classList.add('gone'), i * 70));
+      const t1 = hexes.length * 70 + 260, plus = $('#eco-plus'), incEl = $('#eco-inc');
+      setTimeout(() => {
+        if (!live()) return;
+        const a = plus.getBoundingClientRect(), b = incEl.getBoundingClientRect();
+        plus.style.transform = `translateX(${b.left - a.left}px) scale(.6)`; plus.classList.add('flying');
+      }, t1);
+      setTimeout(() => {
+        if (!live()) return;
+        draw(0, inc, false);
+        incEl.classList.remove('bump'); void incEl.offsetWidth; incEl.classList.add('bump');
+        const run = $('#eco-run'); run.classList.remove('slide-in'); void run.offsetWidth; run.classList.add('slide-in');
+        draw(cur.left, inc, true);
+      }, t1 + 380);
     },
     statusText(p) {
       const s = this.state, out = [];
@@ -923,7 +961,7 @@ window.HB = window.HB || {};
         <p><b>Turn.</b> Your hand holds 3 cards from a deck of 6 — 3 Overlord cards and one card for each minion type. ${tap
           ? 'Tap a card: the targets light up; tap the hex you want and it is played at once. A card without a target is played by tapping the board or the card again; tap the description panel to change your mind.'
           : 'Drag a card onto the board: the route and the forecast are previewed; release it and it is played at once. Release it over the hand and it returns.'} Play at least one card a turn, then End Turn. The Overlord also has one free step a turn: tap a marked hex next to him, or press him and drag the way you want.</p>
-        <p><b>Coins.</b> Every card has a price in coins (the gold badge, 2–6). At the start of each of your turns you get your income: 2, +1 for every territory step you reach — 5, 8, 13, 21, 34, 55, 89 hexes, each next step further away — and +1 for every gold mine you hold. The card panel shows your coins, the income a turn and how many hexes are left to the next +1. Can't pay? Drop a card on the discard pile (🔥 burn): it goes to the discard for 35 % of its price (the dearest card pays for the cheapest), and it counts as your card for the turn. The second player starts with 3 more coins.</p>
+        <p><b>Coins.</b> Every card has a price in coins (the gold badge, 2–6). At the start of each of your turns you get your income: 2, +1 for every level of your land track and +1 for every gold mine you hold. The land track above your cards shows the hexes you still have to take for the next +1 — as many as your land income is now, never more than 10; each hex you take drops out, and when the last one goes the +1 joins your income. Losing land moves the track back. Can't pay? Drop a card on the discard pile (🔥 burn): it goes to the discard for 35 % of its price (the dearest card pays for the cheapest), and it counts as your card for the turn.</p>
         <p><b>The Overlord and his retinue.</b> Up to three minion types stand around the Overlord, each in its own sector with a plaque showing how many there are. Any blow at the Overlord hits the retinue first — highest shield first (brutes, brawlers, healers, then runners and archers) — and only then the Overlord himself. The banner shows his HP (❤) and the shield (🛡, the retinue's HP); the shield flashes red when the enemy could break through it next turn.</p>
         <p><b>Sorties.</b> A minion card sends <i>all</i> minions of its type that stand with the Overlord along its route. They move Speed steps a turn, paint the hexes they walk through (Runners paint a hex to the side as well), and fight whatever enemy group stands in the way: both sides strike at once, strike = minions × Attack (+ card bonus, + War Cry); damage removes minions by their HP, the rest wounds the next one. Archers shoot an enemy within 2 hexes instead, with no retaliation. When the route is done the group walks back at its Return speed and joins the Overlord. One sortie per type at a time.</p>
         <p><b>Pits and the road.</b> Each type has a pit in a tower of your castle. Fallen minions go back to it; at the start of your turn it sends out new ones (its Out number) while the type has fewer than your army size. If your own hexes connect the castle to the Overlord, they run straight to him. If not, they gather at your hex nearest to him and wait for a road — the enemy can attack them there, and can cut your road by taking hexes.</p>
