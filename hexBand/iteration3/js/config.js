@@ -1,7 +1,7 @@
 // HEXBand prototype — tunables. See docs/DECISIONS.md for the reasoning behind each value.
 window.HB = window.HB || {};
 HB.CONFIG = {
-  VERSION: '0.39.0-it3',
+  VERSION: '0.40.0-it3',
   COLS: 11,              // flat-top hex columns; odd columns are shifted down and hold one cell less (see D-002). iteration3 (D-083): 7 → 11
   BOARD_TIP: 1.5,        // D-093: the diamond board narrows to ±1.5 hex widths (3 columns) at the castle ends
   BOARD_SIDE: 1.5,       // D-093: and its left and right corners are blunted (3 hexes tall instead of 1)
@@ -27,7 +27,18 @@ HB.CONFIG = {
     left: [{ col: 2, row: 5 }, { col: 2, row: 11 }],
     right: [{ col: 8, row: 5 }, { col: 8, row: 11 }],
     citadel: { col: 5, row: 8 },
+    // D-097: gold mines — two on each half, about halfway from the castle to the middle; point-symmetric
+    mines: [{ col: 4, row: 12 }, { col: 6, row: 12 }, { col: 6, row: 4 }, { col: 4, row: 4 }],
   },
+  // D-097: coins. Every card costs coins; at the start of each of his turns a player gets his income:
+  // base + 1 for every territory step reached (the steps grow like Fibonacci) + 1 for every gold mine he holds.
+  // Burning a card (the burn slot next to the hand) discards it for 35 % of its cost — about the price of the cheapest card.
+  COINS_START: 3,
+  COINS_SECOND: 3,       // the second player starts with 3 more (measured: first move won 67 % without it, 50 % with it)
+  INCOME_BASE: 2,
+  INCOME_STEPS: [5, 8, 13, 21, 34, 55, 89],
+  MINE_INCOME: 1,
+  BURN_SHARE: 0.35,
   COLORS: {
     grass: '#74b64b', grassAlt: '#6dae46', grassEdge: '#4f8a33', grassSide: '#4a7d2e',
     1: '#3f8ae6', 2: '#e0503f',

@@ -11,7 +11,7 @@ window.HB = window.HB || {};
   const cardHTML = defId => {
     const d = CARDS[defId], t = TYPES[d.owner];
     const tag = t ? `<div class="card-type" style="--tc:${t.color}">${HB.icons.svg('t_' + d.owner)}<span>${t.title}</span></div>` : '<div class="card-type hero"><b>♛</b><span>Overlord</span></div>'; // D-088: a header strip
-    return `${tag}<div class="card-icon">${HB.icons.svg(iconOf(defId))}</div><div class="card-name">${d.title}</div>`;
+    return `${tag}<div class="card-cost" title="cost in coins">${d.cost || 0}</div><div class="card-icon">${HB.icons.svg(iconOf(defId))}</div><div class="card-name">${d.title}</div>`; // D-097: the price
   };
   const cardClass = defId => 'card ' + (KIND_CLASS[CARDS[defId].kind] || '') + (CARDS[defId].owner === 'hero' ? ' tier-hero' : '');
   const rectOf = e => e.getBoundingClientRect();
@@ -98,6 +98,7 @@ window.HB = window.HB || {};
         <div class="intro-item">${ic('cordon')}<div><b>Claim territory.</b> Every hex your Overlord or minions walk through becomes yours. Surround an area with your own hexes and everything inside becomes yours too — the map edge does not count as a wall, and an area with the enemy Overlord in it stays theirs.</div></div>
         <div class="intro-item">${ic('recruitment')}<div><b>Pits and the road.</b> Each minion type has a pit in a tower of your castle. Fallen minions return to it, and every turn it sends new ones out while you have fewer than your army size. If your own hexes connect the castle to the Overlord, they run straight to him; if not, they wait at your hex nearest to him — cut the enemy road and his reinforcements get stuck.</div></div>
         <div class="intro-item">${ic('t_archer')}<div><b>Upgrade points.</b> In the middle of the map: a recruiting post gives +10 % army size to the minion type that takes it (the new ones come from the pits; a boosted count shows gold with ▲); the Citadel heals your Overlord and speeds up every pit. The castle itself is a passive base — nobody can take it.</div></div>
+        <div class="intro-item">${ic('coin')}<div><b>Coins.</b> Cards cost coins. Your income grows with your land (each next +1 needs more hexes) and with gold mines. No coins? Burn a card in the 🔥 slot for a third of its price.</div></div>
         <div class="intro-item">${ic('battle_cry')}<div><b>Win.</b> Slay the enemy Overlord — or hold more territory when round ${this.setup.rounds} ends. The board is big: zoom with the mouse wheel or a two-finger pinch, drag it to scroll, or use + / − / ⤢.</div></div>
         <button class="btn primary" id="btn-intro-close">${manual ? 'Got it' : 'To settings'}</button></div>`);
       $('#btn-intro-close').addEventListener('click', () => { ov.hidden = true; });
@@ -354,6 +355,7 @@ window.HB = window.HB || {};
       if (move.end) R.endTurn(s);
       else if (move.step != null) { if (!R.freeStep(s, move.step) && !R.endTurn(s)) { s.playedThisTurn = 1; R.endTurn(s); } } // D-068
       else if (move.pass) { if (!R.passTurn(s, move.uid)) { s.playedThisTurn = 1; R.endTurn(s); } }
+      else if (move.burn) { if (!R.burnCard(s, move.uid)) { s.playedThisTurn = Math.max(1, s.playedThisTurn); R.endTurn(s); } } // D-097
       else if (!R.playCard(s, move.uid, move.choice)) { if (!R.endTurn(s)) { s.playedThisTurn = 1; R.endTurn(s); } }
       this.afterAction();
     },
@@ -387,6 +389,11 @@ window.HB = window.HB || {};
         $(`#hud-${pid} .hud-min`).textContent = p.warband.minions;
         $(`#hud-${pid} .hud-hp`).textContent = p.warband.hp; // D-085: the Overlord's HP
         $(`#hud-${pid} .hud-poi`).textContent = sc[pid].pois;
+        // D-097: coins, the income a turn and how many hexes until the next +1
+        const nx = R.nextIncomeStep(s, pid);
+        $(`#hud-${pid} .hud-coins`).textContent = p.coins;
+        $(`#hud-${pid} .hud-inc`).textContent = '+' + R.incomeOf(s, pid);
+        $(`#hud-${pid} .hud-next`).textContent = nx == null ? 'max income' : `${nx}⬡ → +1`;
         $(`#hud-${pid}`).classList.toggle('active', s.current === pid && s.phase === 'play');
       }
       $('#hud-round').textContent = `Round ${R.round(s)} / ${s.roundLimit}`;
@@ -403,6 +410,7 @@ window.HB = window.HB || {};
           const c = el('div', cardClass(card.def) + (playable[i] ? '' : ' disabled'), cardHTML(card.def));
           const why = !playable[i] && mine ? R.getPlay(s, card).why : null; // D-085: why a minion card is dimmed
           if (why === 'out') c.appendChild(el('div', 'card-away', 'on a sortie')); else if (why === 'none') c.appendChild(el('div', 'card-away', 'none left'));
+          else if (why === 'coins') { c.classList.add('poor'); c.appendChild(el('div', 'card-away', 'need coins')); } // D-097
           c.dataset.uid = card.uid;
           if (hideHand) c.classList.add('hidden-card');
           if (this.pendingIncoming.has(card.uid)) c.classList.add('incoming');
@@ -426,12 +434,19 @@ window.HB = window.HB || {};
       this.renderer.stepHint = s.phase === 'play' ? { pid: s.current, used: s.stepUsed, targets: canStep ? R.stepOptions(s).map(o => ({ col: o.end.col, row: o.end.row, attack: !!o.path[0].attack })) : [] } : null;
       $('#status-line').textContent = busy ? (!mine && s.phase === 'play' ? `${this.current().name}'s turn…` : '') : this.statusText(p);
       $('#btn-pass').hidden = busy || s.playedThisTurn > 0 || playable.some(x => x);
+      // D-097: the burn slot — live on your turn; armed while a card is selected in tap mode (shows what it would give)
+      const bs = $('#burn-slot'), selDef = this.sel && CARDS[(p.hand.find(c => c.uid === this.sel.uid) || {}).def];
+      bs.classList.toggle('off', busy || !p.hand.length);
+      bs.classList.toggle('armed', !busy && !!selDef);
+      bs.querySelector('.burn-gain').textContent = selDef ? `+${R.burnValue(selDef)}🪙` : '';
       // a full hand (outpost card arrived) leaves no slot for the end-turn button — show a fallback under the hand
       $('#btn-end-fb').hidden = busy || s.playedThisTurn < 1 || p.hand.length < CFG.HAND_SIZE;
     },
     statusText(p) {
       const s = this.state, out = [];
       if (R.active(s, p.status.warCryUntil)) out.push('War Cry +1');
+      // D-097: nothing affordable — say how to get coins
+      if (!s.playedThisTurn && p.hand.length && p.hand.every(c => R.getPlay(s, c).why === 'coins')) out.push('Not enough coins — drag a card to 🔥 to burn it');
       const th = R.heroThreat(s, p.id); // D-085: warn when the enemy could break through the shield next turn
       if (th.threat > th.shield) out.push(`⚠ the enemy could hit your Overlord for ${th.threat} against a shield of ${th.shield}`);
       const step = s.stepUsed ? 'Free step used.' : 'Free step: tap a marked hex or drag from your Overlord.';
@@ -545,10 +560,12 @@ window.HB = window.HB || {};
       const card = p.hand.find(c => c.uid === uid); if (!card) return;
       const play = R.getPlay(s, card), d = CARDS[card.def];
       this.showDesc(d.title, d.text);
-      if (!play.ok) { cardEl.classList.add('shake'); setTimeout(() => { cardEl.classList.remove('shake'); $('#card-desc').hidden = true; }, 700); return; }
+      // D-097: a card that cannot be played can still be dragged to the burn slot
+      const burnOnly = !play.ok;
+      if (burnOnly) { cardEl.classList.add('shake'); setTimeout(() => cardEl.classList.remove('shake'), 400); }
       const fx = $('#drag-fx'); fx.hidden = false; fx.className = 'p' + p.id;
       cardEl.classList.add('lifted');
-      this.drag = { uid, card, def: d, play, cardEl, pointerId: e.pointerId, choice: null, over: false, x: e.clientX, y: e.clientY };
+      this.drag = { uid, card, def: d, play, cardEl, pointerId: e.pointerId, choice: null, over: false, x: e.clientX, y: e.clientY, burnOnly };
       this.renderer.dragging = true;
       this.renderer.pathFrom = { col: p.warband.col, row: p.warband.row };
       this.moveDrag(e);
@@ -561,6 +578,15 @@ window.HB = window.HB || {};
       dg.over = e.clientX >= br.left && e.clientX <= br.right && e.clientY >= br.top && e.clientY <= br.bottom;
       const hl = [], play = dg.play, kind = dg.def.kind;
       dg.choice = null; dg.valid = false;
+      // D-097: over the burn slot the card is burnt on release; a card that cannot be played only ever burns
+      const bs = $('#burn-slot'), bsr = rectOf(bs);
+      dg.burn = e.clientX >= bsr.left && e.clientX <= bsr.right && e.clientY >= bsr.top && e.clientY <= bsr.bottom;
+      bs.classList.toggle('hot', dg.burn); bs.querySelector('.burn-gain').textContent = `+${R.burnValue(dg.def)}🪙`;
+      if (dg.burn || dg.burnOnly) {
+        rd.highlights = []; rd.forecast = null;
+        fx.classList.toggle('ok', dg.burn); $('#hand-area').classList.toggle('drop-cancel', !dg.burn);
+        return;
+      }
       if (play.options && play.options[0] && play.options[0].end) {
         // D-030: pick the pattern variant whose end cell is closest to the pointer; the first cell breaks ties
         const px = e.clientX - br.left, py = e.clientY - br.top;
@@ -607,6 +633,8 @@ window.HB = window.HB || {};
       dg.cardEl.classList.remove('lifted');
       $('#hand-area').classList.remove('drop-cancel');
       this.renderer.highlights = []; this.renderer.pathFrom = null; this.renderer.dragging = false; this.renderer.forecast = null;
+      $('#burn-slot').classList.remove('hot');
+      if (drop && dg.burn) { this.burn(dg.uid); return; } // D-097
       if (drop && dg.over && dg.valid) {
         this.commit(dg.uid, dg.choice, { x: e.clientX, y: e.clientY, cardEl: dg.cardEl });
         return;
@@ -618,6 +646,7 @@ window.HB = window.HB || {};
       $('#hand').addEventListener('click', e => { if (this.setup.control !== 'tap') return; const el = e.target.closest('.card'); if (!el || !el.dataset.uid) return; this.onCardTap(+el.dataset.uid, el); });
       $('#card-desc').addEventListener('click', () => { if (this.setup.control === 'tap' && this.sel) this.cancelSelect(); });
       $('#board').addEventListener('pointermove', e => { if (this.sel && e.pointerType !== 'touch') this.previewAt(e.clientX, e.clientY); });
+      $('#burn-slot').addEventListener('click', () => { if (this.sel) this.burn(this.sel.uid); }); // D-097: tap mode — burn the selected card
     },
     needsTarget(play) { return !!(play.options && play.options.length); },
     onCardTap(uid, cardEl) {
@@ -626,7 +655,11 @@ window.HB = window.HB || {};
       const card = p.hand.find(c => c.uid === uid); if (!card) return;
       if (this.sel && this.sel.uid === uid) { if (!this.needsTarget(this.sel.play)) this.commitSel(this.cardCenter(uid)); return; }
       const play = R.getPlay(s, card), d = CARDS[card.def];
-      if (!play.ok) { cardEl.classList.add('shake'); setTimeout(() => cardEl.classList.remove('shake'), 400); return; }
+      if (!play.ok) { // D-097: an unplayable card can still be selected — to burn it
+        cardEl.classList.add('shake'); setTimeout(() => cardEl.classList.remove('shake'), 400);
+        this.sel = { uid, card, def: d, play, choice: null, valid: false, burnOnly: true };
+        this.showDesc(d.title, d.text + ' — tap 🔥 to burn it.', false); this.refresh(); return;
+      }
       this.sel = { uid, card, def: d, play, choice: null, valid: false };
       this.showDesc(d.title, d.text, this.needsTarget(play));
       this.refresh();
@@ -637,6 +670,7 @@ window.HB = window.HB || {};
     // computes the option for a tap/hover position and draws the preview; without a position every target is shown faintly
     previewAt(clientX, clientY) {
       const sel = this.sel, p = this.current(), rd = this.renderer, play = sel.play, kind = sel.def.kind, hl = [];
+      if (sel.burnOnly) { rd.highlights = []; rd.forecast = null; return false; } // D-097: selected only to be burnt
       const br = rectOf($('#board')), has = clientX != null;
       rd.pathFrom = { col: p.warband.col, row: p.warband.row };
       sel.choice = null; sel.valid = false;
@@ -675,6 +709,19 @@ window.HB = window.HB || {};
       rd.highlights = hl;
       this.updateForecast({ valid: sel.valid, choice: sel.choice, over: has, def: sel.def, uid: sel.uid });
       return sel.valid;
+    },
+    // D-097: burn a card from the hand — it goes to the discard for 35 % of its cost; it counts as the turn's card
+    burn(uid) {
+      const s = this.state, p = this.handPlayer();
+      if (!s || this.busy || s.current !== p.id || s.phase !== 'play' || this.handoverPending) return;
+      const cardEl = document.querySelector(`#hand .card[data-uid="${uid}"]`), card = p.hand.find(c => c.uid === uid);
+      if (!card) return;
+      this.sel = null; $('#card-desc').hidden = true; this.renderer.highlights = []; this.renderer.forecast = null;
+      this.renderer.prevPos = this.positions();
+      this.lastActor = s.current;
+      if (cardEl) this.fly(rectOf(cardEl), rectOf($('#burn-slot')), cardHTML(card.def), cardClass(card.def), 300);
+      const bs = $('#burn-slot'); bs.classList.add('hot'); setTimeout(() => bs.classList.remove('hot'), 450);
+      if (R.burnCard(s, uid)) this.afterAction(); else this.refresh();
     },
     commitSel(from) {
       const sel = this.sel; this.sel = null;
@@ -876,6 +923,7 @@ window.HB = window.HB || {};
         <p><b>Turn.</b> Your hand holds 3 cards from a deck of 6 — 3 Overlord cards and one card for each minion type. ${tap
           ? 'Tap a card: the targets light up; tap the hex you want and it is played at once. A card without a target is played by tapping the board or the card again; tap the description panel to change your mind.'
           : 'Drag a card onto the board: the route and the forecast are previewed; release it and it is played at once. Release it over the hand and it returns.'} Play at least one card a turn, then End Turn. The Overlord also has one free step a turn: tap a marked hex next to him, or press him and drag the way you want.</p>
+        <p><b>Coins.</b> Every card has a price in coins (the gold badge, 2–6). At the start of each of your turns you get your income: 2, +1 for every territory step you reach — 5, 8, 13, 21, 34, 55, 89 hexes, each next step further away — and +1 for every gold mine you hold. The top bar shows your coins, the income a turn and how many hexes are left to the next +1. Can't pay? Drag a card to the 🔥 burn slot: it goes to the discard for 35 % of its price (the dearest card pays for the cheapest), and it counts as your card for the turn. The second player starts with 3 more coins.</p>
         <p><b>The Overlord and his retinue.</b> Up to three minion types stand around the Overlord, each in its own sector with a plaque showing how many there are. Any blow at the Overlord hits the retinue first — highest shield first (brutes, brawlers, healers, then runners and archers) — and only then the Overlord himself. The banner shows his HP (❤) and the shield (🛡, the retinue's HP); the shield flashes red when the enemy could break through it next turn.</p>
         <p><b>Sorties.</b> A minion card sends <i>all</i> minions of its type that stand with the Overlord along its route. They move Speed steps a turn, paint the hexes they walk through (Runners paint a hex to the side as well), and fight whatever enemy group stands in the way: both sides strike at once, strike = minions × Attack (+ card bonus, + War Cry); damage removes minions by their HP, the rest wounds the next one. Archers shoot an enemy within 2 hexes instead, with no retaliation. When the route is done the group walks back at its Return speed and joins the Overlord. One sortie per type at a time.</p>
         <p><b>Pits and the road.</b> Each type has a pit in a tower of your castle. Fallen minions go back to it; at the start of your turn it sends out new ones (its Out number) while the type has fewer than your army size. If your own hexes connect the castle to the Overlord, they run straight to him. If not, they gather at your hex nearest to him and wait for a road — the enemy can attack them there, and can cut your road by taking hexes.</p>

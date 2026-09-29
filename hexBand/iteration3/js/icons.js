@@ -61,6 +61,7 @@ window.HB = window.HB || {};
     v_smash: wrap(star(6) + `<path d="M16 16 L24 8"/>`, '2'),
     v_warcry: wrap(sword, '+1'),
     v_raid: wrap(`<path d="M9 29 V17 L20 10"/><path d="M14 9 L20 10 L18 16"/><path d="M15 29 V20 L24 14" stroke-width="1.6" stroke-dasharray="2 3"/>`, '4'), // D-087: 2 straight, 2 after one bend; the dashes — the strip on the inner side
+    coin: wrap(`<circle cx="16" cy="16" r="11"/><circle cx="16" cy="16" r="7.5" stroke-width="1.4"/><path d="M16 11 V21 M18.5 13 H14.5 Q13 13 13 14.5 Q13 16 14.5 16 H17.5 Q19 16 19 17.5 Q19 19 17.5 19 H13.5" stroke-width="1.8"/>`), // D-097: a gold coin
     v_weave: wrap(`<path d="M8 27 L14 14 L20 22 L26 9"/><path d="M19 10 L26 8 L27 15"/>`, '3'),
     v_sweep: wrap(`<path d="M16 27 V8 M10 14 L16 8 L22 14"/>` + hexagon(6, 16, 3.6) + hexagon(26, 16, 3.6) + hexagon(6, 25, 3.6) + hexagon(26, 25, 3.6), '2'),
     v_ram: wrap(star(8), '+2'),

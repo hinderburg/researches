@@ -104,7 +104,7 @@ window.HB = window.HB || {};
         deckIds: lo.hero.concat(lo.minion), types, comp: Object.assign({}, lo.types), baseComp: Object.assign({}, lo.types), // D-091: comp = base + posts
         levels: Object.assign({ hero: lv.hero || 1 }, ...types.map(t => ({ [t]: lv[t] || 1 }))),
         warband: { col: hs.col, row: hs.row, hp: 0, maxHp: 0, minions: 0, dead: false },
-        retinue: {}, status: newStatus(), deck: [], hand: [], discard: [], inPlay: null, gained: 0, gainedLastRound: 0,
+        retinue: {}, status: newStatus(), deck: [], hand: [], discard: [], inPlay: null, gained: 0, gainedLastRound: 0, coins: CFG.COINS_START, // D-097
       };
       for (const t of types) p.retinue[t] = { n: p.comp[t], wound: 0 };
       p.warband.maxHp = p.warband.hp = heroStat(p, 'hp');
@@ -126,6 +126,7 @@ window.HB = window.HB || {};
     const addPoint = (c, kind) => { const q = { id: s.pois.length, col: c.col, row: c.row, kind, owner: 0, boost: null }; s.pois.push(q); s.cells[K(c.col, c.row)].poi = q.id; };
     for (const side of ['left', 'right']) for (const c of CFG.POINTS[side]) addPoint(c, 'post');
     addPoint(CFG.POINTS.citadel, 'citadel');
+    for (const c of CFG.POINTS.mines || []) addPoint(c, 'mine'); // D-097: gold mines
     for (const pid of [1, 2]) {
       const p = s.players[pid];
       p.deck = shuffle(s, p.deckIds.map(id => makeCard(s, id)));
@@ -135,7 +136,36 @@ window.HB = window.HB || {};
     s.paintBuf = []; s.events = [];
     log(s, `Match started. Seed ${seed}, ${s.roundLimit} rounds.`);
     s.events.push({ type: 'turn', player: 1, round: 1 });
+    s.players[2].coins += CFG.COINS_SECOND; // D-097: the second player's purse makes up for moving second
+    collectIncome(s, s.players[1]); // D-097: the first player's first turn
     return s;
+  }
+
+  // ---------------------------------------------------------------- coins (D-097)
+  // Income at the start of each own turn: a base, +1 for every territory step reached (5, 8, 13, 21, 34, 55, 89 — the
+  // steps grow like Fibonacci, so each next +1 takes more land) and +1 for every gold mine held.
+  const cardCost = def => def.cost || 0;
+  const incomeSteps = (s, pid) => { const t = territory(s, pid); return CFG.INCOME_STEPS.filter(x => t >= x).length; };
+  const minesHeld = (s, pid) => s.pois.filter(q => q.kind === 'mine' && q.owner === pid).length;
+  function incomeOf(s, pid) { return CFG.INCOME_BASE + incomeSteps(s, pid) + CFG.MINE_INCOME * minesHeld(s, pid); }
+  // how many more hexes of territory until the next +1 (null when every step is reached)
+  function nextIncomeStep(s, pid) { const t = territory(s, pid), n = CFG.INCOME_STEPS.find(x => x > t); return n == null ? null : n - t; }
+  function collectIncome(s, p) {
+    const amount = incomeOf(s, p.id);
+    p.coins += amount;
+    s.events.push({ type: 'income', player: p.id, amount, coins: p.coins });
+  }
+  const burnValue = def => Math.round(cardCost(def) * CFG.BURN_SHARE);
+  // the burn slot: the card goes to the discard for 35 % of its cost; it counts as the turn's card
+  function burnCard(s, uid) {
+    if (s.phase !== 'play') return false;
+    const p = s.players[s.current], idx = p.hand.findIndex(c => c.uid === uid);
+    if (idx < 0) return false;
+    const card = p.hand.splice(idx, 1)[0], def = CARDS[card.def], gain = burnValue(def);
+    p.discard.push(card); p.coins += gain; s.playedThisTurn++;
+    s.events.push({ type: 'burn', player: p.id, def: card.def, gain, coins: p.coins });
+    log(s, `${p.name} burn ${def.title}: +${gain} coins.`);
+    return true;
   }
 
   // ---------------------------------------------------------------- deck
@@ -728,7 +758,13 @@ window.HB = window.HB || {};
     }
     return out;
   }
+  // D-097: a card the player cannot pay for is not playable (why: 'coins')
   function getPlay(s, card) {
+    const r = getPlayFree(s, card), cost = cardCost(CARDS[card.def]);
+    if (r.ok && s.players[s.current].coins < cost) return { ok: false, why: 'coins', cost };
+    return r;
+  }
+  function getPlayFree(s, card) {
     const p = s.players[s.current], def = CARDS[card.def], w = p.warband;
     if (w.dead || s.phase !== 'play') return { ok: false };
     const withType = t => p.retinue[t] && p.retinue[t].n > 0;
@@ -827,6 +863,7 @@ window.HB = window.HB || {};
     const play = getPlay(s, card);
     if (!play.ok || !validChoice(play, choice)) return false;
     p.hand.splice(idx, 1); p.inPlay = card;
+    p.coins -= cardCost(def); // D-097
     s.events.push({ type: 'play', player: p.id, card: def.title });
     log(s, `${p.name} play ${def.title}${choice && choice.label ? ' (' + choice.label + ')' : ''}.`);
     resolve(s, p, def, choice);
@@ -844,13 +881,10 @@ window.HB = window.HB || {};
     return true;
   }
   // D-009: a pass discards one card so that a hand full of unplayable cards cannot lock the player
+  // D-097: a pass burns a card (for its coins) and ends the turn
   function passTurn(s, uid) {
     if (s.phase !== 'play' || s.playedThisTurn > 0) return false;
-    const p = s.players[s.current];
-    const idx = p.hand.findIndex(c => c.uid === uid);
-    if (idx < 0) return false;
-    p.discard.push(p.hand.splice(idx, 1)[0]);
-    log(s, `${p.name} pass, discarding ${CARDS[p.discard[p.discard.length - 1].def].title}.`);
+    if (!burnCard(s, uid)) return false;
     finishTurn(s);
     return true;
   }
@@ -885,6 +919,7 @@ window.HB = window.HB || {};
     muster(s, np);
     const healers = np.retinue.healer ? np.retinue.healer.n : 0;
     if (healers) heal(s, np, healers, Math.max(1, Math.floor(healers / 2)), 'Healers');
+    collectIncome(s, np); // D-097
     draw(s, np, CFG.HAND_SIZE);
     syncMinions(s);
   }
@@ -940,7 +975,7 @@ window.HB = window.HB || {};
   function takeEvents(s) { const e = s.events; s.events = []; return e; }
   function clone(s) { const e = s.events, l = s.log; s.events = []; s.log = []; const c = JSON.parse(JSON.stringify(s)); s.events = e; s.log = l; return c; }
 
-  HB.rules = { createGame, playCard, endTurn, passTurn, getPlay, planOf, returnPath, takeEvents, clone, territory, cellCount, poiCount, totalCells,
+  HB.rules = { createGame, playCard, endTurn, passTurn, burnCard, burnValue, cardCost, incomeOf, nextIncomeStep, getPlay, planOf, returnPath, takeEvents, clone, territory, cellCount, poiCount, totalCells,
     scoreboard, round, occupant, groupAt, isBlocked, active, rand, stepOptions, freeStep, walled, isSwamp, isFortifiedAgainst, castleAt,
     statsAt, heroStatsAt, typeStat, typeLevel, heroStat, armyOnField, retinueHP, roadRegion, heroThreat, forecastPlay, forecastStep,
     sortieBlocked, power };

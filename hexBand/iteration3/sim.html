@@ -51,6 +51,7 @@
       if (mv.end) HB.rules.endTurn(s);
       else if (mv.step != null) { if (!HB.rules.freeStep(s, mv.step)) HB.rules.endTurn(s); }
       else if (mv.pass) { r.passes++; HB.rules.passTurn(s, mv.uid); }
+      else if (mv.burn) { r.burns = (r.burns || 0) + 1; if (!HB.rules.burnCard(s, mv.uid)) HB.rules.endTurn(s); } // D-097
       else { r.cards++; if (!HB.rules.playCard(s, mv.uid, mv.choice)) { HB.rules.endTurn(s) || HB.rules.passTurn(s, s.players[s.current].hand[0].uid); } }
       for (const e of HB.rules.takeEvents(s)) {
         if (e.type === 'fill') { r.fills++; r.filled += e.count; }

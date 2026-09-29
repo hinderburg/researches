@@ -254,3 +254,21 @@ select.lvl { padding: 3px 6px; font-size: 12px; margin-left: auto; }
 .pick.small .pick-text { font-size: 11px; }
 .pick.locked { opacity: .45; cursor: not-allowed; }
 @media (max-width: 520px) { .camp-cards { grid-template-columns: 1fr; } }
+
+/* ---- D-097: coins — the economy line under the territory count, card prices, the burn slot */
+.hud-col { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.hud-side.p2 .hud-col { align-items: flex-end; }
+.hud-eco { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.hud-eco b { color: #ffd766; }
+.hud-eco .hud-next { color: var(--muted); }
+.card-cost { position: absolute; top: 19px; right: 2px; min-width: 20px; height: 18px; padding: 0 4px; border-radius: 9px; background: linear-gradient(#ffe38a, #d9a516); border: 1.5px solid #7a5608; color: #2b1d05; font-size: 11px; font-weight: 900; line-height: 15px; text-align: center; z-index: 2; box-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.card.poor .card-cost { background: linear-gradient(#ff9a8a, #c0392b); border-color: #6b1a12; color: #fff; }
+#hand-frame { display: flex; gap: 5px; align-items: stretch; }
+#hand-frame #hand { flex: 1 1 auto; min-width: 0; }
+#burn-slot { flex: 0 0 48px; border-radius: 9px; border: 2px dashed #8a4a1c; background: rgba(120,40,10,.25); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #ffb37a; cursor: pointer; transition: background .12s, box-shadow .12s, transform .12s; }
+#burn-slot .burn-icon { font-size: 20px; line-height: 1; }
+#burn-slot .burn-label { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+#burn-slot .burn-gain { font-size: 11px; font-weight: 900; color: #ffd766; min-height: 13px; }
+#burn-slot.hot { background: rgba(255,120,40,.45); box-shadow: 0 0 0 2px #ffb347, 0 0 14px rgba(255,140,60,.7); transform: scale(1.05); }
+#burn-slot.armed { box-shadow: 0 0 0 2px rgba(255,179,71,.8); }
+#burn-slot.off { opacity: .35; cursor: default; }

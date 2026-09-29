@@ -11,7 +11,7 @@ window.HB = window.HB || {};
   // D-085 (V4 "Overlord"): territory, the Overlords' health, armies, upgrade points — and above all the danger to each
   // Overlord: what the enemy could hit him with next turn against the shield of his retinue (a lost Overlord loses the match)
   const W = { territory: 1.0, hero: 1.4, army: 0.35, poi: 3.0, poiPull: 0.35, road: 1.5, fort: 0.25, danger: 2.2, lethal: 60, opportunity: 0.9, kill: 30,
-    noise: 0.3, minGain: 0.3, cardCost: 0.3, hit: 0.25 };
+    noise: 0.3, minGain: 0.3, cardCost: 0.3, hit: 0.25, coins: 0.15, burn: 0.6 }; // D-097: a coin in the purse (low: at 0.35 the bot hoarded and burnt); a burnt card is a card lost
   // search parameters: sequence depth, beam width, how many finished sequences get the opponent-reply check,
   // and how much the reply weighs against the position right after our turn
   const SEARCH = { depth: 4, beam: 12, finals: 10, reply: 0.6, replyDepth: 1 };
@@ -41,7 +41,8 @@ window.HB = window.HB || {};
     let score = W.territory * (R.territory(s, me) - R.territory(s, en))
       + W.hero * (pw.hp - ew.hp)
       + W.army * (armyValue(s, me) - armyValue(s, en))
-      + W.poi * (R.poiCount(s, me) - R.poiCount(s, en));
+      + W.poi * (R.poiCount(s, me) - R.poiCount(s, en))
+      + W.coins * (Math.min(p.coins, 12) - Math.min(e.coins, 12)); // D-097: coins beyond a good turn's worth add nothing
     score -= danger(s, me);
     score += W.opportunity * danger(s, en) / W.danger * (danger(s, en) >= W.lethal ? 0.5 : 1);
     if (onRoad(s, me)) score += W.road;
@@ -63,9 +64,10 @@ window.HB = window.HB || {};
       else out.push({ uid: card.uid, choice: null });
     }
     for (const o of R.stepOptions(s)) out.push({ uid: null, step: o.dir }); // D-068: the free step
+    for (const card of p.hand) out.push({ uid: card.uid, burn: true }); // D-097: burn a card for coins
     return out;
   }
-  const apply = (sim, c) => c.step != null ? R.freeStep(sim, c.step) : R.playCard(sim, c.uid, c.choice);
+  const apply = (sim, c) => c.burn ? R.burnCard(sim, c.uid) : c.step != null ? R.freeStep(sim, c.step) : R.playCard(sim, c.uid, c.choice);
   const actions = s => s.playedThisTurn + (s.stepUsed ? 1 : 0);
 
   // what the move itself did: hits on the enemy count a little on top of the position (helps the beam keep fights)
@@ -124,9 +126,9 @@ window.HB = window.HB || {};
         const sim = R.clone(b.state);
         if (!apply(sim, c)) continue;
         const bonus = b.bonus + aggressionBonus(R.takeEvents(sim), me);
-        const seq = b.seq.concat([c]), cards = seq.filter(x => x.step == null).length;
+        const seq = b.seq.concat([c]), cards = seq.filter(x => x.step == null && !x.burn).length, burns = seq.filter(x => x.burn).length;
         // every card played costs a little: a card that changes nothing is better kept for the next turn
-        next.push({ state: sim, seq, bonus, quick: evaluate(sim, me) + bonus - W.cardCost * cards + (R.rand(sim) - 0.5) * W.noise });
+        next.push({ state: sim, seq, bonus, quick: evaluate(sim, me) + bonus - W.cardCost * cards - W.burn * burns + (R.rand(sim) - 0.5) * W.noise });
       }
       next.sort((a, b) => b.quick - a.quick);
       const kept = next.slice(0, cfg.beam);
@@ -164,7 +166,7 @@ window.HB = window.HB || {};
     if (!step) { cache = null; return s.playedThisTurn ? { end: true } : fallback; }
     if (step.step == null ? !s.players[me].hand.some(c => c.uid === step.uid) : s.stepUsed) { cache = null; return choose(s, level); }
     cache.at = actions(s) + 1;
-    return step.step != null ? { step: step.step } : { uid: step.uid, choice: step.choice };
+    return step.step != null ? { step: step.step } : step.burn ? { burn: true, uid: step.uid } : { uid: step.uid, choice: step.choice };
   }
 
   // the pre-0.18 bot: 1-ply greedy, one card at a time (kept for the balance sim)
