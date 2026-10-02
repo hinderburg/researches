@@ -398,12 +398,16 @@
     if (scene.fxUnder) scene.fxUnder(ctx);
 
     // жабы: сначала тени, затем по высоте (летящая — сверху)
-    var order = s.frogs.slice().sort(function (a, b) { return (scene.disp[a.id].z || 0) - (scene.disp[b.id].z || 0) || a.y - b.y; });
+    // седок на спине (D-032) рисуется после того, кто под ним
+    var order = s.frogs.slice().sort(function (a, b) { return (scene.disp[a.id].z || 0) - (scene.disp[b.id].z || 0) || ((a.on >= 0) - (b.on >= 0)) || a.y - b.y; });
     order.forEach(function (f) {
       var d = scene.disp[f.id], P = R.toScreen(d.x, d.y), r = f.r * sc, z = (d.z || 0) * sc;
+      var riding = f.on >= 0 && z < 1 && d.alive;
+      if (riding) z = 7 * sc; // сидит на спине — чуть выше нижней жабы
       var inWater = d.inWater, dead = !d.alive;
       // тень / рябь
-      if (z > 0.5) { ctx.fillStyle = 'rgba(0,30,40,' + Math.max(0.12, 0.35 - z / 400) + ')'; ell(ctx, P.x, P.y, r * (1.1 - Math.min(0.5, z / 200)), r * (0.8 - Math.min(0.4, z / 220))); ctx.fill(); }
+      if (riding) { /* тень — сама нижняя жаба */ }
+      else if (z > 0.5) { ctx.fillStyle = 'rgba(0,30,40,' + Math.max(0.12, 0.35 - z / 400) + ')'; ell(ctx, P.x, P.y, r * (1.1 - Math.min(0.5, z / 200)), r * (0.8 - Math.min(0.4, z / 220))); ctx.fill(); }
       else if (inWater) {
         ctx.strokeStyle = 'rgba(220,250,255,0.45)'; ctx.lineWidth = 1.5;
         var rp = (t * 0.8 + f.id * 0.3) % 1;
@@ -411,18 +415,23 @@
       } else { ctx.fillStyle = 'rgba(10,50,30,0.3)'; ell(ctx, P.x + 2, P.y + 3, r * 1.05, r * 0.95); ctx.fill(); }
 
       var sel = scene.selected === f.id;
-      if (sel && !dead && z < 1) { // выделение выбранной жабы
+      if (sel && !dead && (z < 1 || riding)) { // выделение выбранной жабы
         ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2.5;
         ctx.beginPath(); ctx.arc(P.x, P.y, r * 1.55 + Math.sin(t * 5) * 1.5, 0, Math.PI * 2); ctx.stroke();
         ctx.strokeStyle = 'rgba(120,220,255,0.5)'; ctx.lineWidth = 6;
         ctx.beginPath(); ctx.arc(P.x, P.y, r * 1.55, 0, Math.PI * 2); ctx.stroke();
       }
       var canAct = scene.actable && scene.actable(f);
-      if (canAct && !sel && z < 1) {
+      if (canAct && !sel && (z < 1 || riding)) {
         ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2; ctx.setLineDash([4, 5]);
         ctx.beginPath(); ctx.arc(P.x, P.y, r * 1.45, t, t + Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
       }
 
+      if (d.glow) { // ультимативный прыжок — золотое сияние
+        var gg = ctx.createRadialGradient(P.x, P.y - z * 0.9, r * 0.3, P.x, P.y - z * 0.9, r * 3);
+        gg.addColorStop(0, 'rgba(255,220,120,0.75)'); gg.addColorStop(1, 'rgba(255,160,40,0)');
+        ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(P.x, P.y - z * 0.9, r * 3, 0, Math.PI * 2); ctx.fill();
+      }
       ctx.save();
       if (inWater && !dead && z < 1) { // в воде видна только верхняя часть
         ctx.globalAlpha = 0.92;
@@ -457,7 +466,7 @@
           }
         }
         // локальные полоски HP / Stamina (§14)
-        if (z < 1) drawBars(ctx, f, P.x, P.y - r * 1.75 - lift, r);
+        if (z < 1 || riding) drawBars(ctx, f, P.x, P.y - r * (riding ? 2.4 : 1.75) - lift, r);
       }
     });
 
@@ -516,7 +525,7 @@
         c.beginPath(); c.arc(px, py, rad, 0, Math.PI * 2); c.fill();
       }
       // точка приземления
-      var col = pv.hitEnemy ? '255,90,90' : (pv.water ? '120,200,255' : '255,255,255');
+      var col = pv.hitEnemy ? '255,90,90' : (pv.mount ? '120,255,150' : (pv.water ? '120,200,255' : '255,255,255'));
       c.strokeStyle = 'rgba(' + col + ',0.95)'; c.lineWidth = 3;
       var lr = (a.markR || 16) * sc;
       c.beginPath(); c.arc(end.x, end.y, lr, 0, Math.PI * 2); c.stroke();
@@ -527,7 +536,11 @@
         c.fillStyle = 'rgba(' + (a.areaColor || '255,200,90') + ',0.14)'; c.strokeStyle = 'rgba(' + (a.areaColor || '255,200,90') + ',0.8)';
         c.lineWidth = 2; c.setLineDash([6, 5]); c.beginPath(); c.arc(end.x, end.y, a.areaR * sc, 0, Math.PI * 2); c.fill(); c.stroke(); c.setLineDash([]);
       }
-      if (pv.water && !pv.hitEnemy && a.mode !== 'ability') {
+      // прицел заранее говорит, будет ли урон (D-030)
+      if (pv.hitEnemy) { c.fillStyle = 'rgba(255,90,90,0.25)'; c.beginPath(); c.arc(end.x, end.y, lr, 0, Math.PI * 2); c.fill(); label(c, end.x, end.y + lr + 14, 'HIT', '#ff6b6b'); }
+      else if (pv.mount) label(c, end.x, end.y + lr + 14, 'HOP ON', '#9dffb0');
+      else if (pv.nearMiss) label(c, end.x, end.y + lr + 14, 'NO HIT', '#c9d6de');
+      if (pv.water && !pv.hitEnemy && !pv.mount && !pv.nearMiss && a.mode !== 'ability') {
         label(c, end.x, end.y + lr + 14, 'WATER', '#9fdcff');
       }
     }

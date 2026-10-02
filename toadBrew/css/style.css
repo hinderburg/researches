@@ -175,3 +175,8 @@ button { font-family: inherit; cursor: pointer; }
 .pulls i.on { background: radial-gradient(circle at 35% 35%, #bff0ff, #3fb6f0); box-shadow: 0 0 8px rgba(95,208,255,0.7); }
 .pulls.bot i.on { background: radial-gradient(circle at 35% 35%, #ffd0d6, #f05a6e); box-shadow: 0 0 8px rgba(255,110,130,0.6); }
 .pulls b { font-family: var(--font-h); font-weight: 400; font-size: 13px; color: #ffd23f; background: rgba(60,40,5,0.85); border: 1.5px solid #ffd23f; border-radius: 8px; padding: 0 6px; margin-left: 4px; }
+.pulls .ult-l { margin-left: 8px; color: #ffcf6a; }
+.pulls em { width: 14px; height: 14px; transform: rotate(45deg) scale(0.8); background: rgba(40,28,8,0.85); border: 2px solid #8a6a2a; }
+.pulls em.on { background: linear-gradient(135deg, #fff1a8, #ffb020); border-color: #fff3c0; box-shadow: 0 0 10px rgba(255,190,60,0.9); }
+.banner.ult { font-size: 58px; color: #ffcf4a; text-shadow: 0 5px 0 #5a2a00, 0 0 40px rgba(255,170,40,0.9); letter-spacing: 1px; }
+.ability-line.leap-line { color: #9fe8ff; }

@@ -66,7 +66,7 @@
       x: 0, y: 0, r: d.r, weight: d.weight,
       hp: hp, maxHp: hp, st: d.st, maxSt: d.st, dmg: d.dmg,
       range: Math.round(d.range * (b && b.rangeMul ? b.rangeMul : 1)), dash: d.dash, knock: d.knock,
-      alive: true, inWater: false, pad: -1, turnMul: 1,
+      alive: true, inWater: false, pad: -1, on: -1, turnMul: 1,
       poison: 0, bleed: 0, bleedTurns: 0, shield: 0, shieldTurns: 0, trapped: 0
     };
   }
@@ -115,16 +115,37 @@
     if (events) events.push({ t: 'padTouch', pad: p.id });
   }
 
-  // Состояние хода: какая жаба ходит, сколько оттяжек осталось, попадания в кольцо (D-026, D-027)
+  // Состояние хода (D-030): оттяжки общие на обе жабы, попадания в кольцо копят ультимейт (D-033)
   function resetTurn(s) {
-    s.active = null; s.pullsLeft = 0; s.pullsUsed = 0; s.qteHits = 0; s.abilityUsed = false;
+    s.active = null; s.pullsUsed = 0; s.qteHits = 0; s.abilityUsed = false;
+    var b = s.bonus[s.turnSide];
+    s.pullsLeft = T.pullsPerTurn + (b && b.pulls ? b.pulls : 0);
   }
   Sim.pullsFor = function (s, f) { var b = s.bonus[f.side]; return T.pullsPerTurn + (b && b.pulls ? b.pulls : 0); };
 
-  // Поставить жабу в точку: кувшинка или вода (§4)
+  // ---------- жаба на спине у жабы (D-032) ----------
+  function riderOf(s, f) {
+    for (var i = 0; i < s.frogs.length; i++) if (s.frogs[i].alive && s.frogs[i].on === f.id) return s.frogs[i];
+    return null;
+  }
+  Sim.riderOf = riderOf;
+  // Можно ли сесть на спину союзнику: он жив, никого не несёт и сам ни на ком не сидит
+  function canCarry(s, ally) { return ally.alive && ally.on < 0 && !riderOf(s, ally); }
+  function mount(s, f, ally, events) {
+    f.x = ally.x; f.y = ally.y; f.on = ally.id; f.inWater = false; f.pad = ally.inWater ? -1 : ally.pad;
+    if (events) events.push({ t: 'mount', id: f.id, on: ally.id });
+  }
+  function dismount(s, f, events) {
+    if (f.on < 0) return;
+    f.on = -1;
+    place(s, f, f.x, f.y, events);
+    if (events) events.push({ t: 'dismount', id: f.id, water: f.inWater });
+  }
+
+  // Поставить жабу в точку: кувшинка или вода (§4). Слезает со спины, если сидела.
   function place(s, f, x, y, events) {
     var p = clampXY({ x: x, y: y });
-    f.x = p.x; f.y = p.y;
+    f.x = p.x; f.y = p.y; f.on = -1;
     if (!f.alive) { f.inWater = true; f.pad = -1; return; }
     var pad = Sim.padAt(s, f.x, f.y);
     f.pad = pad ? pad.id : -1;
@@ -134,13 +155,21 @@
 
   function enemiesOf(s, f) { return s.frogs.filter(function (e) { return e.alive && e.side !== f.side; }); }
 
+  // Бонус «Leapfrog» (D-031): прыжок со спины союзника получает свойство того, кто внизу
+  Sim.launchBonus = function (s, f) {
+    if (f.on < 0) return null;
+    var c = s.frogs[f.on], L = FB.FROGS[c.kind].leap, o = { kind: c.kind, name: L.name };
+    for (var k in L) o[k] = L[k];
+    return o;
+  };
+
   Sim.rangeFor = function (s, f, mode) {
-    var d = FB.FROGS[f.kind];
-    if (mode === 'move') return f.inWater ? f.dash : f.range;
-    if (mode === 'rest') return 0;
+    var d = FB.FROGS[f.kind], lb = Sim.launchBonus(s, f), rm = lb && lb.rangeMul ? lb.rangeMul : 1;
+    if (mode === 'move') return f.inWater ? f.dash : f.range * rm;
+    if (mode === 'rest' || mode === 'end') return 0;
     switch (d.ability) {
-      case 'hop': return f.range;
-      case 'slam': return f.range * T.slamRangeMul;
+      case 'hop': return f.range * rm;
+      case 'slam': return f.range * T.slamRangeMul * rm;
       case 'cloud': return T.cloudRange;
       case 'tongue': return T.tongueRange;
       case 'spin': return T.spinRadius;
@@ -157,17 +186,23 @@
     if (a === 'spin') return 'radius';
     return 'arc';
   };
+  // Прыжковая ли это оттяжка (кольцо и ультимейт — только на прыжках, D-033)
+  Sim.isJump = function (s, f, mode) {
+    if (f.inWater) return false;
+    if (mode === 'move') return true;
+    var a = FB.FROGS[f.kind].ability;
+    return mode === 'ability' && (a === 'hop' || a === 'slam');
+  };
 
-  // Доступные действия выбранной жабы
+  // Может ли жаба делать оттяжку: её сторона, жива, не в пузыре и никого не несёт на спине (берётся верхняя)
   Sim.canAct = function (s, f) {
-    return s.phase === 'play' && f.alive && f.side === s.turnSide && f.trapped <= 0 &&
-      (s.active === null || s.active === f.id);
+    return s.phase === 'play' && f.alive && f.side === s.turnSide && f.trapped <= 0 && !riderOf(s, f);
   };
   Sim.abilityAvailable = function (s, f) {
     if (s.abilityUsed) return false;              // одна способность за ход (D-026)
     var a = FB.FROGS[f.kind].ability;
     if (f.st < T.abilityStaminaCost) return false;
-    if ((a === 'hop' || a === 'slam') && f.inWater) return false; // прыжковые — только с кувшинки
+    if ((a === 'hop' || a === 'slam') && f.inWater) return false; // прыжковые — только с опоры
     return true;
   };
 
@@ -179,9 +214,11 @@
     f.hp -= amount;
     events.push({ t: 'hit', id: f.id, dmg: amount, absorbed: absorbed, src: src || 'hit' });
     if (f.hp <= 0) {
-      f.hp = 0; f.alive = false; f.inWater = true; f.pad = -1;
+      var rider = riderOf(s, f);
+      f.hp = 0; f.alive = false; f.inWater = true; f.pad = -1; f.on = -1;
       f.poison = 0; f.bleed = 0; f.bleedTurns = 0; f.trapped = 0; f.shield = 0;
       events.push({ t: 'death', id: f.id, x: f.x, y: f.y });
+      if (rider) dismount(s, rider, events);
     }
     return amount;
   }
@@ -190,7 +227,7 @@
     var b = s.bonus[a.side];
     var m = mul * (e.inWater ? T.waterVulnerability : 1);
     if (b && b.bleedDmgMul && e.bleed > 0) m *= b.bleedDmgMul;
-    m *= a.turnMul || 1;                          // бонус за попадание в кольцо (D-027)
+    m *= a.turnMul || 1;                          // бонус прыжка со спины (Fling, D-031)
     return Math.round(a.dmg * m);
   }
 
@@ -207,17 +244,19 @@
     events.push({ t: 'status', id: e.id, s: 'bleed', val: e.bleed });
   }
 
-  // Пассивки при контактном ударе (§8)
-  function onContact(s, a, e, events) {
+  // Пассивки при контактном ударе (§8) и бонус прыжка со спины (D-031)
+  function onContact(s, a, e, events, launch) {
     var b = s.bonus[a.side];
-    if (a.kind === 'poison') addPoison(s, e, events);
-    if (a.kind === 'spur') addBleed(s, e, events);
+    if (a.kind === 'poison' || (launch && launch.poison)) addPoison(s, e, events);
+    if (a.kind === 'spur' || (launch && launch.bleed)) addBleed(s, e, events);
     if (a.kind === 'bulwark' && b && b.bulwarkBleed) addBleed(s, e, events);
   }
 
-  // Сдвинуть врага (отброс / подтягивание) с проверкой «упал в воду» (§7)
+  // Сдвинуть жабу (отброс / подтягивание) с проверкой «упал в воду» (§7). Седок падает со спины сдвинутой.
   function push(s, a, e, nx, ny, events, kind) {
     if (!e.alive) return;
+    var rider = riderOf(s, e);
+    if (rider) dismount(s, rider, events);
     var from = { x: e.x, y: e.y }, wasWater = e.inWater;
     place(s, e, nx, ny, events);
     events.push({ t: kind || 'push', id: e.id, from: from, to: { x: e.x, y: e.y }, water: e.inWater });
@@ -228,17 +267,17 @@
     }
   }
 
-  // Контактный удар a по e с направлением dir
-  function strike(s, a, e, dir, mul, knock, events) {
+  // Контактный удар a по e: урон и отброс на knock по направлению dir
+  function strike(s, a, e, dir, mul, knock, events, launch) {
     var dmg = hitDamage(s, a, e, mul);
     events.push({ t: 'impact', id: e.id, by: a.id, x: e.x, y: e.y });
     damage(s, e, dmg, events, 'hit');
     if (!e.alive) return;
-    onContact(s, a, e, events);
+    onContact(s, a, e, events, launch);
     if (knock > 0) push(s, a, e, e.x + dir.x * knock, e.y + dir.y * knock, events, 'push');
   }
 
-  // Ближайший враг/союзник в точке приземления
+  // Ближайшая жаба у точки приземления (седок — раньше того, кто под ним)
   function contactAt(s, a, x, y, side) {
     var best = null, bd = 1e9;
     for (var i = 0; i < s.frogs.length; i++) {
@@ -246,55 +285,73 @@
       if (!e.alive || e.id === a.id) continue;
       if (side === 'enemy' && e.side === a.side) continue;
       if (side === 'ally' && e.side !== a.side) continue;
-      var d = dist(x, y, e.x, e.y);
+      var d = dist(x, y, e.x, e.y) - (e.on >= 0 ? 0.5 : 0);
       if (d <= a.r + e.r + T.contactAssist && d < bd) { bd = d; best = e; }
     }
     return best;
   }
 
+  // Отбросить врага от точки приземления: минимум — чтобы разойтись с атакующим
+  function knockFrom(f, e, Lx, Ly, dir, knock) {
+    var d = norm(e.x - Lx, e.y - Ly), cur = d.l;
+    if (d.l < 1e-6) d = dir;
+    var want = Math.max(cur + knock, f.r + e.r + 2);
+    return { dir: d, knock: want - cur };
+  }
+
   // ---------- действия ----------
-  // Прыжок по параболе: в полёте ни с кем не сталкивается, удар — при приземлении (D-006)
+  // Прыжок по параболе: в полёте ни с кем не сталкивается, приземляется ровно в точку прицела (D-030).
+  // Враг в точке — удар и отброс от точки; союзник в точке — сесть ему на спину (D-032).
   function doJump(s, f, vx, vy, maxRange, events, opts) {
     opts = opts || {};
+    var launch = opts.launch || null;
     var v = norm(vx, vy), len = Math.min(v.l, maxRange);
     var dir = v.l > 0 ? v : { x: 0, y: f.side === 0 ? -1 : 1 };
     var from = { x: f.x, y: f.y };
     var L = clampXY({ x: f.x + dir.x * len, y: f.y + dir.y * len });
     var travelled = dist(from.x, from.y, L.x, L.y);
     var enemy = contactAt(s, f, L.x, L.y, 'enemy');
-    var lx = L.x, ly = L.y;
-    if (enemy) { // отскок: встаём вплотную перед целью
-      var back = norm(L.x - from.x, L.y - from.y);
-      if (back.l < 1e-6) back = dir;
-      lx = enemy.x - back.x * (f.r + enemy.r + 1); ly = enemy.y - back.y * (f.r + enemy.r + 1);
-    } else {
-      var ally = contactAt(s, f, L.x, L.y, 'ally');
-      if (ally) {
-        var bk = norm(L.x - ally.x, L.y - ally.y); if (bk.l < 1e-6) bk = { x: -dir.x, y: -dir.y };
-        lx = ally.x + bk.x * (f.r + ally.r + 1); ly = ally.y + bk.y * (f.r + ally.r + 1);
-      }
-    }
+    var ally = enemy ? null : contactAt(s, f, L.x, L.y, 'ally');
+    if (launch && launch.shield) { f.shield = Math.max(f.shield, launch.shield); f.shieldTurns = Math.max(f.shieldTurns, T.shieldTurns); events.push({ t: 'status', id: f.id, s: 'shield' }); }
     var wasWater = f.inWater;
-    place(s, f, lx, ly, events);
-    events.push({ t: 'jump', id: f.id, from: from, to: { x: f.x, y: f.y }, len: travelled, water: f.inWater, slam: !!opts.slam });
-    if (f.inWater) events.push({ t: 'splash', x: f.x, y: f.y, big: false });
+    if (ally && canCarry(s, ally)) mount(s, f, ally, null);
+    else if (ally) { // союзник уже занят — встать рядом
+      var bk = norm(L.x - ally.x, L.y - ally.y); if (bk.l < 1e-6) bk = { x: -dir.x, y: -dir.y };
+      place(s, f, ally.x + bk.x * (f.r + ally.r + 1), ally.y + bk.y * (f.r + ally.r + 1), events);
+    } else place(s, f, L.x, L.y, events);
+    events.push({ t: 'jump', id: f.id, from: from, to: { x: f.x, y: f.y }, len: travelled, water: f.inWater, slam: !!opts.slam, ult: !!opts.ult,
+      on: f.on, launch: launch ? launch.kind : null });
+    if (f.on >= 0) events.push({ t: 'mount', id: f.id, on: f.on });
+    else if (f.inWater) events.push({ t: 'splash', x: f.x, y: f.y, big: false });
     else events.push({ t: 'padBob', pad: f.pad, w: f.weight });
     var longLeap = f.kind === 'jumper' && travelled >= T.jumperLongLeapFrac * f.range;
-    if (opts.slam) {
+    var mulBase = (longLeap ? T.jumperLongLeapMul : 1);
+    var knockMul = launch && launch.knockMul ? launch.knockMul : 1;
+    f.turnMul = launch && launch.dmgMul ? launch.dmgMul : 1;
+    if (longLeap && (enemy || opts.ult)) events.push({ t: 'label', id: f.id, text: 'LONG LEAP!' });
+    if (opts.ult) {
+      // Ультимативное приземление (D-034): волна по всем врагам вокруг, прямой удар сильнее
+      events.push({ t: 'ult', id: f.id, x: f.x, y: f.y, r: T.ultRadius });
+      enemiesOf(s, f).filter(function (e) { return e === enemy || dist(e.x, e.y, f.x, f.y) <= T.ultRadius + e.r; }).forEach(function (e) {
+        var direct = e === enemy;
+        var kf = knockFrom(f, e, f.x, f.y, dir, T.ultKnock * knockMul * (direct ? 1.2 : 1));
+        strike(s, f, e, kf.dir, mulBase * (direct ? T.ultDirectMul : T.ultMul), kf.knock, events, launch);
+      });
+    } else if (opts.slam) {
       events.push({ t: 'slam', id: f.id, x: f.x, y: f.y, r: T.slamRadius });
-      var targets = enemiesOf(s, f).filter(function (e) { return dist(e.x, e.y, f.x, f.y) <= T.slamRadius + e.r; });
-      targets.forEach(function (e) {
-        var d = norm(e.x - f.x, e.y - f.y); if (d.l < 1e-6) d = dir;
-        strike(s, f, e, d, T.slamDamageMul, T.slamKnock, events);
+      enemiesOf(s, f).filter(function (e) { return e === enemy || dist(e.x, e.y, f.x, f.y) <= T.slamRadius + e.r; }).forEach(function (e) {
+        var kf = knockFrom(f, e, f.x, f.y, dir, T.slamKnock * knockMul);
+        strike(s, f, e, kf.dir, T.slamDamageMul * mulBase, kf.knock, events, launch);
       });
     } else if (enemy) {
-      if (longLeap) events.push({ t: 'label', id: f.id, text: 'LONG LEAP!' });
-      strike(s, f, enemy, dir, longLeap ? T.jumperLongLeapMul : 1, f.knock, events);
+      var kf2 = knockFrom(f, enemy, f.x, f.y, dir, f.knock * knockMul);
+      strike(s, f, enemy, kf2.dir, mulBase, kf2.knock, events, launch);
     }
+    f.turnMul = 1;
     return { enemy: enemy, landedWater: f.inWater && !wasWater };
   }
 
-  // Рывок в воде по прямой: может протаранить врага и выйти на кувшинку (§4.2)
+  // Рывок в воде по прямой: может протаранить врага, выйти на кувшинку или забраться на спину своей жабе (§4.2, D-032)
   function doDash(s, f, vx, vy, events) {
     var v = norm(vx, vy), len = Math.min(v.l, f.dash);
     if (v.l < 1e-6) return;
@@ -302,7 +359,10 @@
     if (f.st >= T.dashStaminaCost) { f.st -= T.dashStaminaCost; }
     else { damage(s, f, T.dashHpCostNoStamina, events, 'exhaust'); if (!f.alive) return; }
     var hit = null, ht = len;
-    enemiesOf(s, f).forEach(function (e) {
+    s.frogs.forEach(function (e) {
+      if (!e.alive || e.id === f.id) return;
+      if (e.side === f.side && !canCarry(s, e)) return;
+      if (e.on >= 0) return; // седок сверху — по нему не таранить, бьём того, кто внизу
       var ex = e.x - f.x, ey = e.y - f.y, t = ex * v.x + ey * v.y;
       if (t <= 0) return;
       var px = ex - v.x * t, py = ey - v.y * t, perp = Math.sqrt(px * px + py * py), rr = f.r + e.r;
@@ -311,6 +371,12 @@
       if (tc <= len && tc < ht) { ht = Math.max(0, tc); hit = e; }
     });
     var end = clampXY({ x: f.x + v.x * ht, y: f.y + v.y * ht });
+    if (hit && hit.side === f.side) {
+      mount(s, f, hit, null);
+      events.push({ t: 'dash', id: f.id, from: from, to: { x: f.x, y: f.y }, water: false });
+      events.push({ t: 'mount', id: f.id, on: hit.id });
+      return;
+    }
     place(s, f, end.x, end.y, events);
     events.push({ t: 'dash', id: f.id, from: from, to: { x: f.x, y: f.y }, water: f.inWater });
     if (!f.inWater) events.push({ t: 'padBob', pad: f.pad, w: f.weight });
@@ -387,18 +453,19 @@
   }
 
   // ---------- ход ----------
-  // Ход (D-026): игрок выбирает жабу, и она делает до pullsFor() оттяжек подряд (прыжок/рывок/способность),
-  // либо весь ход отдыхает (REST). END — закончить ход раньше.
+  // Ход (D-030): pullsFor() оттяжек на сторону, тратятся между жабами как угодно (прыжок / рывок / одна способность);
+  // либо весь ход одна жаба отдыхает (REST, только до первой оттяжки). END — закончить ход раньше.
   // cmd: { frog: id, mode: 'move'|'ability'|'rest'|'end', dx, dy, qte } — (dx,dy) вектор цели в мировых единицах,
-  // qte — попал ли игрок в сужающееся кольцо на 2-й и следующих оттяжках (D-027).
+  // qte — попал ли игрок в сужающееся кольцо (только прыжковые оттяжки, начиная со 2-й, D-033).
   Sim.apply = function (s, cmd, opts) {
     opts = opts || {};
     var events = [];
     var f = s.frogs[cmd.frog];
-    if (!f || !Sim.canAct(s, f)) return { ok: false, events: events, why: 'cannot act' };
     var mode = cmd.mode;
-    if (mode === 'rest' && s.active !== null) return { ok: false, events: events, why: 'rest only as a whole turn' };
-    if (mode === 'end' && s.active === null) return { ok: false, events: events, why: 'nothing to end' };
+    if (!f || (mode !== 'end' && !Sim.canAct(s, f))) return { ok: false, events: events, why: 'cannot act' };
+    if (mode === 'end' && (s.phase !== 'play' || f.side !== s.turnSide)) return { ok: false, events: events, why: 'not your turn' };
+    if (mode === 'rest' && s.pullsUsed > 0) return { ok: false, events: events, why: 'rest only as a whole turn' };
+    if (mode === 'end' && s.pullsUsed === 0) return { ok: false, events: events, why: 'nothing to end' };
     if (mode === 'ability' && !Sim.abilityAvailable(s, f)) return { ok: false, events: events, why: 'no stamina' };
     var dx = cmd.dx || 0, dy = cmd.dy || 0;
     var a = FB.FROGS[f.kind].ability;
@@ -407,7 +474,7 @@
       events.push({ t: 'act', id: f.id, mode: mode, side: f.side });
       events.push({ t: 'rest', id: f.id });
       // Отдых на кувшинке: вся Stamina и часть HP (D-019, D-028)
-      if (!f.inWater) {
+      if (!f.inWater && f.pad >= 0) {
         if (f.st < f.maxSt) { f.st = f.maxSt; events.push({ t: 'status', id: f.id, s: 'refill' }); }
         var heal = Math.min(f.maxHp - f.hp, Math.round(f.maxHp * T.restHealFrac));
         if (heal > 0) { f.hp += heal; events.push({ t: 'heal', id: f.id, amount: heal }); }
@@ -422,23 +489,27 @@
     }
 
     // Оттяжка
-    if (s.active === null) { s.active = f.id; s.pullsLeft = Sim.pullsFor(s, f); }
+    var jump = Sim.isJump(s, f, mode);
+    var launch = jump ? Sim.launchBonus(s, f) : null;
     events.push({ t: 'act', id: f.id, mode: mode, side: f.side, pull: s.pullsUsed + 1 });
-    if (cmd.qte && s.pullsUsed >= 1 && s.qteHits < T.qteBonus.length - 1) {
+    var ult = false;
+    if (cmd.qte && jump && s.pullsUsed >= 1 && s.qteHits < T.ultPerfects) {
       s.qteHits++;
-      events.push({ t: 'perfect', id: f.id, hits: s.qteHits, bonus: T.qteBonus[s.qteHits] });
+      ult = s.qteHits >= T.ultPerfects;
+      events.push({ t: 'perfect', id: f.id, hits: s.qteHits, ult: ult });
     }
-    f.turnMul = 1 + T.qteBonus[s.qteHits];
-    var freePull = false;
+    if (launch) events.push({ t: 'launch', id: f.id, kind: launch.kind, name: launch.name });
+    var freePull = !!(launch && launch.free);
+    var range = Sim.rangeFor(s, f, mode);
     if (mode === 'move') {
       if (f.inWater) doDash(s, f, dx, dy, events);
-      else doJump(s, f, dx, dy, f.range, events);
+      else doJump(s, f, dx, dy, range, events, { launch: launch, ult: ult });
     } else if (mode === 'ability') {
       f.st -= T.abilityStaminaCost;
       s.abilityUsed = true;
       events.push({ t: 'ability', id: f.id, ability: a });
-      if (a === 'hop') { doJump(s, f, dx, dy, f.range, events); freePull = true; } // Free Hop: прыжок без траты оттяжки
-      else if (a === 'slam') doJump(s, f, dx, dy, f.range * T.slamRangeMul, events, { slam: true });
+      if (a === 'hop') { doJump(s, f, dx, dy, range, events, { launch: launch, ult: ult }); freePull = true; } // Free Hop: прыжок без траты оттяжки
+      else if (a === 'slam') doJump(s, f, dx, dy, range, events, { slam: true, launch: launch, ult: ult });
       else if (a === 'cloud') doCloud(s, f, dx, dy, events);
       else if (a === 'tongue') doTongue(s, f, dx, dy, events);
       else if (a === 'spin') doSpin(s, f, events);
@@ -446,10 +517,11 @@
     }
     s.pullsUsed++;
     if (!freePull) s.pullsLeft--;
-    events.push({ t: 'pulls', left: s.pullsLeft, used: s.pullsUsed });
+    events.push({ t: 'pulls', left: s.pullsLeft, used: s.pullsUsed, qte: s.qteHits });
 
     checkRoundEnd(s, events);
-    var more = s.phase === 'play' && f.alive && s.pullsLeft > 0;
+    var anyone = s.frogs.some(function (x) { return Sim.canAct(s, x); });
+    var more = s.phase === 'play' && s.pullsLeft > 0 && anyone;
     if (more) return { ok: true, events: events, continues: true };
     if (!opts.noEnd && s.phase === 'play') endTurn(s, events);
     return { ok: true, events: events };
@@ -462,8 +534,6 @@
   // Конец хода: затопление кувшинок (§6, D-025), облака, статусы, передача хода
   function endTurn(s, events) {
     var side = s.turnSide;
-    s.frogs.forEach(function (f) { if (f.side === side) f.turnMul = 1; });
-    resetTurn(s);
     // Кувшинки: тронутая отсчитывает ходы до затопления, что бы ни происходило
     s.pads.forEach(function (p) {
       if (p.state === 'stable') {
@@ -477,7 +547,9 @@
           p.sinkLeft = null;
           events.push({ t: 'padSink', pad: p.id, gone: p.state === 'gone' });
           on.forEach(function (f) {
-            f.inWater = true; f.pad = -1;
+            f.pad = -1;
+            if (f.on >= 0) return; // седок остаётся на спине у того, кто упал в воду
+            f.inWater = true;
             events.push({ t: 'fall', id: f.id });
             events.push({ t: 'splash', x: f.x, y: f.y, big: true });
           });
@@ -488,7 +560,10 @@
           p.state = 'stable'; p.wear = 0; p.cap = 1; p.lives = Math.max(0, p.lives - 1);
           events.push({ t: 'padRise', pad: p.id });
           s.frogs.forEach(function (f) { // всплывающая кувшинка подбирает жабу из воды — и сразу начинает тонуть
-            if (f.alive && f.inWater && dist(f.x, f.y, p.x, p.y) <= p.r) { f.inWater = false; f.pad = p.id; events.push({ t: 'lift', id: f.id, pad: p.id }); touchPad(s, p, f, events); }
+            if (f.alive && f.inWater && dist(f.x, f.y, p.x, p.y) <= p.r) {
+              f.inWater = false; f.pad = p.id; events.push({ t: 'lift', id: f.id, pad: p.id }); touchPad(s, p, f, events);
+              var r = riderOf(s, f); if (r) r.pad = p.id;
+            }
           });
         }
       }
@@ -517,6 +592,7 @@
 
   function startTurn(s, events, depth) {
     var side = s.turnSide;
+    resetTurn(s);
     events.push({ t: 'turn', side: side });
     s.frogs.forEach(function (f) {
       if (f.side !== side || !f.alive) return;

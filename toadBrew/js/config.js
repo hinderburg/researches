@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '0.3.0';
+FB.VERSION = '0.4.0';
 
 FB.T = {
   // Поле (мировые единицы, портрет 9:16, D-004)
@@ -46,8 +46,9 @@ FB.T = {
 
   // Способности (D-009)
   jumperLongLeapFrac: 0.7, jumperLongLeapMul: 1.5,
-  pullsPerTurn: 3,             // оттяжек за ход одной жабой; синергия может добавить (D-026)
-  qteBonus: [0, 0.05, 0.12],   // бонус урона за 0 / 1 / 2 попадания в кольцо: +5%, затем ещё +7% (D-027)
+  pullsPerTurn: 3,             // оттяжек за ход на сторону, делятся между жабами как угодно; синергия может добавить (D-030)
+  ultPerfects: 2,              // столько идеальных прыжковых оттяжек за ход — и прыжок становится ультимейтом (D-033)
+  ultRadius: 100, ultDirectMul: 1.6, ultMul: 1.0, ultKnock: 110, // ультимативное приземление (D-034)
   qtePeriod: 1.1,              // кольцо сужается за столько секунд и начинает снова
   qteWindow: 0.13,             // окно попадания, ± секунд вокруг момента совпадения колец
   slamRangeMul: 0.85, slamRadius: 78, slamKnock: 105, slamDamageMul: 1.0,
@@ -69,17 +70,23 @@ FB.T = {
 // Шесть жаб (§8; стартовые числа — со скрина Choose Your Team, D-005). range — дальность прыжка, dash — рывка.
 FB.FROGS = {
   jumper:  { name: 'Jumper Frog',    role: 'JUMPER',  hp: 120, dmg: 45, st: 6, r: 17, weight: 1, range: 285, dash: 120, knock: 45,
-             ability: 'hop',    abilityName: 'Free Hop',    abilityDesc: 'A jump that does not use up a pull. Long leaps hit x1.5.' },
+             ability: 'hop',    abilityName: 'Free Hop',    abilityDesc: 'A jump that does not use up a pull. Long leaps hit x1.5.',
+             leap: { name: 'Relay', desc: 'A jump off its back does not use up a pull.', free: true } },
   bulwark: { name: 'Bulwark Frog',   role: 'TANK',    hp: 220, dmg: 30, st: 4, r: 22, weight: 2, range: 180, dash: 80,  knock: 80,
-             ability: 'slam',   abilityName: 'Heavy Slam',  abilityDesc: 'Jump with a shockwave: damage and big knockback around landing.' },
+             ability: 'slam',   abilityName: 'Heavy Slam',  abilityDesc: 'Jump with a shockwave: damage and big knockback around landing.',
+             leap: { name: 'Springboard', desc: 'A jump off its back goes 35% farther and knocks back 50% harder.', rangeMul: 1.35, knockMul: 1.5 } },
   poison:  { name: 'Poison Toad',    role: 'SUPPORT', hp: 160, dmg: 35, st: 6, r: 18, weight: 1, range: 210, dash: 100, knock: 45,
-             ability: 'cloud',  abilityName: 'Poison Cloud', abilityDesc: 'Lob a toxic cloud. Enemies inside get Poison. Hits poison too.' },
+             ability: 'cloud',  abilityName: 'Poison Cloud', abilityDesc: 'Lob a toxic cloud. Enemies inside get Poison. Hits poison too.',
+             leap: { name: 'Toxic Launch', desc: 'A jump off its back poisons whoever it lands on.', poison: true } },
   tongue:  { name: 'Tongue Grabber', role: 'CONTROL', hp: 140, dmg: 50, st: 5, r: 18, weight: 1, range: 200, dash: 100, knock: 45,
-             ability: 'tongue', abilityName: 'Tongue Grab',  abilityDesc: 'Grab the first enemy on the line and pull it close. Off the pad!' },
+             ability: 'tongue', abilityName: 'Tongue Grab',  abilityDesc: 'Grab the first enemy on the line and pull it close. Off the pad!',
+             leap: { name: 'Fling', desc: 'A jump off its back hits 25% harder.', dmgMul: 1.25 } },
   spur:    { name: 'Spur Toad',      role: 'BRUISER', hp: 180, dmg: 50, st: 5, r: 19, weight: 1, range: 195, dash: 100, knock: 50,
-             ability: 'spin',   abilityName: 'Spur Spin',    abilityDesc: 'Spin: hit all enemies close by. Every hit applies Bleed.' },
+             ability: 'spin',   abilityName: 'Spur Spin',    abilityDesc: 'Spin: hit all enemies close by. Every hit applies Bleed.',
+             leap: { name: 'Spiked Launch', desc: 'A jump off its back makes the target bleed.', bleed: true } },
   mystic:  { name: 'Mystic Frog',    role: 'MAGE',    hp: 110, dmg: 60, st: 6, r: 16, weight: 1, range: 225, dash: 110, knock: 40,
-             ability: 'bubble', abilityName: 'Bubble',       abilityDesc: 'Enemy: trapped for a turn. Ally: shield 40.' }
+             ability: 'bubble', abilityName: 'Bubble',       abilityDesc: 'Enemy: trapped for a turn. Ally: shield 40.',
+             leap: { name: 'Bubble Lift', desc: 'The frog jumping off its back gets a 25 shield.', shield: 25 } }
 };
 FB.FROG_ORDER = ['jumper', 'bulwark', 'poison', 'tongue', 'spur', 'mystic'];
 

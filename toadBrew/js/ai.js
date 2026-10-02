@@ -61,7 +61,8 @@
     var ability = mode === 'ability' ? FB.FROGS[f.kind].ability : null;
     s.frogs.forEach(function (e) {
       if (!e.alive || e.id === f.id) return;
-      if (e.side === f.side && ability !== 'bubble') return;
+      // союзник — цель для пузыря и для прыжка/рывка на спину (D-032)
+      if (e.side === f.side && ability !== 'bubble' && !(mode === 'move' || ability === 'hop' || ability === 'slam')) return;
       add(e.x, e.y);
       if (kind === 'arc' && e.side !== f.side) { // чуть недолёт/перелёт — разные отскоки
         var d = Sim.norm(e.x - f.x, e.y - f.y);
@@ -82,17 +83,19 @@
   }
 
   function modesFor(s, f) {
-    var m = ['move', s.active === null ? 'rest' : 'end'];
+    var m = ['move'];
+    if (s.pullsUsed === 0) m.push('rest');
     if (Sim.abilityAvailable(s, f)) m.push('ability');
     return m;
   }
 
   function commands(s, quick) {
-    var out = [];
+    var out = [], me = s.frogs.filter(function (f) { return f.side === s.turnSide; })[0];
+    if (s.pullsUsed > 0 && me) out.push({ frog: me.id, mode: 'end' });
     s.frogs.forEach(function (f) {
       if (!Sim.canAct(s, f)) return;
       modesFor(s, f).forEach(function (mode) {
-        if (mode === 'rest' || mode === 'end') { out.push({ frog: f.id, mode: mode }); return; }
+        if (mode === 'rest') { out.push({ frog: f.id, mode: mode }); return; }
         targetsFor(s, f, mode, quick).forEach(function (t) { out.push({ frog: f.id, mode: mode, dx: t.dx, dy: t.dy }); });
       });
     });
@@ -153,7 +156,7 @@
         var nx = (cmd.dx * cs - cmd.dy * sn) * k, ny = (cmd.dx * sn + cmd.dy * cs) * k;
         cmd.dx = nx; cmd.dy = ny;
       }
-      cmd.qte = s.pullsUsed >= 1 && rand() < T.botQteChance;
+      cmd.qte = s.pullsUsed >= 1 && Sim.isJump(s, s.frogs[cmd.frog], cmd.mode) && rand() < T.botQteChance;
     }
     return { cmd: cmd, score: pick.score, considered: cands.length };
   };

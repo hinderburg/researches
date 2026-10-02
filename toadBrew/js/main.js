@@ -75,7 +75,7 @@
       body.appendChild(portraitCanvas(k, 300, 200));
       body.insertAdjacentHTML('beforeend', '<div class="fname">' + d.name + '</div><div class="role ' + d.role + '">' + d.role + '</div>' +
         '<div class="stats"><div><span>❤️ HP</span><b>' + d.hp + '</b></div><div><span>🗡️ Damage</span><b>' + d.dmg + '</b></div><div><span>⚡ Stamina</span><b>' + d.st + '</b></div></div>' +
-        '<div class="ability-line">' + d.abilityName + ': ' + d.abilityDesc + '</div>');
+        '<div class="ability-line">' + d.abilityName + ': ' + d.abilityDesc + '</div><div class="ability-line leap-line">Leapfrog — ' + d.leap.name + ': ' + d.leap.desc + '</div>');
       var xb = document.createElement('button'); xb.className = 'slot-x'; xb.textContent = '✕';
       xb.onclick = function (e) { e.stopPropagation(); togglePick(k); };
       slot.appendChild(xb);
@@ -145,13 +145,13 @@
     if (s.turnSide === 1 || app.auto) return botTurn();
     // игрок
     app.mode = 'move';
-    app.qteT = 0; // кольцо следующей оттяжки начинает сужаться заново (D-027)
-    if (s.active !== null) { app.selected = s.active; updateHud(); return; } // продолжение хода той же жабой
+    app.qteT = 0; // кольцо следующей оттяжки начинает сужаться заново (D-033)
     var cur = s.frogs[app.selected];
     if (!cur || !Sim.canAct(s, cur)) {
       var c = s.frogs.filter(function (f) { return Sim.canAct(s, f); });
       app.selected = c.length ? c[0].id : -1;
     }
+    if (s.pullsUsed > 0) { updateHud(); return; } // продолжение хода: оттяжки можно тратить любой жабой
     banner('YOUR TURN', 'p', 700);
     app.turnLeft = T.turnTimeSec; // таймер на весь ход, со всеми оттяжками (D-021)
     updateHud();
@@ -159,7 +159,7 @@
 
   function botTurn() {
     var side = app.s.turnSide;
-    if (app.s.active === null) banner(side ? NAMES[1].toUpperCase() + "'S TURN" : 'AUTO TURN', side ? 'b' : 'p', 700);
+    if (app.s.pullsUsed === 0) banner(side ? NAMES[1].toUpperCase() + "'S TURN" : 'AUTO TURN', side ? 'b' : 'p', 700);
     updateHud();
     app.busy = true;
     clearTimeout(app.botTimer);
@@ -238,10 +238,15 @@
     switch (e.t) {
       case 'jump': {
         var d = D(e.id); faceTo(d, e.from, e.to);
-        var H = 30 + e.len * 0.22;
-        dur = (0.42 + e.len / 1100);
-        upd = function (u) { var k = ease(u); d.x = e.from.x + (e.to.x - e.from.x) * k; d.y = e.from.y + (e.to.y - e.from.y) * k; d.z = Math.sin(Math.PI * u) * H; d.squash = u < 0.12 ? -0.1 : 0; };
-        end = function () { d.z = 0; d.inWater = e.water; d.squash = 0.22; SF(e.id).x = e.to.x; SF(e.id).y = e.to.y; SF(e.id).inWater = e.water; };
+        var H = (30 + e.len * 0.22) * (e.ult ? 1.9 : 1);
+        dur = (0.42 + e.len / 1100) * (e.ult ? 1.45 : 1);
+        SF(e.id).on = -1; // слезла со спины, если сидела
+        if (e.ult) { d.glow = 1; banner('ULTIMATE!', 'gold ult', 1300); }
+        upd = function (u) {
+          var k = ease(u); d.x = e.from.x + (e.to.x - e.from.x) * k; d.y = e.from.y + (e.to.y - e.from.y) * k; d.z = Math.sin(Math.PI * u) * H; d.squash = u < 0.12 ? -0.1 : 0;
+          if (e.ult && Math.random() < 0.9) addFx({ k: 'spark', x: d.x + (Math.random() - 0.5) * 14, y: d.y - d.z * 0.9 + (Math.random() - 0.5) * 14, vx: (Math.random() - 0.5) * 30, vy: 20 + Math.random() * 30, life: 0.5, gold: true });
+        };
+        end = function () { d.z = 0; d.inWater = e.water; d.squash = e.ult ? 0.4 : 0.22; d.glow = 0; var sf = SF(e.id); sf.x = e.to.x; sf.y = e.to.y; sf.inWater = e.water; sf.on = e.on; };
         break;
       }
       case 'dash': {
@@ -255,7 +260,7 @@
         var dp = D(e.id);
         dur = e.t === 'pull' ? 0.28 : 0.26;
         upd = function (u) { var k = easeOut(u); dp.x = e.from.x + (e.to.x - e.from.x) * k; dp.y = e.from.y + (e.to.y - e.from.y) * k; dp.wob = Math.sin(u * 20) * 0.25 * (1 - u); };
-        end = function () { dp.wob = 0; dp.inWater = e.water; SF(e.id).x = e.to.x; SF(e.id).y = e.to.y; SF(e.id).inWater = e.water; };
+        end = function () { dp.wob = 0; dp.inWater = e.water; SF(e.id).x = e.to.x; SF(e.id).y = e.to.y; SF(e.id).inWater = e.water; SF(e.id).on = -1; };
         break;
       }
       case 'impact': {
@@ -341,16 +346,32 @@
       case 'heal': { var hf = SF(e.id); hf.hp = Math.min(hf.maxHp, hf.hp + e.amount); addFx({ k: 'num', x: D(e.id).x, y: D(e.id).y - 22, text: '+' + e.amount, color: '#7dff8a', life: 1.0, big: true }); for (var hq = 0; hq < 6; hq++) addFx({ k: 'spark', x: D(e.id).x + (Math.random() - 0.5) * 20, y: D(e.id).y, vx: (Math.random() - 0.5) * 20, vy: -40 - Math.random() * 30, life: 0.7 }); dur = 0.3; updateHud(); break; }
       case 'rest': { addFx({ k: 'num', x: D(e.id).x, y: D(e.id).y - 30, text: app.s.frogs[e.id].inWater ? 'WAIT' : 'REST', color: '#cfe3ef', life: 0.9 }); dur = 0.35; break; }
       case 'pass': { banner('SKIP — TRAPPED', e.side === 0 ? 'p' : 'b', 700); dur = 0.6; break; }
-      case 'perfect': { // попал в кольцо (D-027)
-        addFx({ k: 'num', x: D(e.id).x, y: D(e.id).y - 48, text: 'PERFECT! +' + Math.round(e.bonus * 100) + '%', color: '#ffd23f', life: 1.1, big: true });
+      case 'perfect': { // попал в кольцо — копится ультимейт (D-033)
+        addFx({ k: 'num', x: D(e.id).x, y: D(e.id).y - 48, text: e.ult ? 'PERFECT! ULTIMATE!' : 'PERFECT! ULTIMATE ' + e.hits + '/' + T.ultPerfects, color: e.ult ? '#ffb04a' : '#ffd23f', life: 1.2, big: true });
         addFx({ k: 'ring', x: D(e.id).x, y: D(e.id).y, r0: 14, r1: 44, life: 0.45, color: '255,215,90' });
-        app.shown.qteHits = e.hits; updateHud(); break;
+        app.shown.qteHits = e.hits; updateHud(); dur = e.ult ? 0.25 : 0.1; break;
       }
-      case 'pulls': { app.shown.pullsLeft = e.left; app.shown.pullsUsed = e.used; updateHud(); break; }
+      case 'ult': { // ультимативное приземление (D-034)
+        var cols = ['255,215,90', '255,255,255', '255,150,60', '255,235,160'];
+        for (var ui = 0; ui < 4; ui++) addFx({ k: 'ring', x: e.x, y: e.y, r0: 8 + ui * 6, r1: e.r * (1 + ui * 0.18), life: 0.55 + ui * 0.12, color: cols[ui], wide: true });
+        for (var us = 0; us < 36; us++) { var ua = Math.random() * Math.PI * 2, uv = 90 + Math.random() * 160; addFx({ k: 'spark', x: e.x, y: e.y, vx: Math.cos(ua) * uv, vy: Math.sin(ua) * uv, life: 0.7, gold: true }); }
+        splash(e.x, e.y, true); splash(e.x + 20, e.y - 10, true);
+        addFx({ k: 'flash', life: 0.5 });
+        app.shake = Math.max(app.shake, 22);
+        dur = 0.45;
+        break;
+      }
+      case 'launch': { addFx({ k: 'num', x: D(e.id).x, y: D(e.id).y + 30, text: e.name.toUpperCase() + '!', color: '#9fe8ff', life: 1.0 }); break; }
+      case 'mount': {
+        var sm = SF(e.id); sm.on = e.on; sm.inWater = false; D(e.id).inWater = false;
+        addFx({ k: 'num', x: D(e.id).x, y: D(e.id).y - 34, text: 'HOP ON', color: '#9dffb0', life: 0.8 });
+        break;
+      }
+      case 'dismount': { var sdm = SF(e.id); sdm.on = -1; sdm.inWater = e.water; D(e.id).inWater = e.water; break; }
+      case 'pulls': { app.shown.pullsLeft = e.left; app.shown.pullsUsed = e.used; app.shown.qteHits = e.qte; updateHud(); break; }
       case 'padTouch': { var pt = app.shown.pads[e.pad], fin2 = app.s.pads[e.pad]; pt.cap = fin2.cap; pt.wear = 0; pt.sinkLeft = fin2.cap; addFx({ k: 'ring', x: pt.x, y: pt.y, r0: pt.r * 0.7, r1: pt.r * 1.1, life: 0.5, color: '255,200,120' }); break; }
       case 'endTurn': { addFx({ k: 'num', x: D(e.id).x, y: D(e.id).y - 30, text: 'END', color: '#cfe3ef', life: 0.8 }); dur = 0.25; break; }
-      case 'act': { if (e.pull) app.shown.active = e.id; break; }
-      case 'turn': { app.shown.turnSide = e.side; app.shown.active = null; app.shown.pullsLeft = 0; app.shown.pullsUsed = 0; app.shown.qteHits = 0; break; }
+      case 'turn': { app.shown.turnSide = e.side; app.shown.pullsLeft = T.pullsPerTurn + ((app.s.bonus[e.side] || {}).pulls || 0); app.shown.pullsUsed = 0; app.shown.qteHits = 0; break; }
       case 'regen': { var rf = SF(e.id); rf.st = Math.min(rf.maxSt, rf.st + T.staminaRegenOnPad); break; }
       case 'roundEnd': dur = 0.5; break;
       case 'ability': {
@@ -402,14 +423,16 @@
       switch (f.k) {
         case 'ring':
           P = R.toScreen(f.x, f.y);
-          c.strokeStyle = 'rgba(' + f.color + ',' + (1 - u) * 0.85 + ')'; c.lineWidth = 3 * (1 - u) + 1;
+          c.strokeStyle = 'rgba(' + f.color + ',' + (1 - u) * 0.85 + ')'; c.lineWidth = (f.wide ? 9 : 3) * (1 - u) + 1;
           c.beginPath(); c.arc(P.x, P.y, (f.r0 + (f.r1 - f.r0) * easeOut(u)) * sc, 0, Math.PI * 2); c.stroke(); break;
         case 'drop':
           P = R.toScreen(f.x + f.vx * f.t, f.y + f.vy * f.t);
           c.fillStyle = 'rgba(225,248,255,' + (1 - u) + ')'; c.beginPath(); c.arc(P.x, P.y - Math.sin(Math.PI * u) * 14 * sc, 2.6 * sc, 0, Math.PI * 2); c.fill(); break;
+        case 'flash':
+          c.fillStyle = 'rgba(255,236,170,' + (0.55 * (1 - u)) + ')'; c.fillRect(0, 0, R.view.cw, R.view.ch); break;
         case 'spark':
           P = R.toScreen(f.x + f.vx * f.t, f.y + f.vy * f.t);
-          c.fillStyle = 'rgba(255,240,170,' + (1 - u) + ')'; c.beginPath(); c.arc(P.x, P.y, 3.2 * sc * (1 - u) + 1, 0, Math.PI * 2); c.fill(); break;
+          c.fillStyle = f.gold ? 'rgba(255,' + (190 + Math.round(50 * (1 - u))) + ',80,' + (1 - u) + ')' : 'rgba(255,240,170,' + (1 - u) + ')'; c.beginPath(); c.arc(P.x, P.y, 3.2 * sc * (1 - u) + 1, 0, Math.PI * 2); c.fill(); break;
         case 'num':
           P = R.toScreen(f.x, f.y);
           c.save(); c.globalAlpha = u < 0.75 ? 1 : (1 - u) / 0.25;
@@ -482,6 +505,12 @@
     a.preview.hits.forEach(function (h) { h.kill = !after.frogs[h.id].alive; });
     a.preview.hitEnemy = a.preview.hits.length > 0;
     a.preview.water = moving && me.inWater;
+    a.preview.mount = moving && me.on >= 0 && me.on !== f.on;
+    // промах рядом с врагом — явно «NO HIT», чтобы не гадать
+    if (moving && !a.preview.hitEnemy && a.end) a.preview.nearMiss = s.frogs.some(function (e) { return e.alive && e.side !== f.side && Sim.dist(e.x, e.y, a.end.x, a.end.y) < f.r + e.r + 40; });
+    var lb = Sim.isJump(s, f, mode) ? Sim.launchBonus(s, f) : null;
+    if (lb) note = lb.name.toUpperCase() + (note ? ' · ' + note : '');
+    if (Sim.isJump(s, f, mode) && s.pullsUsed >= 1 && s.qteHits === T.ultPerfects - 1 && s.turnSide === 0) note = (note ? note + ' · ' : '') + 'PERFECT = ULTIMATE';
     if (mode === 'ability' && ab === 'bubble') {
       var tgt = pv.events.filter(function (e) { return e.t === 'bubble'; })[0];
       if (tgt && tgt.target >= 0) note = tgt.ally ? 'SHIELD ' + T.shieldAmount : 'TRAP!';
@@ -501,7 +530,8 @@
     var hitFrog = null, bd = 1e9;
     app.s.frogs.forEach(function (f) {
       if (!f.alive) return;
-      var d = Sim.dist(w.x, w.y, f.x, f.y);
+      // своя жаба, которая может ходить, — в приоритете (в стопке берётся верхняя, D-032)
+      var d = Sim.dist(w.x, w.y, f.x, f.y) - (f.side === 0 && Sim.canAct(app.s, f) ? 6 : 0);
       if (d <= Math.max(f.r * 1.8, 30 / R.view.s) && d < bd) { bd = d; hitFrog = f; }
     });
     var anchor = p;
@@ -533,52 +563,47 @@
     drag.power = power;
   });
 
-  // ---------- кольцо QTE на 2-й и следующих оттяжках (D-027) ----------
+  // ---------- кольцо на прыжковых оттяжках со 2-й (D-033) ----------
   // Кольцо сужается за qtePeriod, держится на цели qteWindow и начинает снова. Окно — последние qteWindow
-  // перед совпадением и всё время удержания.
+  // перед совпадением и всё время удержания. Две идеальные прыжковые оттяжки за ход — ультимейт (D-034).
   function qteCycle() { return T.qtePeriod + T.qteWindow; }
-  function qteActive() { return myTurnNow() && app.s.active !== null && app.s.pullsUsed >= 1; }
+  function qteActive() {
+    if (!myTurnNow() || app.s.pullsUsed < 1 || app.s.qteHits >= T.ultPerfects) return false;
+    var f = app.s.frogs[app.selected];
+    return !!f && Sim.canAct(app.s, f) && Sim.isJump(app.s, f, app.mode);
+  }
   function qteInWindow() { return app.qteT % qteCycle() >= T.qtePeriod - T.qteWindow; }
+  function ultNext() { return app.s && app.s.qteHits === T.ultPerfects - 1; } // следующая идеальная — ультимейт
 
   function drawTurnOverlay(c) {
     var s = app.s; if (!s || app.screen !== 'battle') return;
     var sc = R.view.s;
     if (qteActive()) {
-      var f = s.frogs[s.active], d = D(f.id), P = R.toScreen(d.x, d.y), r = f.r * sc;
-      var t = app.qteT % qteCycle(), u = Math.min(1, t / T.qtePeriod), hit = qteInWindow();
+      var f = s.frogs[app.selected], d = D(f.id), P = R.toScreen(d.x, d.y), r = f.r * sc;
+      var t = app.qteT % qteCycle(), u = Math.min(1, t / T.qtePeriod), hit = qteInWindow(), ult = ultNext();
       var targetR = r * 1.5, startR = r * 4.2, rad = targetR + (startR - targetR) * (1 - u);
-      c.lineWidth = 3;
-      c.strokeStyle = hit ? 'rgba(255,215,90,1)' : 'rgba(255,215,90,0.75)';
+      var gold = ult ? '255,140,40' : '255,215,90';
+      c.lineWidth = ult ? 4 : 3;
+      c.strokeStyle = 'rgba(' + gold + ',' + (hit ? 1 : 0.75) + ')';
       c.beginPath(); c.arc(P.x, P.y, targetR, 0, Math.PI * 2); c.stroke();
-      if (hit) { c.fillStyle = 'rgba(255,215,90,0.22)'; c.fill(); }
+      if (hit) { c.fillStyle = 'rgba(' + gold + ',0.25)'; c.fill(); }
       c.strokeStyle = hit ? 'rgba(255,240,170,1)' : 'rgba(255,255,255,0.85)'; c.lineWidth = hit ? 5 : 3;
       c.beginPath(); c.arc(P.x, P.y, rad, 0, Math.PI * 2); c.stroke();
-    }
-    // оттяжки над ходящей жабой
-    if (s.phase === 'play' && s.active !== null && app.shown) {
-      var af = s.frogs[s.active], ad = D(af.id), AP = R.toScreen(ad.x, ad.y), left = app.shown.pullsLeft, tot = Math.max(Sim.pullsFor(s, af), left);
-      for (var i = 0; i < tot; i++) {
-        var x = AP.x + (i - (tot - 1) / 2) * 11, y = AP.y + af.r * sc * 1.9 + 6;
-        c.fillStyle = i < left ? (af.side === 0 ? '#5fd0ff' : '#ff7a8a') : 'rgba(20,35,45,0.8)';
-        c.strokeStyle = 'rgba(10,20,28,0.9)'; c.lineWidth = 1.5;
-        c.beginPath(); c.arc(x, y, 4.2, 0, Math.PI * 2); c.fill(); c.stroke();
-      }
+      if (ult) R.label(c, P.x, P.y + targetR + 14, 'ULTIMATE', '#ffb04a');
     }
   }
 
-  // Плашка оттяжек над кнопками: сколько осталось и бонус за кольцо
+  // Плашка над кнопками: оттяжки стороны и прогресс ультимейта (◆ — идеальные прыжки за ход)
   function renderPulls() {
     var el = $('pulls'), s = app.s, sh = app.shown;
     if (!s || s.phase !== 'play') { el.innerHTML = ''; return; }
-    var fid = s.active !== null ? s.active : (s.turnSide === 0 ? app.selected : -1);
-    var f = s.frogs[fid];
-    if (!f) { el.innerHTML = ''; return; }
-    var total = Sim.pullsFor(s, f), left = sh.active !== null ? sh.pullsLeft : total, n = Math.max(total, left), h = '<span class="pl-l">PULLS</span>';
+    var total = T.pullsPerTurn + ((s.bonus[sh.turnSide] || {}).pulls || 0);
+    var left = sh.pullsUsed > 0 ? sh.pullsLeft : total, n = Math.max(total, left), h = '<span class="pl-l">PULLS</span>';
     for (var i = 0; i < n; i++) h += '<i class="' + (i < left ? 'on' : '') + '"></i>';
-    var bonus = T.qteBonus[sh.qteHits || 0];
-    if (bonus > 0) h += '<b>+' + Math.round(bonus * 100) + '% DMG</b>';
+    h += '<span class="pl-l ult-l">ULT</span>';
+    for (var k = 0; k < T.ultPerfects; k++) h += '<em class="' + (k < (sh.qteHits || 0) ? 'on' : '') + '"></em>';
     el.innerHTML = h;
-    el.classList.toggle('bot', s.turnSide === 1);
+    el.classList.toggle('bot', sh.turnSide === 1);
   }
 
   // ---------- таймер хода (D-021) ----------
@@ -596,11 +621,11 @@
   function onTimeout() {
     var s = app.s;
     drag = null; app.aim = null; app.turnLeft = 0;
-    var f = s.active !== null ? s.frogs[s.active] : s.frogs[app.selected];
+    var f = s.frogs[app.selected];
     if (!f || !Sim.canAct(s, f)) f = s.frogs.filter(function (x) { return Sim.canAct(s, x); })[0];
     if (!f) return;
     log('timeout', { frog: f.kind });
-    var mode = s.active !== null ? 'end' : 'rest';
+    var mode = s.pullsUsed > 0 ? 'end' : 'rest';
     banner('TIME!', 'b', 600, mode === 'end' ? null : (f.inWater ? null : 'Auto rest'));
     execute({ frog: f.id, mode: mode });
   }
@@ -626,7 +651,7 @@
       if (app.busy || !app.s || app.s.turnSide !== 0) return;
       var f = app.s.frogs[app.selected]; if (!f) return;
       var mode = b.dataset.mode;
-      if (mode === 'rest') { execute({ frog: f.id, mode: app.s.active !== null ? 'end' : 'rest' }); return; }
+      if (mode === 'rest') { execute({ frog: f.id, mode: app.s.pullsUsed > 0 ? 'end' : 'rest' }); return; }
       if (mode === 'move') app.mode = 'move';
       if (mode === 'ability' && Sim.abilityAvailable(app.s, f)) app.mode = app.mode === 'ability' ? 'move' : 'ability';
       log('mode', app.mode);
@@ -681,7 +706,7 @@
     var bm = $('act-move'), ba = $('act-ability'), br = $('act-rest');
     if (!f || f.side !== 0) f = s.frogs.filter(function (x) { return x.side === 0 && x.alive; })[0];
     if (!f) return;
-    var d = FB.FROGS[f.kind], started = s.active !== null;
+    var d = FB.FROGS[f.kind], started = s.pullsUsed > 0;
     var water = f.inWater;
     bm.querySelector('.ico').innerHTML = water ? ICON.dash : ICON.jump;
     bm.querySelector('.lbl').textContent = water ? 'DASH' : 'JUMP';
@@ -703,11 +728,13 @@
     var hint = '';
     if (s.phase === 'play' && s.turnSide === 1) hint = NAMES[1] + ' is thinking…';
     else if (myTurn) {
-      var where = water ? 'in water' : 'on a lily pad';
-      if (started && qteActive()) hint = 'Pull ' + (s.pullsUsed + 1) + ': release when the rings meet for +' + Math.round((T.qteBonus[Math.min(s.qteHits + 1, T.qteBonus.length - 1)] - T.qteBonus[s.qteHits]) * 100) + '%';
+      var where = f.on >= 0 ? 'on ' + FB.FROGS[s.frogs[f.on].kind].name + '\'s back' : (water ? 'in water' : 'on a lily pad');
+      var lb = Sim.launchBonus(s, f);
+      if (started && qteActive()) hint = ultNext() ? 'Perfect jump now = ULTIMATE LANDING! Release when the rings meet.' : 'Jump and release when the rings meet: 2 perfect jumps = ultimate.';
       else if (app.mode === 'ability') hint = d.abilityName + ': ' + d.abilityDesc;
-      else hint = d.name + ' ' + where + ' — drag back to ' + (water ? 'dash' : 'jump') + '. 3 pulls in a row, or REST. Tap the other frog to switch.';
-      if (started && !qteActive()) hint = 'Pull ' + (s.pullsUsed + 1) + ' — or END the turn';
+      else if (started) hint = 'Pull ' + (s.pullsUsed + 1) + ' with any frog — or END the turn.';
+      else hint = d.name + ' ' + where + ' — drag back to ' + (water ? 'dash' : 'jump') + '. 3 pulls, any frogs. Or REST.';
+      if (lb && !(started && qteActive())) hint = lb.name + ': ' + lb.desc + ' ' + hint;
       var pad = !water && f.pad >= 0 ? s.pads[f.pad] : null;
       if (pad && pad.sinkLeft !== null && pad.sinkLeft <= 2) hint = '⚠ This lily pad is about to sink! ' + hint;
     }

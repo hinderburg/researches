@@ -43,24 +43,90 @@
     }
   });
 
-  test('jump onto enemy: damage = Damage, knockback, attacker stays before target', function () {
+  test('jump onto enemy: lands right on its spot, enemy takes damage and is knocked away', function () {
     var s = sandbox();
     put(s, 2, 100, 420);
     var e = s.frogs[2], hp = e.hp, f = s.frogs[0];
     ok(Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -180 }).ok);
     eq(hp - e.hp, Math.round(f.dmg * T.waterVulnerability), 'water vulnerability damage');
-    ok(e.y < 420 - 30, 'knocked back up'); ok(f.y > e.y, 'attacker before target');
+    ok(Math.abs(f.x - 100) < 1e-6 && Math.abs(f.y - 420) < 1e-6, 'attacker landed exactly where aimed');
+    ok(Sim.dist(e.x, e.y, f.x, f.y) >= f.r + e.r, 'enemy pushed clear'); ok(e.y < 420, 'pushed away along the jump');
   });
 
-  test('3 pulls per turn with the same frog, then the turn passes', function () {
+  test('3 pulls per turn shared between both frogs, then the turn passes', function () {
     var s = sandbox();
     var r1 = Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -150 });
     ok(r1.continues, 'continues'); ok(s.frogs[0].inWater, 'in water after jump');
-    ok(!Sim.apply(s, { frog: 1, mode: 'move', dx: 0, dy: -50 }).ok, 'cannot switch frog mid-turn');
     ok(!Sim.apply(s, { frog: 0, mode: 'rest' }).ok, 'no REST after a pull');
-    ok(Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -40 }).continues, 'dash in water: 2nd pull');
+    ok(Sim.apply(s, { frog: 1, mode: 'move', dx: 0, dy: -50 }).continues, 'other frog takes the 2nd pull');
     var r3 = Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -40 });
     ok(r3.ok && !r3.continues, '3rd pull ends'); eq(s.turnSide, 1);
+  });
+
+  test('ring counts only on jump pulls from the 2nd on; two perfect jumps = ultimate landing', function () {
+    var s = sandbox(['spur', 'jumper'], ['poison', 'tongue']), f = s.frogs[0], e = s.frogs[2];
+    put(s, 0, 100, 450); // в воде: первая оттяжка — рывок на кувшинку
+    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: 100, qte: true });
+    eq(s.qteHits, 0, 'no ring on the 1st pull / dash'); ok(!f.inWater, 'climbed');
+    put(s, 0, 100, 600); put(s, 2, 100, 480); e.bleed = 0; var h1 = e.hp;
+    var r2 = Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -120, qte: true });
+    eq(s.qteHits, 1); ok(r2.events.some(function (x) { return x.t === 'perfect' && x.hits === 1 && !x.ult; }), 'perfect 1/2');
+    eq(h1 - e.hp, Math.round(f.dmg * T.waterVulnerability), 'perfect 1 does not change damage');
+    put(s, 0, 100, 600); put(s, 2, 100, 480); put(s, 3, 150, 470); e.hp = e.maxHp; var h3 = s.frogs[3].hp;
+    var r3 = Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -120, qte: true });
+    ok(r3.events.some(function (x) { return x.t === 'ult'; }), 'ultimate landing');
+    ok(e.maxHp - e.hp >= Math.round(f.dmg * T.waterVulnerability * T.ultDirectMul), 'direct hit x' + T.ultDirectMul);
+    ok(s.frogs[3].hp < h3, 'shockwave hits the other enemy too');
+  });
+
+  test('a dash never counts for the ring', function () {
+    var s = sandbox();
+    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -150 }); // в воду
+    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -40, qte: true });
+    eq(s.qteHits, 0);
+  });
+
+  test('jump onto own frog floating in water: ride on its back, top frog acts, bottom is locked', function () {
+    var s = sandbox(); put(s, 1, 200, 450); ok(s.frogs[1].inWater);
+    Sim.apply(s, { frog: 0, mode: 'move', dx: 100, dy: -150 });
+    var f = s.frogs[0];
+    eq(f.on, 1, 'riding'); ok(!f.inWater, 'out of water'); ok(!Sim.canAct(s, s.frogs[1]), 'bottom frog locked'); ok(Sim.canAct(s, f), 'top acts');
+    eq(Sim.aimKind(s, f, 'move'), 'arc', 'jumps from the back, not a dash');
+    eq(Math.round(Sim.rangeFor(s, f, 'move')), Math.round(f.range * 1.35), 'Springboard (Bulwark below): +35% range');
+    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -100 });
+    eq(f.on, -1, 'jumped off'); ok(Sim.canAct(s, s.frogs[1]), 'bottom free again');
+  });
+
+  test('dash into own frog in water: climb on its back', function () {
+    var s = sandbox(); put(s, 0, 200, 420); put(s, 1, 200, 470);
+    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: 80 });
+    eq(s.frogs[0].on, 1); ok(!s.frogs[0].inWater);
+  });
+
+  test('Relay: a jump off Jumper\'s back does not use up a pull', function () {
+    var s = sandbox(); put(s, 0, 200, 450);           // Jumper в воде
+    Sim.apply(s, { frog: 1, mode: 'move', dx: -100, dy: -150 }); // Bulwark садится на спину Jumper
+    eq(s.frogs[1].on, 0);
+    var left = s.pullsLeft;
+    Sim.apply(s, { frog: 1, mode: 'move', dx: 0, dy: -120 });
+    eq(s.pullsLeft, left, 'pull kept');
+  });
+
+  test('knocking the bottom frog throws the rider off', function () {
+    var s = sandbox(); put(s, 1, 200, 450);
+    Sim.apply(s, { frog: 0, mode: 'move', dx: 100, dy: -150 }); Sim.apply(s, { frog: 0, mode: 'end' });
+    eq(s.frogs[0].on, 1);
+    addPad(s, 200, 300, 40); put(s, 2, 200, 300); // враг прыгает прямо на стопку: бьёт верхнюю
+    Sim.apply(s, { frog: 2, mode: 'move', dx: 0, dy: 150 });
+    eq(s.frogs[0].on, -1, 'rider knocked off'); ok(s.frogs[0].hp < s.frogs[0].maxHp, 'top frog took the hit');
+  });
+
+  test('preview shows the hit before release', function () {
+    var s = sandbox(); put(s, 2, 100, 430);
+    var p = Sim.preview(s, { frog: 0, mode: 'move', dx: 0, dy: -170 });
+    ok(p.events.some(function (x) { return x.t === 'hit' && x.id === 2; }), 'hit predicted');
+    var q = Sim.preview(s, { frog: 0, mode: 'move', dx: 60, dy: -170 });
+    ok(!q.events.some(function (x) { return x.t === 'hit'; }), 'miss predicted');
   });
 
   test('END finishes the turn early; Arcane Leap gives 4 pulls', function () {
@@ -79,20 +145,6 @@
     eq(hp - s.frogs[2].hp, Math.round(f.dmg * T.jumperLongLeapMul));
   });
 
-  test('ring (QTE): ignored on the 1st pull, +5% on the first hit, +12% after the second', function () {
-    var s = sandbox(['spur', 'jumper'], ['poison', 'tongue']), f = s.frogs[0], e = s.frogs[2];
-    function hitFrom(qte) { // враг в воде прямо над жабой
-      put(s, 0, 100, 600); put(s, 2, 100, 480); e.hp = e.maxHp; e.bleed = 0;
-      Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -120, qte: qte });
-      return e.maxHp - e.hp;
-    }
-    eq(hitFrom(true), Math.round(f.dmg * T.waterVulnerability), 'no bonus on 1st pull'); eq(s.qteHits, 0);
-    eq(hitFrom(true), Math.round(f.dmg * T.waterVulnerability * 1.05), '+5%'); eq(s.qteHits, 1);
-    // 3-я оттяжка заканчивает ход: в начале хода врага тикает Bleed от удара Spur
-    eq(hitFrom(true), Math.round(f.dmg * T.waterVulnerability * 1.12) + T.bleedDamage, '+12% (+bleed tick)');
-    eq(f.turnMul, 1, 'bonus resets with the turn'); eq(s.qteHits, 0);
-  });
-
   test('dash costs Stamina; at 0 Stamina it costs HP and can climb a pad', function () {
     var s = sandbox();
     put(s, 0, 100, 450); var f = s.frogs[0]; ok(f.inWater);
@@ -107,7 +159,7 @@
     var s = sandbox(), p = s.pads[0];
     Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: 20 });   // приземлилась на ту же кувшинку — та тронута
     ok(p.sinkLeft !== null, 'ticking'); var total = p.sinkLeft;
-    Sim.apply(s, { frog: 0, mode: 'move', dx: 200, dy: 0 });  // ушла на соседнюю
+    Sim.apply(s, { frog: 0, mode: 'move', dx: 150, dy: 0 });  // ушла на соседнюю (не на спину союзнику)
     Sim.apply(s, { frog: 0, mode: 'end' });
     var n = 1; while (p.state === 'stable' && n < 20) { turn(s, { frog: s.turnSide === 0 ? 0 : 3, mode: 'rest' }); n++; }
     eq(n, total, 'sank after its countdown'); eq(p.state, 'submerged');
