@@ -157,3 +157,12 @@ button { font-family: inherit; cursor: pointer; }
   .sign-a { font-size: 24px; } .sign-b { font-size: 30px; }
   .act { width: 74px; height: 76px; }
 }
+
+/* ---------- таймер хода (D-021) ---------- */
+.timer { display: flex; align-items: center; gap: 8px; width: min(260px, 70%); margin: 0 auto 4px; }
+.timer span { font-family: var(--font-h); font-size: 20px; min-width: 26px; text-align: center; color: #eaf6ff; text-shadow: 0 2px 0 var(--ink); }
+.timer b { flex: 1; height: 9px; border-radius: 5px; background: rgba(10,25,35,0.75); border: 1.5px solid rgba(255,255,255,0.35); overflow: hidden; }
+.timer b i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #3fc6ff, #8be3ff); }
+.timer.low span { color: #ff6b6b; animation: tpulse 0.5s ease-in-out infinite alternate; }
+.timer.low b i { background: linear-gradient(90deg, #ff4f5e, #ff9a6b); }
+@keyframes tpulse { from { transform: scale(1); } to { transform: scale(1.25); } }

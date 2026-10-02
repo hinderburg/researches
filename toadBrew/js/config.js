@@ -3,14 +3,14 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '0.1.0';
+FB.VERSION = '0.2.0';
 
 FB.T = {
   // Поле (мировые единицы, портрет 9:16, D-004)
   W: 400, H: 720, margin: 18,
 
   // Матч (§12, D-003)
-  roundsToWin: 2,
+  roundsToWin: 1,              // один раунд (автор, 02.10; было Bo3 — D-018)
   maxRounds: 5,
   turnCapPerSide: 20,          // после — победа раунда по доле HP (D-011)
   padJitter: 12,               // разброс раскладки кувшинок между раундами (§12), раунд 1 — без разброса
@@ -18,6 +18,8 @@ FB.T = {
   // Stamina (§5, D-008)
   staminaRegenOnPad: 1,        // в начале своего хода, если жаба на кувшинке
   restBonusStamina: 1,         // REST на кувшинке даёт ещё +1
+  restHealFrac: 0.10,          // и лечит долю макс. HP (автор, 02.10 — D-019)
+  turnTimeSec: 15,             // таймер хода игрока; истёк — REST (D-021)
   dashStaminaCost: 1,
   dashHpCostNoStamina: 12,     // рывок при Stamina = 0 стоит HP (§5)
   abilityStaminaCost: 2,
@@ -30,12 +32,13 @@ FB.T = {
   minPull: 0.12,               // оттяжка короче — отмена
 
   // Кувшинки (§2.4, §6, D-007)
-  padCapBig: 10,               // износ до затопления (r >= padBigR)
-  padCapSmall: 6,
+  padCapBig: 8,                // износ до затопления (r >= padBigR)
+  padCapSmall: 5,
   padBigR: 36,
   padDecayEmpty: 0.5,          // пустая кувшинка восстанавливается за ход
-  padSubmergedTurns: 6,        // ходов под водой (ход = ход одной стороны)
+  padSubmergedTurns: 4,        // ходов под водой (ход = ход одной стороны)
   padRecoveringTurns: 2,       // последние ходы из них — «всплывает» (ещё нельзя встать)
+  padLives: [[40, 3], [32, 2], [0, 1]], // сколько раз всплывёт: r >= 40 — 3, r >= 32 — 2, мельче — 1 (D-020)
 
   // Статусы (§8)
   poisonDamage: 8, poisonTurns: 3,

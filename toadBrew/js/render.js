@@ -235,7 +235,7 @@
       c.fillStyle = '#7b4a25'; ell(c, x + 6, y - hgt * 0.95, 3.2, 9); c.fill();
     }
     function lotus(x, y, rr) {
-      c.fillStyle = '#ff9ec4';
+      c.fillStyle = '#f3efe4';
       for (var k = 0; k < 7; k++) { var a = k / 7 * Math.PI * 2; ell(c, x + Math.cos(a) * rr * 0.55, y + Math.sin(a) * rr * 0.55, rr * 0.5, rr * 0.25, a); c.fill(); }
       c.fillStyle = '#ffd34a'; ell(c, x, y, rr * 0.3, rr * 0.3); c.fill();
     }
@@ -260,16 +260,31 @@
     var w = Math.min(1, vis.wear);
     var bob = vis.bob > 0 ? Math.sin(vis.bob * 18) * vis.bob * 0.08 : 0;
     var shrink = 1 - 0.1 * w - 0.12 * sub + bob;
+    var lives = p.lives || 0, last = lives <= 0; // последняя жизнь: следующее затопление — навсегда (D-020)
     function shape(rad) {
       c.beginPath();
       c.moveTo(P.x, P.y);
       c.arc(P.x, P.y, rad, notch + 0.28, notch - 0.28 + Math.PI * 2);
       c.closePath();
     }
-    if (sub > 0.98) { // тёмный контур под водой (§2.4)
+    if (sub > 0.98) {
+      if (p.state === 'gone') { // утонула навсегда: обрывки листа расходятся и тают
+        var gk = Math.min(1, vis.gone || 0);
+        if (gk >= 1) return;
+        c.save(); c.globalAlpha = (1 - gk) * 0.55;
+        for (var q = 0; q < 5; q++) {
+          var qa = notch + q * 1.25, qd = r * (0.3 + 0.5 * gk);
+          c.fillStyle = 'rgba(60,90,40,0.9)';
+          ell(c, P.x + Math.cos(qa) * qd, P.y + Math.sin(qa) * qd, r * 0.22, r * 0.12, qa); c.fill();
+        }
+        c.restore();
+        return;
+      }
+      // тёмный контур под водой (§2.4); цветки всплытий видны сквозь воду
       var pulse = vis.recovering ? 0.12 + 0.1 * Math.sin(t * 5) : 0;
       shape(r * 0.88); c.fillStyle = 'rgba(8,45,60,' + (0.32 + pulse) + ')'; c.fill();
       if (vis.recovering) { c.strokeStyle = 'rgba(150,230,170,' + (0.35 + pulse) + ')'; c.lineWidth = 2; c.setLineDash([5, 5]); c.stroke(); c.setLineDash([]); }
+      flowers(c, P, r * 0.88, notch, lives, 0.45, t, true);
       return;
     }
     // тень
@@ -277,17 +292,31 @@
     shape(r * shrink * 1.02); c.fillStyle = 'rgba(5,40,50,0.35)'; c.save(); c.translate(3 * s, 4 * s); c.fill(); c.restore();
     var rr = r * shrink;
     var g = c.createRadialGradient(P.x - rr * 0.3, P.y - rr * 0.3, rr * 0.1, P.x, P.y, rr);
-    // износ: зелень темнеет и желтеет
+    // износ: зелень темнеет и желтеет; последняя жизнь — лист пожухлый
     var base = mix([125, 196, 72], [110, 130, 60], w), edge = mix([70, 140, 45], [60, 85, 40], w);
+    if (last) { base = mix(base, [168, 160, 78], 0.45); edge = mix(edge, [130, 95, 45], 0.6); }
     g.addColorStop(0, rgb(mix(base, [190, 230, 120], 0.35))); g.addColorStop(0.75, rgb(base)); g.addColorStop(1, rgb(edge));
     shape(rr); c.fillStyle = g; c.fill();
-    c.strokeStyle = 'rgba(40,90,30,0.9)'; c.lineWidth = Math.max(1.5, 2.2 * s); c.stroke();
+    c.strokeStyle = last ? 'rgba(95,70,30,0.9)' : 'rgba(40,90,30,0.9)'; c.lineWidth = Math.max(1.5, 2.2 * s); c.stroke();
     // прожилки
     c.strokeStyle = 'rgba(60,120,40,0.55)'; c.lineWidth = Math.max(1, 1.3 * s);
     for (var k = 1; k < 8; k++) {
       var a = notch + 0.28 + k / 8 * (Math.PI * 2 - 0.56);
       c.beginPath(); c.moveTo(P.x, P.y); c.lineTo(P.x + Math.cos(a) * rr * 0.85, P.y + Math.sin(a) * rr * 0.85); c.stroke();
     }
+    if (last) { // трещины и бурые пятна
+      c.strokeStyle = 'rgba(90,60,25,0.8)'; c.lineWidth = Math.max(1, 1.4 * s);
+      for (var cr = 0; cr < 3; cr++) {
+        var ca = notch + 1.2 + cr * 1.7, x0 = P.x + Math.cos(ca) * rr * 0.95, y0 = P.y + Math.sin(ca) * rr * 0.95;
+        c.beginPath(); c.moveTo(x0, y0);
+        c.lineTo(P.x + Math.cos(ca + 0.15) * rr * 0.7, P.y + Math.sin(ca + 0.15) * rr * 0.7);
+        c.lineTo(P.x + Math.cos(ca - 0.05) * rr * 0.5, P.y + Math.sin(ca - 0.05) * rr * 0.5); c.stroke();
+      }
+      c.fillStyle = 'rgba(140,100,45,0.45)';
+      ell(c, P.x + Math.cos(notch + 2.4) * rr * 0.45, P.y + Math.sin(notch + 2.4) * rr * 0.45, rr * 0.18, rr * 0.12, notch); c.fill();
+      ell(c, P.x + Math.cos(notch + 4.1) * rr * 0.6, P.y + Math.sin(notch + 4.1) * rr * 0.6, rr * 0.12, rr * 0.08, notch); c.fill();
+    }
+    flowers(c, P, rr, notch, lives, 1, t, false);
     // вода заливает край при проседании
     if (w > 0.45 || sub > 0) {
       var k2 = Math.min(1, (w - 0.45) / 0.55 + sub);
@@ -297,6 +326,25 @@
     }
     c.restore();
   };
+
+  // Цветки лотоса на листе: сколько цветков — столько раз кувшинка ещё всплывёт (D-020)
+  function flowers(c, P, rr, notch, n, alpha, t, under) {
+    if (n <= 0) return;
+    var fr = Math.max(4, rr * 0.19), base = notch + Math.PI;
+    c.save(); c.globalAlpha *= alpha;
+    for (var i = 0; i < n; i++) {
+      var d = rr - fr * 1.25, a = base + (i - (n - 1) / 2) * (fr * 2.3 / d);
+      var x = P.x + Math.cos(a) * d, y = P.y + Math.sin(a) * d + (under ? Math.sin(t * 2 + i) * 1.5 : 0);
+      for (var k = 0; k < 6; k++) {
+        var pa = k / 6 * Math.PI * 2 + i;
+        c.fillStyle = k % 2 ? '#ffb8d4' : '#ff8fbf';
+        ell(c, x + Math.cos(pa) * fr * 0.5, y + Math.sin(pa) * fr * 0.5, fr * 0.55, fr * 0.3, pa); c.fill();
+      }
+      c.strokeStyle = 'rgba(150,40,90,0.6)'; c.lineWidth = 1; ell(c, x, y, fr * 0.95, fr * 0.95); c.stroke();
+      c.fillStyle = '#ffd94a'; ell(c, x, y, fr * 0.3, fr * 0.3); c.fill();
+    }
+    c.restore();
+  }
   function mix(a, b, k) { return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k]; }
   function rgb(a) { return 'rgb(' + (a[0] | 0) + ',' + (a[1] | 0) + ',' + (a[2] | 0) + ')'; }
 

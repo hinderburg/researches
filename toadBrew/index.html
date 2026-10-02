@@ -36,10 +36,11 @@
   <div id="hud" class="hidden">
     <div class="top">
       <div class="side side-p" id="side-0"></div>
-      <div class="round"><div class="round-l">ROUND</div><div class="round-n" id="round-n">1/3</div><div class="score" id="score"></div></div>
+      <div class="round"><div class="round-l" id="round-l">ROUND</div><div class="round-n" id="round-n">1/3</div><div class="score" id="score"></div></div>
       <div class="side side-b" id="side-1"></div>
     </div>
     <div class="bottom">
+      <div class="timer hidden" id="timer"><span>15</span><b><i></i></b></div>
       <div class="hint" id="hint"></div>
       <div class="bar">
         <button id="btn-menu" class="gear" aria-label="Menu">⚙</button>
@@ -75,12 +76,12 @@
   <section id="help" class="modal hidden">
     <div class="panel help">
       <h2>How to play</h2>
-      <p><b>Goal.</b> Knock out both enemy frogs. Best of 3 rounds.</p>
-      <p><b>Turns.</b> You and BogWitch take turns. On your turn pick one of your frogs and do one action.</p>
+      <p><b>Goal.</b> Knock out both enemy frogs in one round. After 20 turns each, the side with more HP left wins.</p>
+      <p><b>Turns.</b> You and BogWitch take turns. On your turn pick one of your frogs and do one action. You have <b>15 seconds</b> — when time runs out your frog rests.</p>
       <p><b>Jump.</b> Drag back from your frog like a slingshot and release. The dotted arc shows exactly where it lands. Land on an enemy to hit it and knock it back.</p>
       <p><b>Water.</b> Missed the lily pad? In water you <b>Dash</b> instead (costs 1 Stamina, or HP when Stamina is empty) and take +20% damage. Dash onto a pad to climb out.</p>
-      <p><b>Lily pads sink</b> while frogs sit on them (heavy Bulwark sinks them twice as fast), stay under water for a while and float up again. Don't camp.</p>
-      <p><b>Stamina</b> refills by 1 at the start of your turn while on a pad. <b>Abilities</b> cost 2. <b>Rest</b> on a pad gives +1 more.</p>
+      <p><b>Lily pads sink</b> while frogs sit on them (heavy Bulwark sinks them twice as fast), stay under water for a while and float up again — but not forever. <b>Lotus flowers</b> on a pad show how many times it can still float up. A withered, cracked pad without flowers will sink for good.</p>
+      <p><b>Stamina</b> refills by 1 at the start of your turn while on a pad. <b>Abilities</b> cost 2. <b>Rest</b> on a pad gives +1 more and <b>heals 10% HP</b>.</p>
       <p><b>Team bonus.</b> Some pairs have a synergy — check the panel on the team screen.</p>
       <button id="h-close" class="btn-green">Got it</button>
     </div>

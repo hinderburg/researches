@@ -127,7 +127,8 @@
     app.fx = []; app.queue = []; app.cur = null; app.aim = null;
     app.selected = -1; app.mode = 'move';
     updateHud();
-    banner('ROUND ' + app.s.round, 'gold', 1100, app.s.round === 1 ? 'vs ' + NAMES[1] : null);
+    if (T.roundsToWin === 1) banner(app.s.round === 1 ? 'FIGHT!' : 'REMATCH!', 'gold', 1100, 'vs ' + NAMES[1]);
+    else banner('ROUND ' + app.s.round, 'gold', 1100, app.s.round === 1 ? 'vs ' + NAMES[1] : null);
     log('round', { round: app.s.round, starter: app.s.turnSide });
     app.busy = true;
     setTimeout(function () { app.busy = false; nextTurn(); }, 1250 / app.speed);
@@ -153,6 +154,7 @@
     }
     if (!app.lastBannerSide || app.lastBannerSide !== 'p' || s.pendingHop === null) banner('YOUR TURN', 'p', 700);
     app.lastBannerSide = 'p';
+    app.turnLeft = T.turnTimeSec; // таймер хода (D-021); Double Hop получает свои 15 с
     updateHud();
   }
 
@@ -204,8 +206,9 @@
   function onRoundOver() {
     var s = app.s, w = s.roundWinner;
     app.busy = true;
-    var txt = w === 0 ? 'ROUND WON!' : (w === 1 ? 'ROUND LOST' : 'DRAW');
-    banner(txt, w === 0 ? 'gold' : 'b', 1500, s.score[0] + ' : ' + s.score[1]);
+    var single = T.roundsToWin === 1, why = s.roundWhy === 'time' ? 'TIME UP' : 'KNOCKOUT';
+    var txt = single ? (w === -1 ? 'DRAW' : why) : (w === 0 ? 'ROUND WON!' : (w === 1 ? 'ROUND LOST' : 'DRAW'));
+    banner(txt, w === 0 ? 'gold' : 'b', 1500, single ? (w === -1 ? 'One more round' : null) : s.score[0] + ' : ' + s.score[1]);
     log('roundEnd', { winner: w, score: s.score });
     setTimeout(function () {
       if (app.screen !== 'battle') return;
@@ -218,7 +221,7 @@
     var s = app.s, win = s.matchWinner === 0;
     $('result').classList.toggle('lose', !win);
     $('res-title').textContent = win ? 'VICTORY!' : 'DEFEAT';
-    $('res-score').textContent = s.score[0] + ' : ' + s.score[1];
+    $('res-score').textContent = T.roundsToWin === 1 ? (s.roundWhy === 'time' ? 'Time up: more HP left' : 'Knockout') : s.score[0] + ' : ' + s.score[1];
     $('res-sub').textContent = (win ? 'Your ' : NAMES[1] + "'s ") + 'frogs win the pond.  You: ' +
       s.teams[0].map(function (k) { return FB.FROGS[k].name; }).join(' + ') + '  vs  ' + s.teams[1].map(function (k) { return FB.FROGS[k].name; }).join(' + ');
     log('matchEnd', { winner: s.matchWinner, score: s.score });
@@ -328,15 +331,16 @@
       }
       case 'label': addFx({ k: 'num', x: D(e.id).x, y: D(e.id).y - 46, text: e.text, color: '#ffe27a', life: 1.1, big: true }); break;
       case 'padSink': {
-        app.shown.pads[e.pad].state = 'submerged'; app.shown.pads[e.pad].wear = app.shown.pads[e.pad].cap;
+        app.shown.pads[e.pad].state = e.gone ? 'gone' : 'submerged'; app.shown.pads[e.pad].wear = app.shown.pads[e.pad].cap;
         var p = app.shown.pads[e.pad];
         for (var q = 0; q < 3; q++) addFx({ k: 'ring', x: p.x, y: p.y, r0: p.r * 0.5, r1: p.r * (1.2 + q * 0.2), life: 0.6 + q * 0.15, color: '200,245,255' });
         dur = 0.3;
         break;
       }
-      case 'padRise': { var pr = app.shown.pads[e.pad]; pr.state = 'stable'; pr.wear = 0; addFx({ k: 'ring', x: pr.x, y: pr.y, r0: pr.r * 0.6, r1: pr.r * 1.3, life: 0.5, color: '170,240,140' }); dur = 0.15; break; }
+      case 'padRise': { var pr = app.shown.pads[e.pad]; pr.state = 'stable'; pr.wear = 0; pr.lives = app.s.pads[e.pad].lives; addFx({ k: 'ring', x: pr.x, y: pr.y, r0: pr.r * 0.6, r1: pr.r * 1.3, life: 0.5, color: '170,240,140' }); dur = 0.15; break; }
       case 'fall': { var dfl = D(e.id); dfl.inWater = true; SF(e.id).inWater = true; addFx({ k: 'num', x: dfl.x, y: dfl.y - 28, text: 'SPLASH!', color: '#9fdcff', life: 0.9 }); dur = 0.2; break; }
       case 'lift': { D(e.id).inWater = false; SF(e.id).inWater = false; break; }
+      case 'heal': { var hf = SF(e.id); hf.hp = Math.min(hf.maxHp, hf.hp + e.amount); addFx({ k: 'num', x: D(e.id).x, y: D(e.id).y - 22, text: '+' + e.amount, color: '#7dff8a', life: 1.0, big: true }); for (var hq = 0; hq < 6; hq++) addFx({ k: 'spark', x: D(e.id).x + (Math.random() - 0.5) * 20, y: D(e.id).y, vx: (Math.random() - 0.5) * 20, vy: -40 - Math.random() * 30, life: 0.7 }); dur = 0.3; updateHud(); break; }
       case 'rest': { addFx({ k: 'num', x: D(e.id).x, y: D(e.id).y - 30, text: app.s.frogs[e.id].inWater ? 'WAIT' : 'REST', color: '#cfe3ef', life: 0.9 }); dur = 0.35; break; }
       case 'pass': { banner('SKIP — TRAPPED', e.side === 0 ? 'p' : 'b', 700); dur = 0.6; break; }
       case 'hopReady': { addFx({ k: 'num', x: D(e.id).x, y: D(e.id).y - 46, text: 'HOP AGAIN!', color: '#9fe0ff', life: 1.0, big: true }); break; }
@@ -523,6 +527,29 @@
     drag.power = power;
   });
 
+  // ---------- таймер хода (D-021) ----------
+  function myTurnNow() { return app.screen === 'battle' && app.s && app.s.phase === 'play' && app.s.turnSide === 0 && !app.busy && !app.auto; }
+  function tickTimer(dt) {
+    var el = $('timer'), on = myTurnNow() && app.turnLeft > 0;
+    el.classList.toggle('hidden', !on);
+    if (!on) return;
+    app.turnLeft -= dt;
+    var sec = Math.max(0, Math.ceil(app.turnLeft));
+    if (sec !== app.timerShown) { app.timerShown = sec; el.querySelector('span').textContent = sec; el.classList.toggle('low', sec <= 5); }
+    el.querySelector('i').style.width = Math.max(0, 100 * app.turnLeft / T.turnTimeSec) + '%';
+    if (app.turnLeft <= 0) onTimeout();
+  }
+  function onTimeout() {
+    var s = app.s;
+    drag = null; app.aim = null; app.turnLeft = 0;
+    var f = s.pendingHop !== null ? s.frogs[s.pendingHop] : s.frogs[app.selected];
+    if (!f || !Sim.canAct(s, f)) f = s.frogs.filter(function (x) { return Sim.canAct(s, x); })[0];
+    if (!f) return;
+    log('timeout', { frog: f.kind });
+    banner('TIME!', 'b', 600, f.inWater ? null : 'Auto rest');
+    execute({ frog: f.id, mode: 'rest' });
+  }
+
   function endDrag(e, cancel) {
     if (!drag || drag.id !== e.pointerId) return;
     var aim = app.aim; drag = null; app.aim = null;
@@ -576,7 +603,11 @@
       el.innerHTML = chipsHtml(side); chipPortraits(el);
       el.classList.toggle('turn', sh.turnSide === side && s.phase === 'play');
     }
-    $('round-n').textContent = s.round + '/' + (T.roundsToWin * 2 - 1);
+    if (T.roundsToWin === 1) { // один раунд: в бейдже номер хода ходящей стороны
+      $('round-l').textContent = 'TURN';
+      $('round-n').textContent = Math.min(T.turnCapPerSide, s.turnCount[sh.turnSide] + 1) + '/' + T.turnCapPerSide;
+    } else $('round-n').textContent = s.round + '/' + (T.roundsToWin * 2 - 1);
+    $('score').classList.toggle('hidden', T.roundsToWin === 1);
     var sc = '';
     for (var i = 0; i < T.roundsToWin; i++) sc += '<i class="' + (i < s.score[0] ? 'p' : '') + '"></i>';
     sc += '<span style="width:4px"></span>';
@@ -602,7 +633,7 @@
     ba.classList.toggle('on', app.mode === 'ability');
     br.querySelector('.ico').innerHTML = ICON.rest;
     br.querySelector('.lbl').textContent = hop ? 'SKIP' : (water ? 'WAIT' : 'REST');
-    br.querySelector('.cost').textContent = !hop && !water && f.st < f.maxSt ? '+💧' + T.restBonusStamina : '';
+    br.querySelector('.cost').textContent = !hop && !water ? (f.hp < f.maxHp ? '+❤' + Math.min(f.maxHp - f.hp, Math.round(f.maxHp * T.restHealFrac)) : (f.st < f.maxSt ? '+💧' + T.restBonusStamina : '')) : '';
     bm.disabled = br.disabled = !myTurn;
 
     var hint = '';
@@ -674,6 +705,7 @@
         if (d.squash > 0) d.squash = Math.max(0, d.squash - dt * 1.6);
       }
       app.shake = Math.max(0, app.shake - dt * 40);
+      tickTimer(dt);
       // визуал кувшинок тянется к показанному состоянию
       if (app.shown) app.shown.pads.forEach(function (p) {
         var v = app.padVis[p.id]; if (!v) return;
@@ -682,6 +714,7 @@
         v.sub += (ts - v.sub) * Math.min(1, dt * (ts > v.sub ? 3 : 5));
         v.recovering = p.state !== 'stable' && p.subTimer <= T.padRecoveringTurns;
         v.bob = Math.max(0, v.bob - dt * 1.5);
+        v.gone = (v.gone || 0) + ((p.state === 'gone' ? 1 : 0) - (v.gone || 0)) * Math.min(1, dt * 0.8);
       });
     }
   }

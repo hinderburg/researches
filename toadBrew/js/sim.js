@@ -38,6 +38,8 @@
   function buildPads(s) {
     var half = FB.PADS_HALF, pads = [], j = s.round > 1 ? T.padJitter : 0;
     function cap(r) { return r >= T.padBigR ? T.padCapBig : T.padCapSmall; }
+    // Сколько раз кувшинка ещё всплывёт (D-020): чем больше, тем больше раз
+    function livesFor(r) { for (var i = 0; i < T.padLives.length; i++) if (r >= T.padLives[i][0]) return T.padLives[i][1]; return 1; }
     for (var i = 0; i < half.length; i++) {
       var h = half[i];
       var jx = h.start !== undefined ? 0 : (rng(s) * 2 - 1) * j;
@@ -51,7 +53,7 @@
     pads.push({ x: c.x, y: c.y, r: c.r });
     for (var k = 0; k < pads.length; k++) {
       var p = pads[k];
-      p.id = k; p.cap = cap(p.r); p.wear = 0; p.state = 'stable'; p.subTimer = 0;
+      p.id = k; p.cap = cap(p.r); p.wear = 0; p.state = 'stable'; p.subTimer = 0; p.lives = livesFor(p.r);
     }
     return pads;
   }
@@ -385,8 +387,13 @@
     events.push({ t: 'act', id: f.id, mode: mode, side: f.side });
 
     if (mode === 'rest') {
-      if (s.pendingHop === null && !f.inWater) { f.st = Math.min(f.maxSt, f.st + T.restBonusStamina); }
       events.push({ t: 'rest', id: f.id });
+      // Отдых на кувшинке: +Stamina и часть HP (D-019)
+      if (s.pendingHop === null && !f.inWater) {
+        f.st = Math.min(f.maxSt, f.st + T.restBonusStamina);
+        var heal = Math.min(f.maxHp - f.hp, Math.round(f.maxHp * T.restHealFrac));
+        if (heal > 0) { f.hp += heal; events.push({ t: 'heal', id: f.id, amount: heal }); }
+      }
     } else if (mode === 'move') {
       if (f.inWater) doDash(s, f, dx, dy, events);
       else doJump(s, f, dx, dy, f.range, events);
@@ -429,18 +436,20 @@
         on.forEach(function (f) { load += f.weight; });
         if (load > 0) p.wear += load; else p.wear = Math.max(0, p.wear - T.padDecayEmpty);
         if (p.wear >= p.cap) {
-          p.state = 'submerged'; p.subTimer = T.padSubmergedTurns;
-          events.push({ t: 'padSink', pad: p.id });
+          // Всплытий ограниченное число (D-020): последнее затопление — навсегда
+          if (p.lives > 0) { p.state = 'submerged'; p.subTimer = T.padSubmergedTurns; }
+          else p.state = 'gone';
+          events.push({ t: 'padSink', pad: p.id, gone: p.state === 'gone' });
           on.forEach(function (f) {
             f.inWater = true; f.pad = -1;
             events.push({ t: 'fall', id: f.id });
             events.push({ t: 'splash', x: f.x, y: f.y, big: true });
           });
         }
-      } else {
+      } else if (p.state === 'submerged') {
         p.subTimer--;
         if (p.subTimer <= 0) {
-          p.state = 'stable'; p.wear = 0;
+          p.state = 'stable'; p.wear = 0; p.lives--;
           events.push({ t: 'padRise', pad: p.id });
           s.frogs.forEach(function (f) { // всплывающая кувшинка подбирает жабу из воды
             if (f.alive && f.inWater && dist(f.x, f.y, p.x, p.y) <= p.r) { f.inWater = false; f.pad = p.id; events.push({ t: 'lift', id: f.id, pad: p.id }); }
@@ -515,7 +524,7 @@
   }
 
   function finishRound(s, winner, events, why) {
-    s.roundWinner = winner;
+    s.roundWinner = winner; s.roundWhy = why;
     if (winner >= 0) s.score[winner]++;
     s.phase = 'roundOver';
     if (winner >= 0 && s.score[winner] >= T.roundsToWin) { s.phase = 'matchOver'; s.matchWinner = winner; }

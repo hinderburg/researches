@@ -15,10 +15,10 @@
     var s = Sim.createMatch(tA || ['jumper', 'bulwark'], tB || ['poison', 'tongue'], 7);
     Sim.startRound(s);
     s.pads = [
-      { id: 0, x: 100, y: 600, r: 60, cap: 99, wear: 0, state: 'stable', subTimer: 0 },
-      { id: 1, x: 300, y: 600, r: 60, cap: 99, wear: 0, state: 'stable', subTimer: 0 },
-      { id: 2, x: 100, y: 200, r: 60, cap: 99, wear: 0, state: 'stable', subTimer: 0 },
-      { id: 3, x: 300, y: 200, r: 60, cap: 99, wear: 0, state: 'stable', subTimer: 0 }
+      { id: 0, x: 100, y: 600, r: 60, cap: 99, wear: 0, state: 'stable', subTimer: 0, lives: 9 },
+      { id: 1, x: 300, y: 600, r: 60, cap: 99, wear: 0, state: 'stable', subTimer: 0, lives: 9 },
+      { id: 2, x: 100, y: 200, r: 60, cap: 99, wear: 0, state: 'stable', subTimer: 0, lives: 9 },
+      { id: 3, x: 300, y: 200, r: 60, cap: 99, wear: 0, state: 'stable', subTimer: 0, lives: 9 }
     ];
     put(s, 0, 100, 600); put(s, 1, 300, 600); put(s, 2, 100, 200); put(s, 3, 300, 200);
     return s;
@@ -64,7 +64,7 @@
     var s = sandbox();
     var f = s.frogs[0], d = Math.round(f.range * 0.9);
     put(s, 2, 100, 600 - d);
-    s.pads.push({ id: 4, x: 100, y: 600 - d, r: 40, cap: 99, wear: 0, state: 'stable', subTimer: 0 }); put(s, 2, 100, 600 - d);
+    s.pads.push({ id: 4, x: 100, y: 600 - d, r: 40, cap: 99, wear: 0, state: 'stable', subTimer: 0, lives: 9 }); put(s, 2, 100, 600 - d);
     var hp = s.frogs[2].hp;
     Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -d });
     eq(hp - s.frogs[2].hp, Math.round(f.dmg * T.jumperLongLeapMul));
@@ -168,18 +168,47 @@
     eq(p.state.frogs[2].hp, s.frogs[2].hp); eq(p.state.frogs[0].x, s.frogs[0].x); eq(p.state.frogs[2].y, s.frogs[2].y);
   });
 
-  test('round KO and match flow', function () {
+  test('single round: KO ends the match (roundsToWin = 1)', function () {
     var s = sandbox();
     s.frogs[2].alive = false; s.frogs[2].hp = 0; s.frogs[3].hp = 1; put(s, 3, 100, 430);
     Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -170 });
-    eq(s.phase, 'roundOver'); eq(s.score[0], 1);
-    Sim.startRound(s); eq(s.turnSide, 1, 'round 2 starts bot');
-    s.frogs[0].alive = false; s.frogs[1].hp = 1;
-    s.frogs[2].x = s.frogs[1].x; s.frogs[2].y = s.frogs[1].y - 150; s.frogs[2].inWater = false;
-    s.pads.push({ id: 99, x: s.frogs[2].x, y: s.frogs[2].y, r: 30, cap: 99, wear: 0, state: 'stable', subTimer: 0 });
-    s.pads[s.pads.length - 1].id = s.pads.length - 1;
-    Sim.apply(s, { frog: 2, mode: 'move', dx: 0, dy: 150 });
-    eq(s.score[1], 1);
+    eq(s.phase, 'matchOver'); eq(s.matchWinner, 0); eq(s.roundWhy, 'ko');
+  });
+
+  test('Bo3 still works via tuning (roundsToWin = 2)', function () {
+    var keep = T.roundsToWin; T.roundsToWin = 2;
+    try {
+      var s = sandbox();
+      s.frogs[2].alive = false; s.frogs[2].hp = 0; s.frogs[3].hp = 1; put(s, 3, 100, 430);
+      Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -170 });
+      eq(s.phase, 'roundOver'); eq(s.score[0], 1);
+      Sim.startRound(s); eq(s.turnSide, 1, 'round 2 starts bot');
+    } finally { T.roundsToWin = keep; }
+  });
+
+  test('REST on a pad heals part of HP (and +Stamina); in water — nothing', function () {
+    var s = sandbox(); var f = s.frogs[0];
+    f.hp = 50; f.st = 0;
+    Sim.apply(s, { frog: 0, mode: 'rest' });
+    eq(f.hp, 50 + Math.round(f.maxHp * T.restHealFrac)); ok(f.st >= 1, 'stamina');
+    s.turnSide = 0; put(s, 0, 200, 420); var hp = f.hp;
+    Sim.apply(s, { frog: 0, mode: 'rest' });
+    eq(f.hp, hp, 'no heal in water');
+  });
+
+  test('pad lives: big pads float up more times than small; last sink is forever', function () {
+    var s = Sim.createMatch(['jumper', 'bulwark'], ['poison', 'tongue'], 1); Sim.startRound(s);
+    var big = s.pads.filter(function (p) { return p.r >= 40; })[0], small = s.pads.filter(function (p) { return p.r < 32; })[0];
+    ok(big.lives > small.lives, 'big ' + big.lives + ' > small ' + small.lives);
+    var t = sandbox(); var p = t.pads[0]; p.cap = 1; p.lives = 1;
+    t.turnSide = 0; Sim.apply(t, { frog: 0, mode: 'rest' });          // тонет 1-й раз
+    eq(p.state, 'submerged');
+    for (var i = 0; i < T.padSubmergedTurns; i++) { t.turnSide = 0; Sim.apply(t, { frog: 1, mode: 'rest' }); }
+    eq(p.state, 'stable'); eq(p.lives, 0, 'used its float-up');
+    put(t, 0, p.x, p.y); t.turnSide = 0; Sim.apply(t, { frog: 0, mode: 'rest' }); // тонет 2-й раз
+    eq(p.state, 'gone');
+    for (var j = 0; j < 20; j++) { t.turnSide = 0; Sim.apply(t, { frog: 1, mode: 'rest' }); }
+    eq(p.state, 'gone', 'never comes back'); ok(!Sim.padAt(t, p.x, p.y), 'not standable');
   });
 
   test('bot returns a legal command', function () {
