@@ -317,6 +317,19 @@
       ell(c, P.x + Math.cos(notch + 4.1) * rr * 0.6, P.y + Math.sin(notch + 4.1) * rr * 0.6, rr * 0.12, rr * 0.08, notch); c.fill();
     }
     flowers(c, P, rr, notch, lives, 1, t, false);
+    // Тонет (D-025): тронутая кувшинка — рябь по краю и пузырьки, пока не уйдёт под воду
+    if (p.sinkLeft !== null && p.sinkLeft !== undefined) {
+      for (var q = 0; q < 2; q++) {
+        var ph = (t * 0.9 + q * 0.5 + p.id * 0.13) % 1;
+        c.strokeStyle = 'rgba(200,245,255,' + (0.55 * (1 - ph)) + ')'; c.lineWidth = 2;
+        c.beginPath(); c.arc(P.x, P.y, rr * (1.02 + ph * 0.35), 0, Math.PI * 2); c.stroke();
+      }
+      for (var bq = 0; bq < 4; bq++) {
+        var bph = (t * 0.7 + bq * 0.25 + p.id * 0.31) % 1, ba = notch + bq * 1.6 + p.id;
+        c.strokeStyle = 'rgba(225,250,255,' + (0.8 * (1 - bph)) + ')'; c.lineWidth = 1.2;
+        c.beginPath(); c.arc(P.x + Math.cos(ba) * rr * 1.05, P.y + Math.sin(ba) * rr * 1.05 - bph * 8 * s, 1.5 + bph * 2.5 * s, 0, Math.PI * 2); c.stroke();
+      }
+    }
     // вода заливает край при проседании
     if (w > 0.45 || sub > 0) {
       var k2 = Math.min(1, (w - 0.45) / 0.55 + sub);
@@ -351,6 +364,7 @@
   // ---------- кадр ----------
   // scene: { state, disp (frogs: x,y,z,facing,wob, flash), padVis, fx, aim, selected, t }
   R.frame = function (scene) {
+    if (!cv.width || !cv.height) return; // вкладка ещё без размера (скрытая панель)
     if (!bg) buildBg();
     var s = scene.state, t = scene.t, sc = view.s;
     ctx.setTransform(1, 0, 0, 1, 0, 0);

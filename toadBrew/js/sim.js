@@ -37,7 +37,6 @@
 
   function buildPads(s) {
     var half = FB.PADS_HALF, pads = [], j = s.round > 1 ? T.padJitter : 0;
-    function cap(r) { return r >= T.padBigR ? T.padCapBig : T.padCapSmall; }
     // Сколько раз кувшинка ещё всплывёт (D-020): чем больше, тем больше раз
     function livesFor(r) { for (var i = 0; i < T.padLives.length; i++) if (r >= T.padLives[i][0]) return T.padLives[i][1]; return 1; }
     for (var i = 0; i < half.length; i++) {
@@ -53,7 +52,8 @@
     pads.push({ x: c.x, y: c.y, r: c.r });
     for (var k = 0; k < pads.length; k++) {
       var p = pads[k];
-      p.id = k; p.cap = cap(p.r); p.wear = 0; p.state = 'stable'; p.subTimer = 0; p.lives = livesFor(p.r);
+      // cap/wear — прогресс затопления для отрисовки: wear из cap ходов уже прошло (D-025)
+      p.id = k; p.cap = 1; p.wear = 0; p.sinkLeft = null; p.state = 'stable'; p.subTimer = 0; p.lives = livesFor(p.r);
     }
     return pads;
   }
@@ -66,7 +66,7 @@
       x: 0, y: 0, r: d.r, weight: d.weight,
       hp: hp, maxHp: hp, st: d.st, maxSt: d.st, dmg: d.dmg,
       range: Math.round(d.range * (b && b.rangeMul ? b.rangeMul : 1)), dash: d.dash, knock: d.knock,
-      alive: true, inWater: false, pad: -1,
+      alive: true, inWater: false, pad: -1, turnMul: 1,
       poison: 0, bleed: 0, bleedTurns: 0, shield: 0, shieldTurns: 0, trapped: 0
     };
   }
@@ -83,12 +83,13 @@
         for (var i = 0; i < s.pads.length; i++) if (s.pads[i].side === side && s.pads[i].start === slot) pad = s.pads[i];
         f.x = pad.x; f.y = pad.y; f.pad = pad.id;
         s.frogs.push(f);
+        touchPad(s, pad, f, null); // стартовая кувшинка тоже начинает тонуть — иначе на ней можно сидеть вечно
       }
     }
     s.clouds = [];
     s.turnSide = s.roundStarter;
     s.turnCount = [0, 0];
-    s.pendingHop = null;
+    resetTurn(s);
     s.phase = 'play';
     s.roundWinner = null;
     return [{ t: 'roundStart', round: s.round, side: s.turnSide }];
@@ -106,14 +107,29 @@
     return best;
   };
 
+  // Жаба попала на кувшинку — та начинает тонуть, и это не отменить, даже если жаба уйдёт (D-025)
+  function touchPad(s, p, f, events) {
+    if (p.state !== 'stable' || p.sinkLeft !== null) return;
+    var total = (p.r >= T.padBigR ? T.padSinkBig : T.padSinkSmall) - (f.weight > 1 ? 1 : 0);
+    p.sinkLeft = total; p.cap = total; p.wear = 0;
+    if (events) events.push({ t: 'padTouch', pad: p.id });
+  }
+
+  // Состояние хода: какая жаба ходит, сколько оттяжек осталось, попадания в кольцо (D-026, D-027)
+  function resetTurn(s) {
+    s.active = null; s.pullsLeft = 0; s.pullsUsed = 0; s.qteHits = 0; s.abilityUsed = false;
+  }
+  Sim.pullsFor = function (s, f) { var b = s.bonus[f.side]; return T.pullsPerTurn + (b && b.pulls ? b.pulls : 0); };
+
   // Поставить жабу в точку: кувшинка или вода (§4)
-  function place(s, f, x, y) {
+  function place(s, f, x, y, events) {
     var p = clampXY({ x: x, y: y });
     f.x = p.x; f.y = p.y;
     if (!f.alive) { f.inWater = true; f.pad = -1; return; }
     var pad = Sim.padAt(s, f.x, f.y);
     f.pad = pad ? pad.id : -1;
     f.inWater = !pad;
+    if (pad) touchPad(s, pad, f, events);
   }
 
   function enemiesOf(s, f) { return s.frogs.filter(function (e) { return e.alive && e.side !== f.side; }); }
@@ -121,7 +137,6 @@
   Sim.rangeFor = function (s, f, mode) {
     var d = FB.FROGS[f.kind];
     if (mode === 'move') return f.inWater ? f.dash : f.range;
-    if (mode === 'hop') return f.range * T.jumperHopRangeMul;
     if (mode === 'rest') return 0;
     switch (d.ability) {
       case 'hop': return f.range;
@@ -137,7 +152,6 @@
   // Какой прицел у режима: arc — прыжок/бросок по параболе, line — по прямой, radius — вокруг себя
   Sim.aimKind = function (s, f, mode) {
     if (mode === 'move') return f.inWater ? 'line' : 'arc';
-    if (mode === 'hop') return 'arc';
     var a = FB.FROGS[f.kind].ability;
     if (a === 'tongue') return 'line';
     if (a === 'spin') return 'radius';
@@ -147,10 +161,10 @@
   // Доступные действия выбранной жабы
   Sim.canAct = function (s, f) {
     return s.phase === 'play' && f.alive && f.side === s.turnSide && f.trapped <= 0 &&
-      (s.pendingHop === null || s.pendingHop === f.id);
+      (s.active === null || s.active === f.id);
   };
   Sim.abilityAvailable = function (s, f) {
-    if (s.pendingHop !== null) return false;
+    if (s.abilityUsed) return false;              // одна способность за ход (D-026)
     var a = FB.FROGS[f.kind].ability;
     if (f.st < T.abilityStaminaCost) return false;
     if ((a === 'hop' || a === 'slam') && f.inWater) return false; // прыжковые — только с кувшинки
@@ -176,6 +190,7 @@
     var b = s.bonus[a.side];
     var m = mul * (e.inWater ? T.waterVulnerability : 1);
     if (b && b.bleedDmgMul && e.bleed > 0) m *= b.bleedDmgMul;
+    m *= a.turnMul || 1;                          // бонус за попадание в кольцо (D-027)
     return Math.round(a.dmg * m);
   }
 
@@ -204,7 +219,7 @@
   function push(s, a, e, nx, ny, events, kind) {
     if (!e.alive) return;
     var from = { x: e.x, y: e.y }, wasWater = e.inWater;
-    place(s, e, nx, ny);
+    place(s, e, nx, ny, events);
     events.push({ t: kind || 'push', id: e.id, from: from, to: { x: e.x, y: e.y }, water: e.inWater });
     var b = s.bonus[a.side];
     if (!wasWater && e.inWater) {
@@ -260,7 +275,7 @@
       }
     }
     var wasWater = f.inWater;
-    place(s, f, lx, ly);
+    place(s, f, lx, ly, events);
     events.push({ t: 'jump', id: f.id, from: from, to: { x: f.x, y: f.y }, len: travelled, water: f.inWater, slam: !!opts.slam });
     if (f.inWater) events.push({ t: 'splash', x: f.x, y: f.y, big: false });
     else events.push({ t: 'padBob', pad: f.pad, w: f.weight });
@@ -296,7 +311,7 @@
       if (tc <= len && tc < ht) { ht = Math.max(0, tc); hit = e; }
     });
     var end = clampXY({ x: f.x + v.x * ht, y: f.y + v.y * ht });
-    place(s, f, end.x, end.y);
+    place(s, f, end.x, end.y, events);
     events.push({ t: 'dash', id: f.id, from: from, to: { x: f.x, y: f.y }, water: f.inWater });
     if (!f.inWater) events.push({ t: 'padBob', pad: f.pad, w: f.weight });
     if (hit) strike(s, f, hit, v, T.dashDamageMul, f.knock * T.dashKnockMul, events);
@@ -372,51 +387,70 @@
   }
 
   // ---------- ход ----------
-  // cmd: { frog: id, mode: 'move'|'ability'|'hop'|'rest', dx, dy } — (dx,dy) вектор цели в мировых единицах
+  // Ход (D-026): игрок выбирает жабу, и она делает до pullsFor() оттяжек подряд (прыжок/рывок/способность),
+  // либо весь ход отдыхает (REST). END — закончить ход раньше.
+  // cmd: { frog: id, mode: 'move'|'ability'|'rest'|'end', dx, dy, qte } — (dx,dy) вектор цели в мировых единицах,
+  // qte — попал ли игрок в сужающееся кольцо на 2-й и следующих оттяжках (D-027).
   Sim.apply = function (s, cmd, opts) {
     opts = opts || {};
     var events = [];
     var f = s.frogs[cmd.frog];
     if (!f || !Sim.canAct(s, f)) return { ok: false, events: events, why: 'cannot act' };
     var mode = cmd.mode;
-    if (s.pendingHop !== null && mode !== 'hop' && mode !== 'rest') return { ok: false, events: events, why: 'hop pending' };
-    if (mode === 'hop' && s.pendingHop !== f.id) return { ok: false, events: events, why: 'no hop' };
+    if (mode === 'rest' && s.active !== null) return { ok: false, events: events, why: 'rest only as a whole turn' };
+    if (mode === 'end' && s.active === null) return { ok: false, events: events, why: 'nothing to end' };
     if (mode === 'ability' && !Sim.abilityAvailable(s, f)) return { ok: false, events: events, why: 'no stamina' };
     var dx = cmd.dx || 0, dy = cmd.dy || 0;
     var a = FB.FROGS[f.kind].ability;
-    events.push({ t: 'act', id: f.id, mode: mode, side: f.side });
 
     if (mode === 'rest') {
+      events.push({ t: 'act', id: f.id, mode: mode, side: f.side });
       events.push({ t: 'rest', id: f.id });
-      // Отдых на кувшинке: +Stamina и часть HP (D-019)
-      if (s.pendingHop === null && !f.inWater) {
-        f.st = Math.min(f.maxSt, f.st + T.restBonusStamina);
+      // Отдых на кувшинке: вся Stamina и часть HP (D-019, D-028)
+      if (!f.inWater) {
+        if (f.st < f.maxSt) { f.st = f.maxSt; events.push({ t: 'status', id: f.id, s: 'refill' }); }
         var heal = Math.min(f.maxHp - f.hp, Math.round(f.maxHp * T.restHealFrac));
         if (heal > 0) { f.hp += heal; events.push({ t: 'heal', id: f.id, amount: heal }); }
       }
-    } else if (mode === 'move') {
+      if (!opts.noEnd) endTurn(s, events);
+      return { ok: true, events: events };
+    }
+    if (mode === 'end') {
+      events.push({ t: 'endTurn', id: f.id });
+      if (!opts.noEnd) endTurn(s, events);
+      return { ok: true, events: events };
+    }
+
+    // Оттяжка
+    if (s.active === null) { s.active = f.id; s.pullsLeft = Sim.pullsFor(s, f); }
+    events.push({ t: 'act', id: f.id, mode: mode, side: f.side, pull: s.pullsUsed + 1 });
+    if (cmd.qte && s.pullsUsed >= 1 && s.qteHits < T.qteBonus.length - 1) {
+      s.qteHits++;
+      events.push({ t: 'perfect', id: f.id, hits: s.qteHits, bonus: T.qteBonus[s.qteHits] });
+    }
+    f.turnMul = 1 + T.qteBonus[s.qteHits];
+    var freePull = false;
+    if (mode === 'move') {
       if (f.inWater) doDash(s, f, dx, dy, events);
       else doJump(s, f, dx, dy, f.range, events);
-    } else if (mode === 'hop') {
-      doJump(s, f, dx, dy, f.range * T.jumperHopRangeMul, events);
     } else if (mode === 'ability') {
       f.st -= T.abilityStaminaCost;
+      s.abilityUsed = true;
       events.push({ t: 'ability', id: f.id, ability: a });
-      if (a === 'hop') {
-        doJump(s, f, dx, dy, f.range, events);
-        if (f.alive && !f.inWater && s.phase === 'play') { s.pendingHop = f.id; events.push({ t: 'hopReady', id: f.id }); }
-      } else if (a === 'slam') doJump(s, f, dx, dy, f.range * T.slamRangeMul, events, { slam: true });
+      if (a === 'hop') { doJump(s, f, dx, dy, f.range, events); freePull = true; } // Free Hop: прыжок без траты оттяжки
+      else if (a === 'slam') doJump(s, f, dx, dy, f.range * T.slamRangeMul, events, { slam: true });
       else if (a === 'cloud') doCloud(s, f, dx, dy, events);
       else if (a === 'tongue') doTongue(s, f, dx, dy, events);
       else if (a === 'spin') doSpin(s, f, events);
       else if (a === 'bubble') doBubble(s, f, dx, dy, events);
     }
+    s.pullsUsed++;
+    if (!freePull) s.pullsLeft--;
+    events.push({ t: 'pulls', left: s.pullsLeft, used: s.pullsUsed });
 
     checkRoundEnd(s, events);
-    if (s.phase === 'play' && mode === 'ability' && a === 'hop' && s.pendingHop === f.id) {
-      return { ok: true, events: events, continues: true };
-    }
-    if (mode === 'hop' || mode === 'rest') s.pendingHop = null;
+    var more = s.phase === 'play' && f.alive && s.pullsLeft > 0;
+    if (more) return { ok: true, events: events, continues: true };
     if (!opts.noEnd && s.phase === 'play') endTurn(s, events);
     return { ok: true, events: events };
   };
@@ -425,20 +459,22 @@
     return s.frogs.filter(function (f) { return f.alive && !f.inWater && f.pad === pad.id; });
   }
 
-  // Конец хода: износ кувшинок (§6), облака, статусы, передача хода
+  // Конец хода: затопление кувшинок (§6, D-025), облака, статусы, передача хода
   function endTurn(s, events) {
     var side = s.turnSide;
-    s.pendingHop = null;
-    // Кувшинки
+    s.frogs.forEach(function (f) { if (f.side === side) f.turnMul = 1; });
+    resetTurn(s);
+    // Кувшинки: тронутая отсчитывает ходы до затопления, что бы ни происходило
     s.pads.forEach(function (p) {
       if (p.state === 'stable') {
-        var on = frogsOnPad(s, p), load = 0;
-        on.forEach(function (f) { load += f.weight; });
-        if (load > 0) p.wear += load; else p.wear = Math.max(0, p.wear - T.padDecayEmpty);
-        if (p.wear >= p.cap) {
+        if (p.sinkLeft === null) return;
+        p.sinkLeft--; p.wear = p.cap - p.sinkLeft;
+        if (p.sinkLeft <= 0) {
+          var on = frogsOnPad(s, p);
           // Всплытий ограниченное число (D-020): последнее затопление — навсегда
           if (p.lives > 0) { p.state = 'submerged'; p.subTimer = T.padSubmergedTurns; }
           else p.state = 'gone';
+          p.sinkLeft = null;
           events.push({ t: 'padSink', pad: p.id, gone: p.state === 'gone' });
           on.forEach(function (f) {
             f.inWater = true; f.pad = -1;
@@ -449,10 +485,10 @@
       } else if (p.state === 'submerged') {
         p.subTimer--;
         if (p.subTimer <= 0) {
-          p.state = 'stable'; p.wear = 0; p.lives--;
+          p.state = 'stable'; p.wear = 0; p.cap = 1; p.lives = Math.max(0, p.lives - 1);
           events.push({ t: 'padRise', pad: p.id });
-          s.frogs.forEach(function (f) { // всплывающая кувшинка подбирает жабу из воды
-            if (f.alive && f.inWater && dist(f.x, f.y, p.x, p.y) <= p.r) { f.inWater = false; f.pad = p.id; events.push({ t: 'lift', id: f.id, pad: p.id }); }
+          s.frogs.forEach(function (f) { // всплывающая кувшинка подбирает жабу из воды — и сразу начинает тонуть
+            if (f.alive && f.inWater && dist(f.x, f.y, p.x, p.y) <= p.r) { f.inWater = false; f.pad = p.id; events.push({ t: 'lift', id: f.id, pad: p.id }); touchPad(s, p, f, events); }
           });
         }
       }

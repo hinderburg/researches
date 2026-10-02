@@ -50,7 +50,7 @@
 
   function targetsFor(s, f, mode, quick) {
     var kind = Sim.aimKind(s, f, mode);
-    if (mode === 'rest' || kind === 'radius') return [{ dx: 0, dy: f.side === 0 ? -1 : 1 }];
+    if (kind === 'radius') return [{ dx: 0, dy: f.side === 0 ? -1 : 1 }];
     var range = Sim.rangeFor(s, f, mode), out = [];
     function add(x, y) {
       var dx = x - f.x, dy = y - f.y, l = Math.sqrt(dx * dx + dy * dy);
@@ -69,7 +69,7 @@
         add(e.x + d.x * 12, e.y + d.y * 12);
       }
     });
-    if (mode === 'move' || mode === 'hop' || ability === 'hop' || ability === 'slam') {
+    if (mode === 'move' || ability === 'hop' || ability === 'slam') {
       s.pads.forEach(function (p) { if (p.state === 'stable') add(p.x, p.y); });
     }
     if (quick) return out;
@@ -82,28 +82,9 @@
   }
 
   function modesFor(s, f) {
-    if (s.pendingHop !== null) return s.pendingHop === f.id ? ['hop', 'rest'] : [];
-    var m = ['move', 'rest'];
+    var m = ['move', s.active === null ? 'rest' : 'end'];
     if (Sim.abilityAvailable(s, f)) m.push('ability');
     return m;
-  }
-
-  // Ход целиком (Double Hop — с жадным вторым прыжком) → { score, state }
-  function playCmd(s, cmd, side) {
-    var c = Sim.clone(s);
-    var r = Sim.apply(c, cmd);
-    if (!r.ok) return null;
-    if (r.continues) {
-      var f = c.frogs[cmd.frog], hopT = targetsFor(c, f, 'hop', true);
-      var cr = Sim.clone(c); Sim.apply(cr, { frog: f.id, mode: 'rest' });
-      var best = { score: AI.evaluate(cr, side), state: cr };
-      for (var i = 0; i < hopT.length; i++) {
-        var c2 = Sim.clone(c), r2 = Sim.apply(c2, { frog: f.id, mode: 'hop', dx: hopT[i].dx, dy: hopT[i].dy });
-        if (r2.ok) { var v = AI.evaluate(c2, side); if (v > best.score) best = { score: v, state: c2 }; }
-      }
-      return best;
-    }
-    return { score: AI.evaluate(c, side), state: c };
   }
 
   function commands(s, quick) {
@@ -111,26 +92,40 @@
     s.frogs.forEach(function (f) {
       if (!Sim.canAct(s, f)) return;
       modesFor(s, f).forEach(function (mode) {
+        if (mode === 'rest' || mode === 'end') { out.push({ frog: f.id, mode: mode }); return; }
         targetsFor(s, f, mode, quick).forEach(function (t) { out.push({ frog: f.id, mode: mode, dx: t.dx, dy: t.dy }); });
       });
     });
     return out;
   }
 
-  // Лучший ответ соперника (полуход 2): худшая для нас оценка
-  function replyValue(st, side) {
-    if (st.phase !== 'play' || st.turnSide === side) return AI.evaluate(st, side);
-    var worst = AI.evaluate(st, side);
-    commands(st, true).forEach(function (cmd) {
-      var c = Sim.clone(st), r = Sim.apply(c, cmd);
-      if (!r.ok) return;
-      var v = AI.evaluate(c, side);
-      if (v < worst) worst = v;
-    });
-    return worst;
+  // Действие и «на этом закончить ход» (D-026: бот решает оттяжку за оттяжкой) → { score, state }
+  function playCmd(s, cmd, side) {
+    var c = Sim.clone(s);
+    var r = Sim.apply(c, cmd);
+    if (!r.ok) return null;
+    if (r.continues) Sim.apply(c, { frog: cmd.frog, mode: 'end' });
+    return { score: AI.evaluate(c, side), state: c };
   }
 
-  // Бот (D-012): полуход 1 — все кандидаты, полуход 2 — ответ соперника для T.botDepthTop лучших
+  // Ответ соперника (полуход 2): жадная цепочка его оттяжек, худшая для нас оценка
+  function replyValue(st, side) {
+    var guard = 0;
+    while (st.phase === 'play' && st.turnSide !== side && guard++ < 5) {
+      var opp = st.turnSide, best = null, bestV = -1e9;
+      commands(st, true).forEach(function (cmd) {
+        var c = Sim.clone(st), r = Sim.apply(c, cmd);
+        if (!r.ok) return;
+        var v = AI.evaluate(c, opp);
+        if (v > bestV) { bestV = v; best = c; }
+      });
+      if (!best) break;
+      st = best;
+    }
+    return AI.evaluate(st, side);
+  }
+
+  // Бот (D-012): полуход 1 — все кандидаты этой оттяжки, полуход 2 — ответ соперника для T.botDepthTop лучших
   AI.choose = function (s, rand) {
     var side = s.turnSide, cands = [];
     commands(s, false).forEach(function (cmd) {
@@ -149,13 +144,16 @@
     var top = cands.filter(function (c, i) { return i < T.botTopPick && c.score >= cands[0].score - 6; });
     var pick = top[Math.floor(rand() * top.length)];
     var cmd = { frog: pick.cmd.frog, mode: pick.cmd.mode, dx: pick.cmd.dx, dy: pick.cmd.dy };
-    // Погрешность прицела
-    if (T.botAimNoiseDeg > 0 && (cmd.mode !== 'rest')) {
-      var ang = ((rand() + rand() - 1) * T.botAimNoiseDeg) * Math.PI / 180;
-      var k = 1 + (rand() + rand() - 1) * T.botAimNoisePow;
-      var cs = Math.cos(ang), sn = Math.sin(ang);
-      var nx = (cmd.dx * cs - cmd.dy * sn) * k, ny = (cmd.dx * sn + cmd.dy * cs) * k;
-      cmd.dx = nx; cmd.dy = ny;
+    // Погрешность прицела и кольцо на 2-й и следующих оттяжках
+    if (cmd.mode === 'move' || cmd.mode === 'ability') {
+      if (T.botAimNoiseDeg > 0) {
+        var ang = ((rand() + rand() - 1) * T.botAimNoiseDeg) * Math.PI / 180;
+        var k = 1 + (rand() + rand() - 1) * T.botAimNoisePow;
+        var cs = Math.cos(ang), sn = Math.sin(ang);
+        var nx = (cmd.dx * cs - cmd.dy * sn) * k, ny = (cmd.dx * sn + cmd.dy * cs) * k;
+        cmd.dx = nx; cmd.dy = ny;
+      }
+      cmd.qte = s.pullsUsed >= 1 && rand() < T.botQteChance;
     }
     return { cmd: cmd, score: pick.score, considered: cands.length };
   };

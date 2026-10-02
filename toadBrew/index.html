@@ -41,6 +41,7 @@
     </div>
     <div class="bottom">
       <div class="timer hidden" id="timer"><span>15</span><b><i></i></b></div>
+      <div class="pulls" id="pulls"></div>
       <div class="hint" id="hint"></div>
       <div class="bar">
         <button id="btn-menu" class="gear" aria-label="Menu">⚙</button>
@@ -77,11 +78,12 @@
     <div class="panel help">
       <h2>How to play</h2>
       <p><b>Goal.</b> Knock out both enemy frogs in one round. After 20 turns each, the side with more HP left wins.</p>
-      <p><b>Turns.</b> You and BogWitch take turns. On your turn pick one of your frogs and do one action. You have <b>15 seconds</b> — when time runs out your frog rests.</p>
+      <p><b>Turns.</b> You and BogWitch take turns. On your turn pick one frog: it makes up to <b>3 pulls</b> in a row (jumps, dashes, one ability), or tap END to stop early. Or spend the whole turn on <b>REST</b>. You have <b>15 seconds</b> per turn.</p>
+      <p><b>Perfect pulls.</b> From the 2nd pull a ring shrinks around your frog. Release when it meets the gold ring: <b>+5% damage</b> for the rest of the turn, a second perfect pull makes it <b>+12%</b>.</p>
       <p><b>Jump.</b> Drag back from your frog like a slingshot and release. The dotted arc shows exactly where it lands. Land on an enemy to hit it and knock it back.</p>
       <p><b>Water.</b> Missed the lily pad? In water you <b>Dash</b> instead (costs 1 Stamina, or HP when Stamina is empty) and take +20% damage. Dash onto a pad to climb out.</p>
-      <p><b>Lily pads sink</b> while frogs sit on them (heavy Bulwark sinks them twice as fast), stay under water for a while and float up again — but not forever. <b>Lotus flowers</b> on a pad show how many times it can still float up. A withered, cracked pad without flowers will sink for good.</p>
-      <p><b>Stamina</b> refills by 1 at the start of your turn while on a pad. <b>Abilities</b> cost 2. <b>Rest</b> on a pad gives +1 more and <b>heals 10% HP</b>.</p>
+      <p><b>Lily pads sink.</b> As soon as a frog lands on a pad it starts sinking, and nothing stops it, even if the frog jumps away (heavy Bulwark makes it faster). It goes under, stays a while and floats up again, but not forever: <b>lotus flowers</b> on a pad show how many times it can still float up. A withered, cracked pad without flowers will sink for good.</p>
+      <p><b>Stamina</b> refills by 1 at the start of your turn while on a pad. Dash costs 1, an ability 2 (one per turn). <b>Rest</b> on a pad refills <b>all</b> Stamina and heals 10% HP.</p>
       <p><b>Team bonus.</b> Some pairs have a synergy — check the panel on the team screen.</p>
       <button id="h-close" class="btn-green">Got it</button>
     </div>

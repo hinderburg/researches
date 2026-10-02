@@ -166,3 +166,12 @@ button { font-family: inherit; cursor: pointer; }
 .timer.low span { color: #ff6b6b; animation: tpulse 0.5s ease-in-out infinite alternate; }
 .timer.low b i { background: linear-gradient(90deg, #ff4f5e, #ff9a6b); }
 @keyframes tpulse { from { transform: scale(1); } to { transform: scale(1.25); } }
+
+/* ---------- оттяжки за ход (D-026) ---------- */
+.pulls { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 20px; margin-bottom: 3px; }
+.pulls:empty { display: none; }
+.pulls .pl-l { font-family: var(--font-h); font-size: 13px; color: #cfe3ef; text-shadow: 0 2px 0 var(--ink); margin-right: 2px; }
+.pulls i { width: 14px; height: 14px; border-radius: 50%; background: rgba(20,35,45,0.85); border: 2px solid rgba(10,20,28,0.9); }
+.pulls i.on { background: radial-gradient(circle at 35% 35%, #bff0ff, #3fb6f0); box-shadow: 0 0 8px rgba(95,208,255,0.7); }
+.pulls.bot i.on { background: radial-gradient(circle at 35% 35%, #ffd0d6, #f05a6e); box-shadow: 0 0 8px rgba(255,110,130,0.6); }
+.pulls b { font-family: var(--font-h); font-weight: 400; font-size: 13px; color: #ffd23f; background: rgba(60,40,5,0.85); border: 1.5px solid #ffd23f; border-radius: 8px; padding: 0 6px; margin-left: 4px; }

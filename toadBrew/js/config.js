@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '0.2.0';
+FB.VERSION = '0.3.0';
 
 FB.T = {
   // Поле (мировые единицы, портрет 9:16, D-004)
@@ -17,7 +17,6 @@ FB.T = {
 
   // Stamina (§5, D-008)
   staminaRegenOnPad: 1,        // в начале своего хода, если жаба на кувшинке
-  restBonusStamina: 1,         // REST на кувшинке даёт ещё +1
   restHealFrac: 0.10,          // и лечит долю макс. HP (автор, 02.10 — D-019)
   turnTimeSec: 15,             // таймер хода игрока; истёк — REST (D-021)
   dashStaminaCost: 1,
@@ -32,10 +31,9 @@ FB.T = {
   minPull: 0.12,               // оттяжка короче — отмена
 
   // Кувшинки (§2.4, §6, D-007)
-  padCapBig: 8,                // износ до затопления (r >= padBigR)
-  padCapSmall: 5,
+  padSinkBig: 7,               // ходов от первой жабы на кувшинке до затопления (r >= padBigR), не прерывается (D-025)
+  padSinkSmall: 4,             // то же для маленьких; Bulwark (вес 2) — на 1 ход быстрее
   padBigR: 36,
-  padDecayEmpty: 0.5,          // пустая кувшинка восстанавливается за ход
   padSubmergedTurns: 4,        // ходов под водой (ход = ход одной стороны)
   padRecoveringTurns: 2,       // последние ходы из них — «всплывает» (ещё нельзя встать)
   padLives: [[40, 3], [32, 2], [0, 1]], // сколько раз всплывёт: r >= 40 — 3, r >= 32 — 2, мельче — 1 (D-020)
@@ -48,7 +46,10 @@ FB.T = {
 
   // Способности (D-009)
   jumperLongLeapFrac: 0.7, jumperLongLeapMul: 1.5,
-  jumperHopRangeMul: 0.6,
+  pullsPerTurn: 3,             // оттяжек за ход одной жабой; синергия может добавить (D-026)
+  qteBonus: [0, 0.05, 0.12],   // бонус урона за 0 / 1 / 2 попадания в кольцо: +5%, затем ещё +7% (D-027)
+  qtePeriod: 1.1,              // кольцо сужается за столько секунд и начинает снова
+  qteWindow: 0.13,             // окно попадания, ± секунд вокруг момента совпадения колец
   slamRangeMul: 0.85, slamRadius: 78, slamKnock: 105, slamDamageMul: 1.0,
   cloudRange: 210,
   tongueRange: 185, tongueDamageMul: 0.5,
@@ -57,8 +58,9 @@ FB.T = {
 
   // Бот (D-012)
   botAimNoiseDeg: 3.5, botAimNoisePow: 0.04, botTopPick: 3,
+  botQteChance: 0.6,           // как часто бот попадает в кольцо
   botWater: 14, botThreat: 10, botReach: 6,  // веса оценки позиции (угроза — за каждого врага, который достаёт; «достаю» — доля Damage)
-  botDepthTop: 10,             // сколько лучших ходов проверять ответом соперника (0 — жадный бот)
+  botDepthTop: 6,              // сколько лучших ходов проверять ответом соперника (0 — жадный бот)
 
   // Темп анимации
   animSpeed: 1
@@ -66,17 +68,17 @@ FB.T = {
 
 // Шесть жаб (§8; стартовые числа — со скрина Choose Your Team, D-005). range — дальность прыжка, dash — рывка.
 FB.FROGS = {
-  jumper:  { name: 'Jumper Frog',    role: 'JUMPER',  hp: 120, dmg: 45, st: 3, r: 17, weight: 1, range: 285, dash: 120, knock: 45,
-             ability: 'hop',    abilityName: 'Double Hop',  abilityDesc: 'Jump, then hop again (60% range). Long leaps hit x1.5.' },
-  bulwark: { name: 'Bulwark Frog',   role: 'TANK',    hp: 220, dmg: 30, st: 2, r: 22, weight: 2, range: 180, dash: 80,  knock: 80,
+  jumper:  { name: 'Jumper Frog',    role: 'JUMPER',  hp: 120, dmg: 45, st: 6, r: 17, weight: 1, range: 285, dash: 120, knock: 45,
+             ability: 'hop',    abilityName: 'Free Hop',    abilityDesc: 'A jump that does not use up a pull. Long leaps hit x1.5.' },
+  bulwark: { name: 'Bulwark Frog',   role: 'TANK',    hp: 220, dmg: 30, st: 4, r: 22, weight: 2, range: 180, dash: 80,  knock: 80,
              ability: 'slam',   abilityName: 'Heavy Slam',  abilityDesc: 'Jump with a shockwave: damage and big knockback around landing.' },
-  poison:  { name: 'Poison Toad',    role: 'SUPPORT', hp: 160, dmg: 35, st: 3, r: 18, weight: 1, range: 210, dash: 100, knock: 45,
+  poison:  { name: 'Poison Toad',    role: 'SUPPORT', hp: 160, dmg: 35, st: 6, r: 18, weight: 1, range: 210, dash: 100, knock: 45,
              ability: 'cloud',  abilityName: 'Poison Cloud', abilityDesc: 'Lob a toxic cloud. Enemies inside get Poison. Hits poison too.' },
-  tongue:  { name: 'Tongue Grabber', role: 'CONTROL', hp: 140, dmg: 50, st: 2, r: 18, weight: 1, range: 200, dash: 100, knock: 45,
+  tongue:  { name: 'Tongue Grabber', role: 'CONTROL', hp: 140, dmg: 50, st: 5, r: 18, weight: 1, range: 200, dash: 100, knock: 45,
              ability: 'tongue', abilityName: 'Tongue Grab',  abilityDesc: 'Grab the first enemy on the line and pull it close. Off the pad!' },
-  spur:    { name: 'Spur Toad',      role: 'BRUISER', hp: 180, dmg: 50, st: 2, r: 19, weight: 1, range: 195, dash: 100, knock: 50,
+  spur:    { name: 'Spur Toad',      role: 'BRUISER', hp: 180, dmg: 50, st: 5, r: 19, weight: 1, range: 195, dash: 100, knock: 50,
              ability: 'spin',   abilityName: 'Spur Spin',    abilityDesc: 'Spin: hit all enemies close by. Every hit applies Bleed.' },
-  mystic:  { name: 'Mystic Frog',    role: 'MAGE',    hp: 110, dmg: 60, st: 3, r: 16, weight: 1, range: 225, dash: 110, knock: 40,
+  mystic:  { name: 'Mystic Frog',    role: 'MAGE',    hp: 110, dmg: 60, st: 6, r: 16, weight: 1, range: 225, dash: 110, knock: 40,
              ability: 'bubble', abilityName: 'Bubble',       abilityDesc: 'Enemy: trapped for a turn. Ally: shield 40.' }
 };
 FB.FROG_ORDER = ['jumper', 'bulwark', 'poison', 'tongue', 'spur', 'mystic'];
@@ -90,7 +92,7 @@ FB.PAIRS = [
   { a: 'poison',  b: 'mystic',  name: 'Witch Brew',     desc: 'Poison Cloud lasts 2 turns longer. Bubble poisons enemies.', cloudBonus: 2, bubblePoison: true },
   { a: 'bulwark', b: 'spur',    name: 'Spiked Wall',    desc: 'Bulwark hits apply Bleed.', bulwarkBleed: true },
   { a: 'tongue',  b: 'spur',    name: 'Hook & Spur',    desc: 'Tongue Grab applies Bleed.', tongueBleed: true },
-  { a: 'jumper',  b: 'mystic',  name: 'Arcane Leap',    desc: 'Bubble shield on an ally also gives +1 Stamina.', shieldStamina: 1 }
+  { a: 'jumper',  b: 'mystic',  name: 'Arcane Leap',    desc: 'Your frogs get +1 pull every turn (4 instead of 3).', pulls: 1 }
 ];
 
 FB.findPair = function (k1, k2) {
