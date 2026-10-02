@@ -1,3 +1,4 @@
+| ToadBrew - Frog Alchemy Battle: turn-based 1v1 frog slingshot battler on sinking lily pads (HTML/JS, vs bot) | [toadBrew](https://hinderburg.github.io/researches/toadBrew/) · [tests & autoplay](https://hinderburg.github.io/researches/toadBrew/tests.html) |
 # researches
 
 Playable builds of game prototypes. Builds only - the sources live elsewhere.

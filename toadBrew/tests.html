@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ToadBrew — tests & autoplay</title>
+<style>
+  body { font: 14px/1.45 system-ui, sans-serif; background: #0f1d2a; color: #dde8ef; margin: 16px; }
+  h1 { font-size: 18px; } h2 { font-size: 15px; margin-top: 22px; }
+  .ok { color: #7be08a; } .fail { color: #ff7a7a; font-weight: 600; }
+  table { border-collapse: collapse; margin-top: 8px; } td, th { border: 1px solid #2b4357; padding: 3px 8px; text-align: right; }
+  th { background: #183044; } td:first-child, th:first-child { text-align: left; }
+  button { font: inherit; padding: 6px 12px; margin-right: 8px; }
+  pre { white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>ToadBrew — rule tests & bot-vs-bot autoplay</h1>
+<div id="tests"></div>
+<h2>Autoplay</h2>
+<p>
+  <button id="run">Run matrix (all 15 pairs × mirror)</button>
+  <label>matches per pairing <input id="n" type="number" value="2" min="1" max="20" style="width:50px"></label>
+</p>
+<div id="auto"></div>
+<script src="js/config.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/tests.js"></script>
+</body>
+</html>
