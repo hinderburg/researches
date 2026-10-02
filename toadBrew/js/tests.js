@@ -75,7 +75,8 @@
     put(s, 0, 100, 600); put(s, 2, 100, 480); put(s, 3, 150, 470); e.hp = e.maxHp; var h3 = s.frogs[3].hp;
     var r3 = Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -120, qte: true });
     ok(r3.events.some(function (x) { return x.t === 'ult'; }), 'ultimate landing');
-    ok(e.maxHp - e.hp >= Math.round(f.dmg * T.waterVulnerability * T.ultDirectMul), 'direct hit x' + T.ultDirectMul);
+    // 2-й удар по той же жабе за ход; бонусы складываются (вода + ультимейт) и упираются в потолок (D-036)
+    ok(e.maxHp - e.hp >= Math.round(f.dmg * (1 + Math.min(T.waterVulnerability - 1 + T.ultDirectMul - 1, T.dmgBonusCap)) * T.repeatHitMul[1]), 'direct ultimate hit');
     ok(s.frogs[3].hp < h3, 'shockwave hits the other enemy too');
   });
 
@@ -143,6 +144,17 @@
     var hp = s.frogs[2].hp;
     Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -d });
     eq(hp - s.frogs[2].hp, Math.round(f.dmg * T.jumperLongLeapMul));
+  });
+
+  test('damage bonuses add up and are capped; repeat hits on the same frog in a turn get weaker', function () {
+    var s = sandbox(['jumper', 'tongue'], ['poison', 'bulwark']), f = s.frogs[0], e = s.frogs[2];
+    var d = Math.round(f.range * 0.9);
+    put(s, 0, 100, 600); put(s, 2, 100, 600 - d);                     // враг в воде, Long Leap: +50% + вода +20%
+    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -d });
+    eq(e.maxHp - e.hp, Math.round(f.dmg * (1 + Math.min(0.5 + 0.2, T.dmgBonusCap))), 'additive & capped (was x1.8 multiplicative)');
+    var hp = e.hp; put(s, 0, 100, 600); put(s, 2, 100, 480);
+    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -120 });
+    eq(hp - e.hp, Math.round(f.dmg * 1.2 * T.repeatHitMul[1]), '2nd hit this turn weaker');
   });
 
   test('dash costs Stamina; at 0 Stamina it costs HP and can climb a pad', function () {

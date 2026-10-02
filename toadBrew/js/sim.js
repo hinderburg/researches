@@ -118,6 +118,7 @@
   // Состояние хода (D-030): оттяжки общие на обе жабы, попадания в кольцо копят ультимейт (D-033)
   function resetTurn(s) {
     s.active = null; s.pullsUsed = 0; s.qteHits = 0; s.abilityUsed = false;
+    (s.frogs || []).forEach(function (f) { f.hitsThisTurn = 0; });
     var b = s.bonus[s.turnSide];
     s.pullsLeft = T.pullsPerTurn + (b && b.pulls ? b.pulls : 0);
   }
@@ -223,12 +224,18 @@
     return amount;
   }
 
-  function hitDamage(s, a, e, mul) {
-    var b = s.bonus[a.side];
-    var m = mul * (e.inWater ? T.waterVulnerability : 1);
-    if (b && b.bleedDmgMul && e.bleed > 0) m *= b.bleedDmgMul;
-    m *= a.turnMul || 1;                          // бонус прыжка со спины (Fling, D-031)
-    return Math.round(a.dmg * m);
+  // Урон удара (D-036): бонусы складываются, а не перемножаются, и их сумма ограничена dmgBonusCap;
+  // повторные удары по той же жабе за один ход слабее (repeatHitMul). mul — множитель самого действия
+  // (таран 0.6, язык 0.5 …), bonus — бонусы действия (Long Leap, ультимейт).
+  function hitDamage(s, a, e, mul, bonus) {
+    var b = s.bonus[a.side], add = bonus || 0;
+    if (e.inWater) add += T.waterVulnerability - 1;
+    if (b && b.bleedDmgMul && e.bleed > 0) add += b.bleedDmgMul - 1;
+    if (a.turnMul && a.turnMul > 1) add += a.turnMul - 1;   // Fling — бонус прыжка со спины (D-031)
+    add = Math.min(add, T.dmgBonusCap);
+    var rep = T.repeatHitMul[Math.min(e.hitsThisTurn || 0, T.repeatHitMul.length - 1)];
+    e.hitsThisTurn = (e.hitsThisTurn || 0) + 1;
+    return Math.round(a.dmg * mul * (1 + add) * rep);
   }
 
   function addPoison(s, e, events) {
@@ -268,8 +275,8 @@
   }
 
   // Контактный удар a по e: урон и отброс на knock по направлению dir
-  function strike(s, a, e, dir, mul, knock, events, launch) {
-    var dmg = hitDamage(s, a, e, mul);
+  function strike(s, a, e, dir, mul, knock, events, launch, bonus) {
+    var dmg = hitDamage(s, a, e, mul, bonus);
     events.push({ t: 'impact', id: e.id, by: a.id, x: e.x, y: e.y });
     damage(s, e, dmg, events, 'hit');
     if (!e.alive) return;
@@ -325,7 +332,7 @@
     else if (f.inWater) events.push({ t: 'splash', x: f.x, y: f.y, big: false });
     else events.push({ t: 'padBob', pad: f.pad, w: f.weight });
     var longLeap = f.kind === 'jumper' && travelled >= T.jumperLongLeapFrac * f.range;
-    var mulBase = (longLeap ? T.jumperLongLeapMul : 1);
+    var leapBonus = longLeap ? T.jumperLongLeapMul - 1 : 0;
     var knockMul = launch && launch.knockMul ? launch.knockMul : 1;
     f.turnMul = launch && launch.dmgMul ? launch.dmgMul : 1;
     if (longLeap && (enemy || opts.ult)) events.push({ t: 'label', id: f.id, text: 'LONG LEAP!' });
@@ -335,17 +342,17 @@
       enemiesOf(s, f).filter(function (e) { return e === enemy || dist(e.x, e.y, f.x, f.y) <= T.ultRadius + e.r; }).forEach(function (e) {
         var direct = e === enemy;
         var kf = knockFrom(f, e, f.x, f.y, dir, T.ultKnock * knockMul * (direct ? 1.2 : 1));
-        strike(s, f, e, kf.dir, mulBase * (direct ? T.ultDirectMul : T.ultMul), kf.knock, events, launch);
+        strike(s, f, e, kf.dir, direct ? 1 : T.ultMul, kf.knock, events, launch, leapBonus + (direct ? T.ultDirectMul - 1 : 0));
       });
     } else if (opts.slam) {
       events.push({ t: 'slam', id: f.id, x: f.x, y: f.y, r: T.slamRadius });
       enemiesOf(s, f).filter(function (e) { return e === enemy || dist(e.x, e.y, f.x, f.y) <= T.slamRadius + e.r; }).forEach(function (e) {
         var kf = knockFrom(f, e, f.x, f.y, dir, T.slamKnock * knockMul);
-        strike(s, f, e, kf.dir, T.slamDamageMul * mulBase, kf.knock, events, launch);
+        strike(s, f, e, kf.dir, T.slamDamageMul, kf.knock, events, launch, leapBonus);
       });
     } else if (enemy) {
       var kf2 = knockFrom(f, enemy, f.x, f.y, dir, f.knock * knockMul);
-      strike(s, f, enemy, kf2.dir, mulBase, kf2.knock, events, launch);
+      strike(s, f, enemy, kf2.dir, 1, kf2.knock, events, launch, leapBonus);
     }
     f.turnMul = 1;
     return { enemy: enemy, landedWater: f.inWater && !wasWater };
@@ -608,7 +615,7 @@
     });
     checkRoundEnd(s, events);
     if (s.phase !== 'play') return;
-    var canAny = s.frogs.some(function (f) { return f.side === side && f.alive && f.trapped <= 0; });
+    var canAny = s.frogs.some(function (f) { return Sim.canAct(s, f); }); // та же проверка, что для оттяжки (пузырь, стопка)
     if (!canAny && depth < 3) { // обе в пузыре — ход пропускается
       events.push({ t: 'pass', side: side });
       endTurn(s, events);
