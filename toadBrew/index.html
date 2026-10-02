@@ -3,90 +3,115 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#1d7f9c">
+<meta name="theme-color" content="#1c140e">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>ToadBrew — Frog Alchemy Battle</title>
+<title>TOADBREW — Alchemical Arena</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Lilita+One&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <div id="app">
   <canvas id="cv"></canvas>
 
-  <!-- Экран выбора пары (скрин 01, §14 «Team») -->
-  <section id="team" class="screen">
-    <div class="sign"><div class="sign-a">CHOOSE</div><div class="sign-b">YOUR TEAM</div></div>
-    <div class="subtitle">Pick <b>2</b> frogs to take into battle!</div>
-    <div class="slots">
-      <div class="slot" data-slot="0"><div class="slot-n">1</div><div class="slot-body"></div></div>
-      <div class="slot" data-slot="1"><div class="slot-n">2</div><div class="slot-body"></div></div>
+  <!-- Шапка меты (скрины 06–07) -->
+  <header id="topbar" class="topbar">
+    <div class="logo"><div class="logo-a">T<span class="flask-o">⚗</span>ADBREW</div><div class="logo-b">ALCHEMICAL ARENA</div></div>
+    <button id="btn-help" class="chip">How to play</button>
+  </header>
+
+  <!-- TEAM (скрин 06, §19) -->
+  <section id="team" class="screen meta">
+    <div class="sec-head"><div class="plaque">TEAM</div><div class="counter">⛑ 6 / 6 FROGS</div></div>
+    <div id="roster" class="roster"></div>
+    <div class="sec-head small"><div class="plaque sm">⚔ YOUR TEAM (<span id="pick-n">2</span>/2)</div><button id="btn-clear" class="chip">↻ CLEAR</button></div>
+    <div class="pair">
+      <div class="ped" id="ped-0"></div>
+      <div class="syn" id="syn"></div>
+      <div class="ped" id="ped-1"></div>
     </div>
-    <div id="bonus" class="bonus"></div>
-    <div class="roster-wrap">
-      <div class="roster-head"><span>FROG ROSTER</span><button id="btn-help" class="chip">How to play</button></div>
-      <div id="roster" class="roster"></div>
-    </div>
-    <button id="btn-battle" class="btn-gold" disabled><span class="swords">⚔</span> BATTLE</button>
-    <div class="version" id="version"></div>
   </section>
 
-  <!-- Боевой HUD (скрины 03–04, §14 «В бою») -->
+  <!-- ALCHEMY (скрин 07, §9, §19) -->
+  <section id="alchemy" class="screen meta hidden">
+    <div class="sec-head"><div class="plaque">⚗ ALCHEMY</div><div class="counter">FLASK LOADOUT</div></div>
+    <div id="racks"></div>
+    <div class="panel-box">
+      <div class="box-head">⚗ ALCHEMICAL REACTIONS <span>Two liquids in a row react. Land on a zone, or Link your frogs.</span></div>
+      <div id="reactions" class="reactions"></div>
+    </div>
+    <div class="panel-box">
+      <div class="box-head">⚗ LIQUIDS <span>Tap a slot, then a liquid. Each frog carries 3 different ones.</span></div>
+      <div id="liquids" class="liquids"></div>
+    </div>
+  </section>
+
+  <!-- Нижняя навигация -->
+  <nav id="nav" class="nav">
+    <button class="tab" data-tab="frogs" disabled><span class="ti">🐸</span>FROGS</button>
+    <button class="tab" data-tab="alchemy"><span class="ti">⚗</span>ALCHEMY</button>
+    <button id="btn-battle" class="battle-btn"><span>⚔</span> BATTLE</button>
+    <button class="tab on" data-tab="team"><span class="ti">👥</span>TEAM</button>
+    <button class="tab" data-tab="arena" disabled><span class="ti">🏆</span>ARENA</button>
+  </nav>
+
+  <!-- Боевой HUD (скрины 08–09, §20) -->
   <div id="hud" class="hidden">
     <div class="top">
-      <div class="side side-p" id="side-0"></div>
-      <div class="round"><div class="round-l" id="round-l">ROUND</div><div class="round-n" id="round-n">1/3</div><div class="score" id="score"></div></div>
-      <div class="side side-b" id="side-1"></div>
+      <div class="fcard enemy" id="fc-2"></div>
+      <div class="round"><div class="round-l">ROUND</div><div class="round-n" id="round-n">1</div><div class="ovl hidden" id="ovl">OVERLOAD</div></div>
+      <div class="fcard enemy" id="fc-3"></div>
     </div>
     <div class="bottom">
-      <div class="timer hidden" id="timer"><span>15</span><b><i></i></b></div>
-      <div class="pulls" id="pulls"></div>
-      <div class="hint" id="hint"></div>
-      <div class="bar">
-        <button id="btn-menu" class="gear" aria-label="Menu">⚙</button>
-        <button class="act" data-mode="move" id="act-move"><div class="ico"></div><div class="lbl"></div><div class="cost"></div></button>
-        <button class="act" data-mode="ability" id="act-ability"><div class="ico"></div><div class="lbl"></div><div class="cost"></div></button>
-        <button class="act" data-mode="rest" id="act-rest"><div class="ico"></div><div class="lbl"></div><div class="cost"></div></button>
+      <div class="mine">
+        <div class="fcard mine-c" id="fc-0"></div>
+        <div class="fcard mine-c" id="fc-1"></div>
       </div>
+      <div class="actbar">
+        <button id="btn-menu" class="gear" aria-label="Menu">⚙</button>
+        <div class="pvcard" id="pvcard"></div>
+        <button id="btn-skip" class="skip">SKIP</button>
+      </div>
+      <div class="timer" id="timer"><b><i></i></b><span>15</span></div>
     </div>
   </div>
 
   <div id="banner" class="banner"></div>
 
-  <!-- Победа / поражение (скрин 05) -->
+  <!-- Победа / поражение (скрин 10) -->
   <section id="result" class="screen hidden">
-    <div class="res-crown">👑</div>
-    <div class="res-title" id="res-title">VICTORY!</div>
-    <div class="res-score" id="res-score"></div>
+    <div class="res-title" id="res-title">VICTORY</div>
+    <div class="res-teams">
+      <div class="res-team mine"><div class="rt-h">⚔ YOUR TEAM</div><div class="rt-f" id="res-0"></div></div>
+      <div class="res-team enemy"><div class="rt-h">⚔ ENEMY TEAM</div><div class="rt-f" id="res-1"></div></div>
+    </div>
     <div class="res-sub" id="res-sub"></div>
-    <button id="btn-continue" class="btn-green">CONTINUE</button>
-    <button id="btn-rematch" class="btn-ghost">Rematch</button>
+    <button id="btn-continue" class="big-btn">⚔ CONTINUE</button>
+    <button id="btn-rematch" class="chip">Rematch</button>
   </section>
 
   <section id="menu" class="modal hidden">
     <div class="panel">
       <h2>Paused</h2>
-      <button id="m-resume" class="btn-green">Resume</button>
-      <button id="m-speed" class="btn-ghost">Animation speed: x1</button>
-      <button id="m-help" class="btn-ghost">How to play</button>
-      <button id="m-quit" class="btn-ghost danger">Quit match</button>
+      <button id="m-resume" class="big-btn">Resume</button>
+      <button id="m-speed" class="chip wide">Animation speed: x1</button>
+      <button id="m-help" class="chip wide">How to play</button>
+      <button id="m-quit" class="chip wide danger">Quit match</button>
     </div>
   </section>
 
   <section id="help" class="modal hidden">
     <div class="panel help">
       <h2>How to play</h2>
-      <p><b>Goal.</b> Knock out both enemy frogs in one round. After 20 turns each, the side with more HP left wins.</p>
-      <p><b>Turns.</b> You and BogWitch take turns. Each turn you have <b>3 pulls</b> to spend on your frogs any way you like: jumps, dashes and one ability. Tap END to stop early, or spend the whole turn on <b>REST</b>. 15 seconds per turn.</p>
-      <p><b>Ultimate.</b> From the 2nd pull your frogs that can jump <b>light up with a golden glow</b> that fades in a few seconds. Jump before it fades out: <b>PERFECT</b>. Two perfect jumps in one turn — the second one is an <b>ULTIMATE LANDING</b>: a shockwave that hits every enemy around, the one you land on takes x1.6. Dashes in water never count, but dash onto a pad and jump from there.</p>
-      <p><b>Leapfrog.</b> Jump onto your other frog (or dash to it in water) to ride on its back and jump on from there. The frog below gives the jump a bonus: Bulwark — Springboard (+35% range), Jumper — Relay (free pull), Poison — poisons, Spur — bleeds, Tongue — +25% damage, Mystic — shield.</p>
-      <p><b>Jump.</b> Drag back from your frog like a slingshot and release. The dotted arc shows exactly where it lands. You land exactly where you aim. Land on an enemy to hit it and knock it away; the aim shows HIT or NO HIT before you release.</p>
-      <p><b>Water.</b> Missed the lily pad? In water you <b>Dash</b> instead (costs 1 Stamina, or HP when Stamina is empty) and take +20% damage. Dash onto a pad to climb out.</p>
-      <p><b>Lily pads sink.</b> As soon as a frog lands on a pad it starts sinking, and nothing stops it, even if the frog jumps away (heavy Bulwark makes it faster). It goes under, stays a while and floats up again, but not forever: <b>lotus flowers</b> on a pad show how many times it can still float up. A withered, cracked pad without flowers will sink for good.</p>
-      <p><b>Stamina</b> refills by 1 at the start of your turn while on a pad. Dash costs 1, an ability 2 (one per turn). <b>Rest</b> on a pad refills <b>all</b> Stamina and heals 10% HP.</p>
-      <p><b>Team bonus.</b> Some pairs have a synergy — check the panel on the team screen.</p>
-      <button id="h-close" class="btn-green">Got it</button>
+      <p><b>Goal.</b> Break both enemy frogs. 2 frogs vs 2 frogs.</p>
+      <p><b>Rounds.</b> Each frog acts once per round. You and the bot take turns frog by frog; the next round the other side starts.</p>
+      <p><b>Jump.</b> Drag back from your frog, aim, release. The dotted arc, the landing circle, damage, knockback arrows and the reaction name show before you let go. Tall pillars block low arcs.</p>
+      <p><b>Flasks.</b> Each frog carries 3 liquids; the glowing one is active and switches to the next after every jump. <b style="color:#ff7a5a">EMBER</b> damage + fire zone · <b style="color:#6be06a">VENOM</b> poison + toxic zone · <b style="color:#7ac0ff">FROST</b> chill (shorter next jump) · <b style="color:#ffd24a">FORCE</b> knockback + breaks the arena.</p>
+      <p><b>Reactions.</b> Land with one liquid on a zone of another: BLAST, STEAM BURST, METEOR, NOXIOUS ICE, CORROSIVE BURST, SHATTER. Same liquid = OVERCHARGE.</p>
+      <p><b>Link.</b> Land on your other frog: no damage, the pair is Linked. The next launch from the pair fires <b>both</b> active flasks as one reaction.</p>
+      <p><b>Arena.</b> Pillars, barrels and alchemical tanks crack and break; marked floor plates collapse into pits (damage, shorter jump out). From round 7 the arena overloads and the safe area shrinks.</p>
+      <button id="h-close" class="big-btn">Got it</button>
     </div>
   </section>
 </div>

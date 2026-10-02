@@ -1,4 +1,4 @@
-// Тесты правил симуляции и автоплей бот-против-бота. Открывать tests.html.
+// Тесты правил симуляции TOADBREW и автоплей бот-против-бота. Открывать tests.html.
 (function () {
   var Sim = FB.Sim, AI = FB.AI, T = FB.T;
   var out = document.getElementById('tests'), results = [];
@@ -10,291 +10,207 @@
   function eq(a, b, msg) { if (a !== b) throw new Error((msg || '') + ' expected ' + b + ', got ' + a); }
   function ok(v, msg) { if (!v) throw new Error(msg || 'assert'); }
 
-  // Арена-песочница: четыре большие кувшинки, которые не тонут, пока их не тронули (sinkLeft: null)
-  function sandbox(tA, tB) {
-    var s = Sim.createMatch(tA || ['jumper', 'bulwark'], tB || ['poison', 'tongue'], 7);
+  var DEF = [['ember', 'venom', 'frost'], ['venom', 'force', 'ember']];
+  // Пустая арена (без объектов и плит), жабы расставлены вручную
+  function sandbox(tA, tB, fA, fB) {
+    var s = Sim.createMatch(tA || ['spur', 'aegis'], tB || ['ram', 'harpoon'], fA || DEF, fB || DEF, 7);
     Sim.startRound(s);
-    s.pads = [[100, 600], [300, 600], [100, 200], [300, 200]].map(function (c, i) {
-      return { id: i, x: c[0], y: c[1], r: 60, cap: 1, wear: 0, sinkLeft: null, state: 'stable', subTimer: 0, lives: 9 };
-    });
-    put(s, 0, 100, 600); put(s, 1, 300, 600); put(s, 2, 100, 200); put(s, 3, 300, 200);
+    s.objects = []; s.plates = [];
+    put(s, 0, 120, 600); put(s, 1, 280, 600); put(s, 2, 120, 150); put(s, 3, 280, 150);
     return s;
   }
-  function put(s, id, x, y) { var f = s.frogs[id]; f.x = x; f.y = y; var p = Sim.padAt(s, x, y); f.pad = p ? p.id : -1; f.inWater = !p; }
-  function addPad(s, x, y, r) { var p = { id: s.pads.length, x: x, y: y, r: r || 40, cap: 1, wear: 0, sinkLeft: null, state: 'stable', subTimer: 0, lives: 9 }; s.pads.push(p); return p; }
-  // Действие и сразу конец хода (если ход продолжается)
-  function turn(s, cmd) { var r = Sim.apply(s, cmd); if (r.ok && r.continues) Sim.apply(s, { frog: cmd.frog, mode: 'end' }); return r; }
+  function put(s, id, x, y) { var f = s.frogs[id]; f.x = x; f.y = y; }
+  function jumpTo(s, id, x, y, extra) { var f = s.frogs[id], c = { frog: id, dx: x - f.x, dy: y - f.y }; for (var k in extra || {}) c[k] = extra[k]; return Sim.apply(s, c); }
+  function has(r, t) { return r.events.some(function (e) { return e.t === t; }); }
 
-  test('round start: frogs on start pads, player moves first, start pads already sinking', function () {
-    var s = Sim.createMatch(['jumper', 'bulwark'], ['poison', 'tongue'], 1);
+  test('match start: 4 frogs, player first, flask I active', function () {
+    var s = Sim.createMatch(['ram', 'spring'], ['aegis', 'bellows'], DEF, DEF, 1);
     Sim.startRound(s);
     eq(s.frogs.length, 4); eq(s.turnSide, 0); eq(s.round, 1);
-    s.frogs.forEach(function (f) { ok(!f.inWater && f.pad >= 0, 'frog ' + f.id + ' on pad'); ok(s.pads[f.pad].sinkLeft !== null, 'start pad ticking'); });
-    ok(s.frogs[0].y > T.H / 2 && s.frogs[2].y < T.H / 2, 'player bottom, bot top');
-    eq(s.frogs[0].maxHp, 132, 'Leap & Guard +10% HP');
+    s.frogs.forEach(function (f) { eq(f.fi, 0); });
+    eq(s.objects.length, 8, '4 pillars + 4 fragile'); eq(s.plates.length, 4, '4 plates');
   });
 
-  test('pads are point-symmetric (fair start)', function () {
-    var s = Sim.createMatch(['jumper', 'bulwark'], ['poison', 'tongue'], 3);
-    Sim.startRound(s); s.round = 1; Sim.startRound(s);
-    for (var i = 0; i + 1 < s.pads.length - 1; i += 2) {
-      var a = s.pads[i], b = s.pads[i + 1];
-      ok(Math.abs(a.x + b.x - T.W) < 1e-6 && Math.abs(a.y + b.y - T.H) < 1e-6 && a.r === b.r, 'pair ' + i);
-    }
+  test('arena is point-symmetric', function () {
+    var s = Sim.createMatch(['ram', 'spring'], ['aegis', 'bellows'], DEF, DEF, 1); Sim.startRound(s);
+    for (var i = 0; i < s.objects.length; i += 2) ok(Math.abs(s.objects[i].x + s.objects[i + 1].x - T.W) < 1e-6 && s.objects[i].kind === s.objects[i + 1].kind, 'obj ' + i);
   });
 
-  test('jump onto enemy: lands right on its spot, enemy takes damage and is knocked away', function () {
+  test('each frog activates once per round, sides alternate, starter switches next round', function () {
     var s = sandbox();
-    put(s, 2, 100, 420);
-    var e = s.frogs[2], hp = e.hp, f = s.frogs[0];
-    ok(Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -180 }).ok);
-    eq(hp - e.hp, Math.round(f.dmg * T.waterVulnerability), 'water vulnerability damage');
-    ok(Math.abs(f.x - 100) < 1e-6 && Math.abs(f.y - 420) < 1e-6, 'attacker landed exactly where aimed');
-    ok(Sim.dist(e.x, e.y, f.x, f.y) >= f.r + e.r, 'enemy pushed clear'); ok(e.y < 420, 'pushed away along the jump');
+    jumpTo(s, 0, 120, 560); eq(s.turnSide, 1);
+    ok(!Sim.apply(s, { frog: 0, dx: 0, dy: -10 }).ok, 'no second activation');
+    jumpTo(s, 2, 120, 190); eq(s.turnSide, 0);
+    jumpTo(s, 1, 280, 560); eq(s.turnSide, 1);
+    jumpTo(s, 3, 280, 190); eq(s.round, 2); eq(s.turnSide, 1, 'round 2 starts with the other player');
   });
 
-  test('3 pulls per turn shared between both frogs, then the turn passes', function () {
-    var s = sandbox();
-    var r1 = Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -150 });
-    ok(r1.continues, 'continues'); ok(s.frogs[0].inWater, 'in water after jump');
-    ok(!Sim.apply(s, { frog: 0, mode: 'rest' }).ok, 'no REST after a pull');
-    ok(Sim.apply(s, { frog: 1, mode: 'move', dx: 0, dy: -50 }).continues, 'other frog takes the 2nd pull');
-    var r3 = Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -40 });
-    ok(r3.ok && !r3.continues, '3rd pull ends'); eq(s.turnSide, 1);
-  });
-
-  test('ring counts only on jump pulls from the 2nd on; two perfect jumps = ultimate landing', function () {
-    var s = sandbox(['spur', 'jumper'], ['poison', 'tongue']), f = s.frogs[0], e = s.frogs[2];
-    put(s, 0, 100, 450); // в воде: первая оттяжка — рывок на кувшинку
-    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: 100, qte: true });
-    eq(s.qteHits, 0, 'no ring on the 1st pull / dash'); ok(!f.inWater, 'climbed');
-    put(s, 0, 100, 600); put(s, 2, 100, 480); e.bleed = 0; var h1 = e.hp;
-    var r2 = Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -120, qte: true });
-    eq(s.qteHits, 1); ok(r2.events.some(function (x) { return x.t === 'perfect' && x.hits === 1 && !x.ult; }), 'perfect 1/2');
-    eq(h1 - e.hp, Math.round(f.dmg * T.waterVulnerability), 'perfect 1 does not change damage');
-    put(s, 0, 100, 600); put(s, 2, 100, 480); put(s, 3, 150, 470); e.hp = e.maxHp; var h3 = s.frogs[3].hp;
-    var r3 = Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -120, qte: true });
-    ok(r3.events.some(function (x) { return x.t === 'ult'; }), 'ultimate landing');
-    // 2-й удар по той же жабе за ход; бонусы складываются (вода + ультимейт) и упираются в потолок (D-036)
-    ok(e.maxHp - e.hp >= Math.round(f.dmg * (1 + Math.min(T.waterVulnerability - 1 + T.ultDirectMul - 1, T.dmgBonusCap)) * T.repeatHitMul[1]), 'direct ultimate hit');
-    ok(s.frogs[3].hp < h3, 'shockwave hits the other enemy too');
-  });
-
-  test('a dash never counts for the ring', function () {
-    var s = sandbox();
-    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -150 }); // в воду
-    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -40, qte: true });
-    eq(s.qteHits, 0);
-  });
-
-  test('jump onto own frog floating in water: ride on its back, top frog acts, bottom is locked', function () {
-    var s = sandbox(); put(s, 1, 200, 450); ok(s.frogs[1].inWater);
-    Sim.apply(s, { frog: 0, mode: 'move', dx: 100, dy: -150 });
-    var f = s.frogs[0];
-    eq(f.on, 1, 'riding'); ok(!f.inWater, 'out of water'); ok(!Sim.canAct(s, s.frogs[1]), 'bottom frog locked'); ok(Sim.canAct(s, f), 'top acts');
-    eq(Sim.aimKind(s, f, 'move'), 'arc', 'jumps from the back, not a dash');
-    eq(Math.round(Sim.rangeFor(s, f, 'move')), Math.round(f.range * 1.35), 'Springboard (Bulwark below): +35% range');
-    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -100 });
-    eq(f.on, -1, 'jumped off'); ok(Sim.canAct(s, s.frogs[1]), 'bottom free again');
-  });
-
-  test('dash into own frog in water: climb on its back', function () {
-    var s = sandbox(); put(s, 0, 200, 420); put(s, 1, 200, 470);
-    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: 80 });
-    eq(s.frogs[0].on, 1); ok(!s.frogs[0].inWater);
-  });
-
-  test('Relay: a jump off Jumper\'s back does not use up a pull', function () {
-    var s = sandbox(); put(s, 0, 200, 450);           // Jumper в воде
-    Sim.apply(s, { frog: 1, mode: 'move', dx: -100, dy: -150 }); // Bulwark садится на спину Jumper
-    eq(s.frogs[1].on, 0);
-    var left = s.pullsLeft;
-    Sim.apply(s, { frog: 1, mode: 'move', dx: 0, dy: -120 });
-    eq(s.pullsLeft, left, 'pull kept');
-  });
-
-  test('knocking the bottom frog throws the rider off', function () {
-    var s = sandbox(); put(s, 1, 200, 450);
-    Sim.apply(s, { frog: 0, mode: 'move', dx: 100, dy: -150 }); Sim.apply(s, { frog: 0, mode: 'end' });
-    eq(s.frogs[0].on, 1);
-    addPad(s, 200, 300, 40); put(s, 2, 200, 300); // враг прыгает прямо на стопку: бьёт верхнюю
-    Sim.apply(s, { frog: 2, mode: 'move', dx: 0, dy: 150 });
-    eq(s.frogs[0].on, -1, 'rider knocked off'); ok(s.frogs[0].hp < s.frogs[0].maxHp, 'top frog took the hit');
-  });
-
-  test('preview shows the hit before release', function () {
-    var s = sandbox(); put(s, 2, 100, 430);
-    var p = Sim.preview(s, { frog: 0, mode: 'move', dx: 0, dy: -170 });
-    ok(p.events.some(function (x) { return x.t === 'hit' && x.id === 2; }), 'hit predicted');
-    var q = Sim.preview(s, { frog: 0, mode: 'move', dx: 60, dy: -170 });
-    ok(!q.events.some(function (x) { return x.t === 'hit'; }), 'miss predicted');
-  });
-
-  test('END finishes the turn early; Arcane Leap gives 4 pulls', function () {
-    var s = sandbox();
-    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -100 });
-    Sim.apply(s, { frog: 0, mode: 'end' }); eq(s.turnSide, 1);
-    var t = sandbox(['jumper', 'mystic'], ['poison', 'tongue']);
-    eq(Sim.pullsFor(t, t.frogs[0]), 4);
-  });
-
-  test('long leap (>=70% range) hits x1.5', function () {
-    var s = sandbox(), f = s.frogs[0], d = Math.round(f.range * 0.9);
-    addPad(s, 100, 600 - d); put(s, 2, 100, 600 - d);
-    var hp = s.frogs[2].hp;
-    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -d });
-    eq(hp - s.frogs[2].hp, Math.round(f.dmg * T.jumperLongLeapMul));
-  });
-
-  test('damage bonuses add up and are capped; repeat hits on the same frog in a turn get weaker', function () {
-    var s = sandbox(['jumper', 'tongue'], ['poison', 'bulwark']), f = s.frogs[0], e = s.frogs[2];
-    var d = Math.round(f.range * 0.9);
-    put(s, 0, 100, 600); put(s, 2, 100, 600 - d);                     // враг в воде, Long Leap: +50% + вода +20%
-    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -d });
-    eq(e.maxHp - e.hp, Math.round(f.dmg * (1 + Math.min(0.5 + 0.2, T.dmgBonusCap))), 'additive & capped (was x1.8 multiplicative)');
-    var hp = e.hp; put(s, 0, 100, 600); put(s, 2, 100, 480);
-    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -120 });
-    eq(hp - e.hp, Math.round(f.dmg * 1.2 * T.repeatHitMul[1]), '2nd hit this turn weaker');
-  });
-
-  test('dash costs Stamina; at 0 Stamina it costs HP and can climb a pad', function () {
-    var s = sandbox();
-    put(s, 0, 100, 450); var f = s.frogs[0]; ok(f.inWater);
-    f.st = 1;
-    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: 60 }); eq(f.st, 0);
-    var hp = f.hp; put(s, 0, 100, 450);
-    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: 100 });
-    eq(hp - f.hp, T.dashHpCostNoStamina); ok(!f.inWater, 'climbed the pad');
-  });
-
-  test('a touched pad keeps sinking after the frog leaves, then floats up', function () {
-    var s = sandbox(), p = s.pads[0];
-    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: 20 });   // приземлилась на ту же кувшинку — та тронута
-    ok(p.sinkLeft !== null, 'ticking'); var total = p.sinkLeft;
-    Sim.apply(s, { frog: 0, mode: 'move', dx: 150, dy: 0 });  // ушла на соседнюю (не на спину союзнику)
-    Sim.apply(s, { frog: 0, mode: 'end' });
-    var n = 1; while (p.state === 'stable' && n < 20) { turn(s, { frog: s.turnSide === 0 ? 0 : 3, mode: 'rest' }); n++; }
-    eq(n, total, 'sank after its countdown'); eq(p.state, 'submerged');
-    for (var i = 0; i < T.padSubmergedTurns; i++) turn(s, { frog: s.turnSide === 0 ? 0 : 3, mode: 'rest' });
-    eq(p.state, 'stable', 'floated up'); eq(p.lives, 8, 'used one float-up');
-  });
-
-  test('frog on a sinking pad falls into water when it goes under', function () {
-    var s = sandbox(), p = s.pads[0];
-    p.sinkLeft = 1; p.cap = 3; p.wear = 2;
-    turn(s, { frog: 0, mode: 'rest' });
-    ok(s.frogs[0].inWater, 'fell');
-  });
-
-  test('pad lives: big pads float up more times than small; last sink is forever', function () {
-    var s = Sim.createMatch(['jumper', 'bulwark'], ['poison', 'tongue'], 1); Sim.startRound(s);
-    var big = s.pads.filter(function (p) { return p.r >= 40; })[0], small = s.pads.filter(function (p) { return p.r < 32; })[0];
-    ok(big.lives > small.lives, 'big ' + big.lives + ' > small ' + small.lives);
-    var t = sandbox(), p = t.pads[1]; p.lives = 0; p.sinkLeft = 1; p.cap = 2; p.wear = 1;
-    turn(t, { frog: 0, mode: 'rest' });
-    eq(p.state, 'gone');
-    for (var j = 0; j < 20; j++) turn(t, { frog: t.turnSide === 0 ? 0 : 3, mode: 'rest' });
-    eq(p.state, 'gone', 'never comes back'); ok(!Sim.padAt(t, p.x, p.y), 'not standable');
-  });
-
-  test('REST on a pad refills all Stamina and heals part of HP; in water nothing', function () {
+  test('flask cycles I → II → III → I after own jumps; skip does not switch', function () {
     var s = sandbox(), f = s.frogs[0];
-    f.hp = 50; f.st = 0;
-    turn(s, { frog: 0, mode: 'rest' });
-    eq(f.hp, 50 + Math.round(f.maxHp * T.restHealFrac)); eq(f.st, f.maxSt, 'full stamina');
-    turn(s, { frog: 2, mode: 'rest' });
-    put(s, 0, 200, 420); f.st = 0; var hp = f.hp;
-    turn(s, { frog: 0, mode: 'rest' });
-    eq(f.hp, hp, 'no heal in water'); eq(f.st, 0, 'no stamina in water');
+    eq(Sim.activeFlask(f), 'ember');
+    jumpTo(s, 0, 120, 580); eq(Sim.activeFlask(f), 'venom');
+    Sim.apply(s, { frog: 2, mode: 'skip' }); eq(Sim.activeFlask(s.frogs[2]), 'ember', 'skip keeps flask');
   });
 
-  test('one ability per turn', function () {
-    var s = sandbox(['poison', 'tongue'], ['jumper', 'bulwark']);
-    ok(Sim.apply(s, { frog: 0, mode: 'ability', dx: 0, dy: -200 }).continues);
-    ok(!Sim.abilityAvailable(s, s.frogs[0]), 'second ability blocked');
-  });
-
-  test('Free Hop does not use up a pull', function () {
-    var s = sandbox();
-    Sim.apply(s, { frog: 0, mode: 'ability', dx: 0, dy: -100 });
-    eq(s.pullsLeft, T.pullsPerTurn, 'pull kept'); eq(s.pullsUsed, 1);
-  });
-
-  test('Poison Cloud poisons enemies, poison ticks at their turn start', function () {
-    var s = sandbox(['poison', 'tongue'], ['jumper', 'bulwark']);
+  test('direct hit: impact damage, enemy knocked away, attacker lands where aimed', function () {
+    var s = sandbox(['spur', 'aegis'], ['ram', 'harpoon'], [['force', 'venom', 'frost'], DEF[1]]);
+    put(s, 2, 120, 450);
     var e = s.frogs[2], hp = e.hp;
-    put(s, 2, 100, 395);
-    turn(s, { frog: 0, mode: 'ability', dx: 0, dy: -400 });
-    ok(e.hp < hp, 'poison ticked');
+    jumpTo(s, 0, 120, 450);
+    eq(hp - e.hp, FB.FROGS.spur.impact + T.bleedTick * 0, 'impact');
+    ok(Math.abs(s.frogs[0].y - 450) < 1e-6, 'attacker at landing point');
+    ok(e.y < 450 - 20, 'knocked away'); ok(e.bleed === 1, 'Spurs: bleed');
   });
 
-  test('Tongue Grab pulls first enemy on the line into contact (off the pad)', function () {
-    var s = sandbox(['tongue', 'spur'], ['jumper', 'bulwark']);
-    put(s, 2, 100, 440);
-    Sim.apply(s, { frog: 0, mode: 'ability', dx: 0, dy: -185 });
-    var e = s.frogs[2], f = s.frogs[0];
-    ok(Math.abs(Sim.dist(e.x, e.y, f.x, f.y) - (e.r + f.r + 2)) < 1, 'pulled to contact');
-    ok(e.bleed > 0, 'Hook & Spur: bleed');
+  test('knockback depends on mass', function () {
+    var a = Sim.knockAmount(FB.FROGS.ram, FB.FROGS.spring, 1), b = Sim.knockAmount(FB.FROGS.spring, FB.FROGS.ram, 1);
+    ok(a > b * 3, 'Ram pushes Springjack much farther than the other way (' + a + ' vs ' + b + ')');
   });
 
-  test('Bubble traps an enemy for its next turn', function () {
-    var s = sandbox(['mystic', 'poison'], ['jumper', 'bulwark']);
-    put(s, 2, 100, 380);
-    turn(s, { frog: 0, mode: 'ability', dx: 0, dy: -220 });
-    ok(!Sim.canAct(s, s.frogs[2]), 'trapped cannot act'); ok(s.frogs[2].poison > 0, 'Witch Brew poison');
-    turn(s, { frog: 3, mode: 'rest' });
-    turn(s, { frog: 1, mode: 'rest' });
-    ok(Sim.canAct(s, s.frogs[2]), 'free next turn');
+  test('Ember: extra landing damage and a burning zone', function () {
+    var s = sandbox(); put(s, 2, 120, 450); var e = s.frogs[2], hp = e.hp;
+    var r = jumpTo(s, 0, 120, 450);
+    eq(hp - e.hp, FB.FROGS.spur.impact + T.emberBonus);
+    ok(s.zones.some(function (z) { return z.type === 'ember'; }), 'fire zone'); ok(has(r, 'zone'));
   });
 
-  test('Spur Spin: hits close enemies, applies Bleed that ticks', function () {
-    var s = sandbox(['spur', 'jumper'], ['poison', 'tongue']);
-    put(s, 2, 100, 625); var e = s.frogs[2], hp = e.hp;
-    turn(s, { frog: 0, mode: 'ability', dx: 0, dy: -1 });
-    eq(e.bleed, 1, 'bleed applied');
-    eq(hp - e.hp, Math.round(50 * T.spinDamageMul) + T.bleedDamage, 'spin + bleed tick');
+  test('Venom: poison ticks after the poisoned frog\'s next activation', function () {
+    var s = sandbox(['spur', 'aegis'], ['ram', 'harpoon'], [['venom', 'ember', 'frost'], DEF[1]]);
+    put(s, 2, 174, 450); var e = s.frogs[2]; // в зоне яда, но без прямого удара
+    jumpTo(s, 0, 120, 450); eq(e.poison, 1, 'poisoned'); e.x = 380; e.y = 60; var hp = e.hp;
+    jumpTo(s, 2, e.x, e.y - 60);
+    eq(hp - e.hp, T.poisonTick); eq(e.poison, 0);
   });
 
-  test('Heavy Slam hits all enemies in radius', function () {
-    var s = sandbox(['bulwark', 'jumper'], ['poison', 'tongue']);
-    put(s, 2, 70, 470); put(s, 3, 130, 470);
+  test('Frost: chill shortens only the next jump', function () {
+    var s = sandbox(['spur', 'aegis'], ['ram', 'harpoon'], [['frost', 'ember', 'venom'], DEF[1]]);
+    put(s, 2, 140, 450); var e = s.frogs[2];
+    jumpTo(s, 0, 120, 450); eq(e.chill, 1);
+    e.x = 380; e.y = 60; // вне холодной зоны
+    eq(Math.round(Sim.rangeFor(s, e)), Math.round(e.jump * T.chillRangeMul));
+    Sim.apply(s, { frog: 2, dx: 0, dy: 500 });
+    ok(Math.abs(e.y - 60 - e.jump * T.chillRangeMul) < 1, 'short jump'); eq(e.chill, 0, 'chill gone');
+  });
+
+  test('Surface reaction: Ember landing in a Venom zone = BLAST, zone consumed', function () {
+    var s = sandbox(); put(s, 2, 150, 420); put(s, 3, 90, 420);
+    s.zones.push({ id: 99, type: 'venom', x: 120, y: 420, r: 45, turns: 5, side: 1 });
     var h2 = s.frogs[2].hp, h3 = s.frogs[3].hp;
-    Sim.apply(s, { frog: 0, mode: 'ability', dx: 0, dy: -120 });
-    ok(s.frogs[2].hp < h2 && s.frogs[3].hp < h3, 'both hit');
+    var r = jumpTo(s, 0, 120, 420);
+    ok(r.events.some(function (e) { return e.t === 'reaction' && e.name === 'BLAST'; }), 'BLAST');
+    ok(h2 - s.frogs[2].hp >= T.blastDamage && h3 - s.frogs[3].hp >= T.blastDamage, 'both enemies hit');
+    ok(!s.zones.some(function (z) { return z.id === 99; }), 'zone consumed');
   });
 
-  test('preview == apply (deterministic, predictable trajectory)', function () {
-    var s = sandbox(); put(s, 2, 120, 430);
-    var cmd = { frog: 0, mode: 'move', dx: 15, dy: -170 };
+  test('Overcharge: same liquid on its own zone is stronger', function () {
+    var s = sandbox(); put(s, 2, 120, 420);
+    s.zones.push({ id: 98, type: 'ember', x: 120, y: 420, r: 45, turns: 5, side: 0 });
+    var hp = s.frogs[2].hp; jumpTo(s, 0, 120, 420);
+    eq(hp - s.frogs[2].hp, FB.FROGS.spur.impact + Math.round(T.emberBonus * T.overchargeMul));
+  });
+
+  test('Link: landing on an ally links the pair (no damage, no flask effect); the next launch fires both flasks', function () {
+    var s = sandbox(['spring', 'aegis'], ['ram', 'harpoon'], [['ember', 'frost', 'force'], ['venom', 'force', 'ember']]);
+    var a = s.frogs[1], hp = a.hp;
+    var r = jumpTo(s, 0, a.x, a.y);
+    ok(has(r, 'link'), 'linked'); eq(a.hp, hp, 'no friendly damage'); eq(s.zones.length, 0, 'no flask effect');
+    ok(s.frogs[0].envShield && a.envShield, 'Aegis Launch Pad shields');
+    eq(Sim.activeFlask(s.frogs[0]), 'frost', 'jumper switched');
+    Sim.apply(s, { frog: 2, mode: 'skip' });
+    // Aegis запускается из пары: VENOM (своя) + FROST (Springjack) = NOXIOUS ICE
+    put(s, 3, a.x, a.y - 120);
+    var rr = jumpTo(s, 1, a.x, a.y - 120);
+    ok(rr.events.some(function (e) { return e.t === 'reaction' && e.name === 'NOXIOUS ICE'; }), 'combined reaction');
+    eq(Sim.activeFlask(s.frogs[0]), 'frost', 'partner flask unchanged'); eq(Sim.activeFlask(a), 'force', 'launcher switched');
+    eq(s.links[0], null, 'link used up');
+  });
+
+  test('Springjack launching from Link: +20% range (and Aegis +15%)', function () {
+    var s = sandbox(['spring', 'aegis']);
+    s.links[0] = { a: 0, b: 1 }; put(s, 0, 280 - 18 - 25, 600);
+    eq(Math.round(Sim.rangeFor(s, s.frogs[0])), Math.round(FB.FROGS.spring.jump * T.springLinkRangeMul * T.aegisLaunchMul));
+  });
+
+  test('a pillar blocks a low arc; repeated hits crack and destroy it', function () {
+    var s = sandbox(); s.objects = [{ id: 0, kind: 'pillar', x: 120, y: 540, r: 22, hp: T.pillarHp, maxHp: T.pillarHp, state: 'intact' }];
+    var r = jumpTo(s, 0, 120, 480);
+    ok(has(r, 'bonk'), 'bonk'); ok(s.frogs[0].y > 540, 'stopped before the pillar');
+    var p = s.objects[0];
+    for (var i = 0; i < 6 && p.state !== 'destroyed'; i++) { s.acted = {}; s.turnSide = 0; put(s, 0, 120, 600); jumpTo(s, 0, 120, 480); }
+    eq(p.state, 'destroyed');
+  });
+
+  test('fragile plate: cracks, then becomes a pit; falling hurts; jumping out is shorter', function () {
+    var s = sandbox(); s.plates = [{ id: 0, x: 120, y: 480, r: 32, hp: T.plateHp, state: 'intact' }];
+    jumpTo(s, 0, 120, 480); eq(s.plates[0].state, 'cracked');
+    s.acted = {}; s.turnSide = 0; put(s, 0, 120, 600); var hp = s.frogs[0].hp;
+    var r = jumpTo(s, 0, 120, 480);
+    eq(s.plates[0].state, 'pit'); ok(has(r, 'fall')); eq(hp - s.frogs[0].hp, T.pitDamage);
+    eq(Math.round(Sim.rangeFor(s, s.frogs[0])), Math.round(s.frogs[0].jump * T.pitRangeMul));
+  });
+
+  test('a broken alchemical tank spills its liquid', function () {
+    var s = sandbox(); s.objects = [{ id: 0, kind: 'tank', x: 120, y: 470, r: 17, hp: 1, maxHp: 2, state: 'cracked', liquid: 'venom' }];
+    var r = jumpTo(s, 0, 120, 500); // разлив тут же вступает в реакцию с Ember — это по правилам
+    ok(r.events.some(function (e) { return e.t === 'zone' && e.zone.type === 'venom' && e.zone.side === -1; }), 'venom spill');
+    ok(r.events.some(function (e) { return e.t === 'reaction' && e.name === 'BLAST'; }), 'Ember on the spill = BLAST');
+  });
+
+  test('Tongue Harpooner hooks the nearest enemy after landing', function () {
+    var s = sandbox(['harpoon', 'aegis'], ['ram', 'spur']); put(s, 2, 120, 380);
+    var y0 = s.frogs[2].y;
+    var r = jumpTo(s, 0, 120, 480);
+    ok(has(r, 'tongue'), 'tongue'); ok(s.frogs[2].y > y0 + 20, 'pulled closer');
+  });
+
+  test('Corrosive Burst: corroded target takes x1.5 from the next impact', function () {
+    var s = sandbox(['spur', 'aegis'], ['ram', 'harpoon'], [['venom', 'ember', 'frost'], ['force', 'venom', 'ember']]);
+    put(s, 2, 120, 420); s.zones.push({ id: 97, type: 'resonance', x: 120, y: 420, r: 35, turns: 2, side: 0 });
+    var r = jumpTo(s, 0, 120, 420);
+    ok(r.events.some(function (e) { return e.t === 'reaction' && e.name === 'CORROSIVE BURST'; }), 'reaction'); eq(s.frogs[2].corroded, 1, 'corroded');
+    var e = s.frogs[2]; s.acted = {}; s.turnSide = 0; var hp = e.hp; put(s, 1, e.x, e.y + 120);
+    jumpTo(s, 1, e.x, e.y);
+    eq(hp - e.hp, Math.round(FB.FROGS.aegis.impact * T.corrodedMul), 'next impact x1.5'); eq(e.corroded, 0, 'used up');
+  });
+
+  test('Steam Burst clears surfaces and knocks everyone around', function () {
+    var s = sandbox(); put(s, 2, 160, 420);
+    s.zones.push({ id: 96, type: 'frost', x: 120, y: 420, r: 45, turns: 5, side: 1 });
+    s.zones.push({ id: 95, type: 'venom', x: 170, y: 430, r: 30, turns: 5, side: 1 });
+    var x0 = s.frogs[2].x;
+    var r = jumpTo(s, 0, 120, 420);
+    ok(r.events.some(function (e) { return e.t === 'reaction' && e.name === 'STEAM BURST'; }));
+    eq(s.zones.length, 0, 'surfaces cleared'); ok(s.frogs[2].x > x0 + 20, 'knocked');
+  });
+
+  test('Arena Overload from round 7: outside the safe zone hurts at activation start', function () {
+    var s = sandbox();
+    for (var i = 0; i < 6 * 4; i++) { var f = s.frogs.filter(function (x) { return Sim.canAct(s, x); })[0]; Sim.apply(s, { frog: f.id, mode: 'skip' }); }
+    eq(s.round, 7); ok(s.safeR !== null, 'overload');
+    var f2 = s.frogs.filter(function (x) { return Sim.canAct(s, x); })[0]; put(s, f2.id, 30, 30); var hp = f2.hp;
+    Sim.apply(s, { frog: f2.id, mode: 'skip' });
+    eq(hp - f2.hp, T.overloadDamage);
+  });
+
+  test('preview == apply (predictable)', function () {
+    var s = sandbox(); put(s, 2, 140, 430);
+    var cmd = { frog: 0, dx: 15, dy: -170 };
     var p = Sim.preview(s, cmd);
     Sim.apply(s, cmd);
     eq(p.state.frogs[2].hp, s.frogs[2].hp); eq(p.state.frogs[0].x, s.frogs[0].x); eq(p.state.frogs[2].y, s.frogs[2].y);
   });
 
-  test('single round: KO ends the match (roundsToWin = 1)', function () {
-    var s = sandbox();
-    s.frogs[2].alive = false; s.frogs[2].hp = 0; s.frogs[3].hp = 1; put(s, 3, 100, 430);
-    Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -170 });
+  test('KO of both enemy frogs ends the match', function () {
+    var s = sandbox(); s.frogs[3].alive = false; s.frogs[3].hp = 0; s.frogs[2].hp = 5; put(s, 2, 120, 450);
+    jumpTo(s, 0, 120, 450);
     eq(s.phase, 'matchOver'); eq(s.matchWinner, 0); eq(s.roundWhy, 'ko');
   });
 
-  test('Bo3 still works via tuning (roundsToWin = 2)', function () {
-    var keep = T.roundsToWin; T.roundsToWin = 2;
-    try {
-      var s = sandbox();
-      s.frogs[2].alive = false; s.frogs[2].hp = 0; s.frogs[3].hp = 1; put(s, 3, 100, 430);
-      Sim.apply(s, { frog: 0, mode: 'move', dx: 0, dy: -170 });
-      eq(s.phase, 'roundOver'); eq(s.score[0], 1);
-      Sim.startRound(s); eq(s.turnSide, 1, 'round 2 starts bot');
-    } finally { T.roundsToWin = keep; }
-  });
-
-  test('bot plays a whole turn of legal pulls', function () {
-    var s = Sim.createMatch(['jumper', 'bulwark'], ['poison', 'tongue'], 11);
+  test('bot returns a legal activation', function () {
+    var s = Sim.createMatch(['ram', 'spring'], ['aegis', 'bellows'], DEF, DEF, 11);
     Sim.startRound(s); s.turnSide = 1;
-    var rand = AI.makeRand(5), n = 0;
-    while (s.turnSide === 1 && n < 6) { var plan = AI.choose(s, rand); ok(plan && Sim.apply(s, plan.cmd).ok, 'legal'); n++; }
-    eq(s.turnSide, 0, 'turn passed');
+    var plan = AI.choose(s, AI.makeRand(5));
+    ok(plan && Sim.apply(s, plan.cmd).ok, 'legal');
   });
 
   var pass = results.filter(function (r) { return r[1]; }).length;
@@ -304,68 +220,53 @@
 
   // ---------- Автоплей ----------
   function playMatch(tA, tB, seed) {
-    var s = Sim.createMatch(tA, tB, seed), rand = AI.makeRand(seed * 31 + 7), turns = 0, rounds = [];
+    var rand = AI.makeRand(seed * 31 + 7);
+    var s = Sim.createMatch(tA, tB, [AI.flasksFor(tA[0], rand), AI.flasksFor(tA[1], rand)], [AI.flasksFor(tB[0], rand), AI.flasksFor(tB[1], rand)], seed);
     Sim.startRound(s);
-    var stats = { abil: 0, moves: 0, water: 0, sinks: 0 };
-    while (s.phase !== 'matchOver' && turns < 2000) {
-      if (s.phase === 'roundOver') { rounds.push(s.turnCount[0] + s.turnCount[1]); Sim.startRound(s); continue; }
-      var plan = AI.choose(s, rand);
-      if (!plan) break;
+    var n = 0, st = { reactions: 0, links: 0, destroyed: 0, falls: 0 };
+    while (s.phase === 'play' && n < 400) {
+      var plan = AI.choose(s, rand); if (!plan) break;
       var r = Sim.apply(s, plan.cmd);
-      if (plan.cmd.mode === 'ability') stats.abil++; else if (plan.cmd.mode !== 'rest') stats.moves++;
-      r.events.forEach(function (e) { if (e.t === 'padSink') stats.sinks++; if (e.t === 'splash') stats.water++; });
-      turns++;
+      r.events.forEach(function (e) { if (e.t === 'reaction') st.reactions++; if (e.t === 'link') st.links++; if (e.t === 'objState' && e.state === 'destroyed') st.destroyed++; if (e.t === 'fall') st.falls++; });
+      n++;
     }
-    if (s.phase === 'roundOver' || s.phase === 'matchOver') rounds.push(s.turnCount[0] + s.turnCount[1]);
-    return { winner: s.matchWinner, rounds: rounds, turns: turns, stats: stats, score: s.score };
+    return { winner: s.matchWinner, rounds: s.round, why: s.roundWhy, stats: st };
   }
   window.playMatch = playMatch;
 
-  function pairs() {
-    var o = FB.FROG_ORDER, p = [];
-    for (var i = 0; i < o.length; i++) for (var j = i + 1; j < o.length; j++) p.push([o[i], o[j]]);
-    return p;
-  }
+  function pairs() { var o = FB.FROG_ORDER, p = []; for (var i = 0; i < o.length; i++) for (var j = i + 1; j < o.length; j++) p.push([o[i], o[j]]); return p; }
 
   function runMatrix(n, done) {
     var P = pairs(), jobs = [], seed = 100;
     for (var i = 0; i < P.length; i++) for (var j = 0; j < P.length; j++) if (i !== j) for (var k = 0; k < n; k++) jobs.push([i, j, seed++]);
-    // выборка, чтобы не ждать вечно: не больше 120 матчей
-    if (jobs.length > 120) { var stride = jobs.length / 120, sel = []; for (var q = 0; q < 120; q++) sel.push(jobs[Math.floor(q * stride)]); jobs = sel; }
-    var wins = {}, games = {}, frogW = {}, frogG = {}, roundLens = [], abil = 0, moves = 0, sinks = 0, idx = 0, t0 = performance.now();
-    P.forEach(function (p) { wins[p.join('+')] = 0; games[p.join('+')] = 0; });
+    if (jobs.length > 60) { var stride = jobs.length / 60, sel = []; for (var q = 0; q < 60; q++) sel.push(jobs[Math.floor(q * stride)]); jobs = sel; }
+    var frogW = {}, frogG = {}, rounds = [], ko = 0, st = { reactions: 0, links: 0, destroyed: 0, falls: 0 }, idx = 0, t0 = performance.now();
     FB.FROG_ORDER.forEach(function (k) { frogW[k] = 0; frogG[k] = 0; });
     function step() {
       var until = performance.now() + 40;
       while (idx < jobs.length && performance.now() < until) {
         var jb = jobs[idx++], A = P[jb[0]], B = P[jb[1]], r = playMatch(A, B, jb[2]);
-        var ka = A.join('+'), kb = B.join('+');
-        games[ka]++; games[kb]++;
-        if (r.winner === 0) wins[ka]++; else wins[kb]++;
         A.forEach(function (k) { frogG[k]++; if (r.winner === 0) frogW[k]++; });
         B.forEach(function (k) { frogG[k]++; if (r.winner === 1) frogW[k]++; });
-        roundLens = roundLens.concat(r.rounds); abil += r.stats.abil; moves += r.stats.moves; sinks += r.stats.sinks;
+        rounds.push(r.rounds); if (r.why === 'ko') ko++;
+        for (var kk in st) st[kk] += r.stats[kk];
       }
       document.getElementById('auto').textContent = 'running ' + idx + '/' + jobs.length;
       if (idx < jobs.length) return setTimeout(step, 0);
-      roundLens.sort(function (a, b) { return a - b; });
-      var med = roundLens[Math.floor(roundLens.length / 2)];
-      var html = '<p>' + jobs.length + ' matches in ' + Math.round(performance.now() - t0) + ' ms. Round length (turns, both sides): median ' + med +
-        ', p10 ' + roundLens[Math.floor(roundLens.length * 0.1)] + ', p90 ' + roundLens[Math.floor(roundLens.length * 0.9)] +
-        '. Abilities ' + Math.round(100 * abil / (abil + moves)) + '% of actions. Pad sinks per match: ' + (sinks / jobs.length).toFixed(1) + '</p>';
+      rounds.sort(function (a, b) { return a - b; });
+      var m = jobs.length;
+      var html = '<p>' + m + ' matches in ' + Math.round(performance.now() - t0) + ' ms. Rounds: median ' + rounds[m >> 1] + ', p90 ' + rounds[Math.floor(m * 0.9)] +
+        '. KO ' + Math.round(100 * ko / m) + '%. Per match: reactions ' + (st.reactions / m).toFixed(1) + ', links ' + (st.links / m).toFixed(1) +
+        ', objects destroyed ' + (st.destroyed / m).toFixed(1) + ', pit falls ' + (st.falls / m).toFixed(1) + '</p>';
       html += '<table><tr><th>Frog</th><th>Win %</th><th>Games</th></tr>' + FB.FROG_ORDER.map(function (k) {
-        return '<tr><td>' + k + '</td><td>' + Math.round(100 * frogW[k] / Math.max(1, frogG[k])) + '</td><td>' + frogG[k] + '</td></tr>';
-      }).join('') + '</table>';
-      html += '<table><tr><th>Pair</th><th>Win %</th><th>Games</th><th>Bonus</th></tr>' + P.map(function (p) {
-        var k = p.join('+'), b = FB.findPair(p[0], p[1]);
-        return '<tr><td>' + k + '</td><td>' + Math.round(100 * wins[k] / Math.max(1, games[k])) + '</td><td>' + games[k] + '</td><td>' + (b ? b.name : '') + '</td></tr>';
+        return '<tr><td>' + FB.FROGS[k].name + '</td><td>' + Math.round(100 * frogW[k] / Math.max(1, frogG[k])) + '</td><td>' + frogG[k] + '</td></tr>';
       }).join('') + '</table>';
       document.getElementById('auto').innerHTML = html;
-      window.AUTO_RESULT = { med: med, frogW: frogW, frogG: frogG, wins: wins, games: games };
+      window.AUTO_RESULT = { rounds: rounds, ko: ko, m: m, frogW: frogW, frogG: frogG, st: st };
       if (done) done();
     }
     step();
   }
-  document.getElementById('run').onclick = function () { runMatrix(+document.getElementById('n').value || 2); };
+  document.getElementById('run').onclick = function () { runMatrix(+document.getElementById('n').value || 1); };
   window.runMatrix = runMatrix;
 })();
