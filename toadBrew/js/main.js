@@ -145,13 +145,14 @@
     if (s.turnSide === 1 || app.auto) return botTurn();
     // игрок
     app.mode = 'move';
-    app.qteT = 0; // кольцо следующей оттяжки начинает сужаться заново (D-033)
     var cur = s.frogs[app.selected];
     if (!cur || !Sim.canAct(s, cur)) {
       var c = s.frogs.filter(function (f) { return Sim.canAct(s, f); });
       app.selected = c.length ? c[0].id : -1;
     }
-    if (s.pullsUsed > 0) { updateHud(); return; } // продолжение хода: оттяжки можно тратить любой жабой
+    // продолжение хода: оттяжки можно тратить любой жабой; жабы снова загораются (D-038)
+    if (s.pullsUsed > 0) { app.buffLeft = s.qteHits < T.ultPerfects ? T.buffTime : 0; updateHud(); return; }
+    app.buffLeft = 0;
     banner('YOUR TURN', 'p', 700);
     app.turnLeft = T.turnTimeSec; // таймер на весь ход, со всеми оттяжками (D-021)
     updateHud();
@@ -428,6 +429,9 @@
         case 'drop':
           P = R.toScreen(f.x + f.vx * f.t, f.y + f.vy * f.t);
           c.fillStyle = 'rgba(225,248,255,' + (1 - u) + ')'; c.beginPath(); c.arc(P.x, P.y - Math.sin(Math.PI * u) * 14 * sc, 2.6 * sc, 0, Math.PI * 2); c.fill(); break;
+        case 'smoke':
+          P = R.toScreen(f.x + f.vx * f.t, f.y + f.vy * f.t);
+          c.fillStyle = 'rgba(190,200,205,' + (0.55 * (1 - u)) + ')'; c.beginPath(); c.arc(P.x, P.y, (4 + 9 * u) * sc, 0, Math.PI * 2); c.fill(); break;
         case 'flash':
           c.fillStyle = 'rgba(255,236,170,' + (0.55 * (1 - u)) + ')'; c.fillRect(0, 0, R.view.cw, R.view.ch); break;
         case 'spark':
@@ -563,34 +567,77 @@
     drag.power = power;
   });
 
-  // ---------- кольцо на прыжковых оттяжках со 2-й (D-033) ----------
-  // Кольцо сужается за qtePeriod, держится на цели qteWindow и начинает снова. Окно — последние qteWindow
-  // перед совпадением и всё время удержания. Две идеальные прыжковые оттяжки за ход — ультимейт (D-034).
-  function qteCycle() { return T.qtePeriod + T.qteWindow; }
-  function qteActive() {
-    if (!myTurnNow() || app.s.pullsUsed < 1 || app.s.qteHits >= T.ultPerfects) return false;
-    var f = app.s.frogs[app.selected];
-    return !!f && Sim.canAct(app.s, f) && Sim.isJump(app.s, f, app.mode);
-  }
-  function qteInWindow() { return app.qteT % qteCycle() >= T.qtePeriod - T.qteWindow; }
+  // ---------- угасающий бафф на прыжковых оттяжках со 2-й (D-038, заменяет кольцо D-033) ----------
+  // После каждой оттяжки (со 2-й) жабы, которые могут прыгнуть, загораются — бафф угасает за buffTime секунд.
+  // Прыгнул, пока горит, — PERFECT. Две идеальные прыжковые оттяжки за ход — ультимейт (D-034).
+  function buffOn() { return myTurnNow() && app.s.pullsUsed >= 1 && app.s.qteHits < T.ultPerfects && app.buffLeft > 0; }
+  function buffFrog(f) { return Sim.canAct(app.s, f) && !f.inWater; } // может прыгнуть: на кувшинке или на спине
+  function qteActive() { var f = app.s.frogs[app.selected]; return buffOn() && !!f && buffFrog(f) && Sim.isJump(app.s, f, app.mode); }
   function ultNext() { return app.s && app.s.qteHits === T.ultPerfects - 1; } // следующая идеальная — ультимейт
 
-  function drawTurnOverlay(c) {
-    var s = app.s; if (!s || app.screen !== 'battle') return;
-    var sc = R.view.s;
-    if (qteActive()) {
-      var f = s.frogs[app.selected], d = D(f.id), P = R.toScreen(d.x, d.y), r = f.r * sc;
-      var t = app.qteT % qteCycle(), u = Math.min(1, t / T.qtePeriod), hit = qteInWindow(), ult = ultNext();
-      var targetR = r * 1.5, startR = r * 4.2, rad = targetR + (startR - targetR) * (1 - u);
-      var gold = ult ? '255,140,40' : '255,215,90';
-      c.lineWidth = ult ? 4 : 3;
-      c.strokeStyle = 'rgba(' + gold + ',' + (hit ? 1 : 0.75) + ')';
-      c.beginPath(); c.arc(P.x, P.y, targetR, 0, Math.PI * 2); c.stroke();
-      if (hit) { c.fillStyle = 'rgba(' + gold + ',0.25)'; c.fill(); }
-      c.strokeStyle = hit ? 'rgba(255,240,170,1)' : 'rgba(255,255,255,0.85)'; c.lineWidth = hit ? 5 : 3;
-      c.beginPath(); c.arc(P.x, P.y, rad, 0, Math.PI * 2); c.stroke();
-      if (ult) R.label(c, P.x, P.y + targetR + 14, 'ULTIMATE', '#ffb04a');
-    }
+  function tickBuff(dt) {
+    if (!buffOn()) return;
+    app.buffLeft -= dt;
+    if (app.buffLeft > 0) return;
+    app.buffLeft = 0; // бафф истёк — гаснет с дымком
+    app.s.frogs.forEach(function (f) {
+      if (f.side !== 0 || !buffFrog(f)) return;
+      var d = D(f.id);
+      for (var i = 0; i < 6; i++) { var a = i / 6 * Math.PI * 2; addFx({ k: 'smoke', x: d.x + Math.cos(a) * 8, y: d.y + Math.sin(a) * 8, vx: Math.cos(a) * 18, vy: Math.sin(a) * 18 - 14, life: 0.8 }); }
+    });
+    log('buffExpired');
+    updateHud();
+  }
+
+  // pass: 'under' — сияние под жабой, 'over' — искры и угольки поверх
+  function drawTurnOverlay(c, pass) {
+    var s = app.s; if (!s || app.screen !== 'battle' || !buffOn()) return;
+    var sc = R.view.s, t = app.t, k = Math.max(0, Math.min(1, app.buffLeft / T.buffTime)), ult = ultNext();
+    var flick = k < 0.35 ? 0.45 + 0.55 * Math.abs(Math.sin(t * (18 + (0.35 - k) * 60))) : 1; // под конец мерцает всё чаще
+    var col = ult ? [255, 120, 40] : [255, 205, 80];
+    c.save(); c.globalCompositeOperation = pass === 'under' ? 'source-over' : 'lighter';
+    s.frogs.forEach(function (f) {
+      if (f.side !== 0 || !buffFrog(f)) return;
+      var d = D(f.id), P = R.toScreen(d.x, d.y), r = f.r * sc, cy = P.y - (f.on >= 0 ? 6 * sc : 0);
+      var sel = f.id === app.selected, a = (0.18 + 0.5 * k) * flick * (sel ? 1 : 0.7);
+      if (pass === 'under') { // сияние и языки пламени по краю — тем короче, чем меньше осталось
+        var R2 = r * (2.1 + 1.6 * k);
+        var gr = c.createRadialGradient(P.x, cy, r * 0.6, P.x, cy, R2);
+        gr.addColorStop(0, 'rgba(' + col + ',' + Math.min(0.95, a * 1.6) + ')'); gr.addColorStop(0.55, 'rgba(' + col + ',' + (a * 0.7) + ')'); gr.addColorStop(1, 'rgba(' + col + ',0)');
+        c.fillStyle = gr; c.beginPath(); c.arc(P.x, cy, R2, 0, Math.PI * 2); c.fill();
+        // языки пламени выходят из-за силуэта жабы и укорачиваются по мере угасания
+        for (var layer = 0; layer < 2; layer++) {
+          c.fillStyle = layer ? 'rgba(255,245,190,' + (0.85 * flick) + ')' : 'rgba(' + (ult ? '255,90,30' : '255,150,40') + ',' + (0.8 * flick) + ')';
+          for (var q = 0; q < 14; q++) {
+            var qa = q / 14 * Math.PI * 2 + t * 0.7, wob = 0.65 + 0.35 * Math.sin(t * 10 + q * 1.9);
+            var h = r * (0.35 + 1.0 * k) * wob * (layer ? 0.55 : 1), base = r * 1.3, w = r * (layer ? 0.12 : 0.22);
+            var bx = P.x + Math.cos(qa) * base, by = cy + Math.sin(qa) * base;
+            c.beginPath(); c.moveTo(bx - Math.sin(qa) * w, by + Math.cos(qa) * w);
+            c.quadraticCurveTo(bx + Math.cos(qa) * h * 0.6 + Math.sin(qa) * w * 0.6, by + Math.sin(qa) * h * 0.6 - Math.cos(qa) * w * 0.6, bx + Math.cos(qa) * h, by + Math.sin(qa) * h);
+            c.lineTo(bx + Math.sin(qa) * w, by - Math.cos(qa) * w); c.closePath(); c.fill();
+          }
+        }
+        return;
+      }
+      // золотой отлив на самой жабе — «бафф на ней»
+      var tint = c.createRadialGradient(P.x, cy, 0, P.x, cy, r * 1.2);
+      tint.addColorStop(0, 'rgba(' + col + ',' + (0.28 * k * flick) + ')'); tint.addColorStop(1, 'rgba(' + col + ',0)');
+      c.fillStyle = tint; c.beginPath(); c.arc(P.x, cy, r * 1.2, 0, Math.PI * 2); c.fill();
+      // кружащие искры — их всё меньше
+      var n = Math.max(1, Math.ceil(9 * k));
+      for (var i = 0; i < n; i++) {
+        var ang = t * 3.2 + i * Math.PI * 2 / n, rr = r * (1.25 + 0.15 * Math.sin(t * 5 + i));
+        c.fillStyle = 'rgba(255,240,180,' + (0.9 * flick) + ')';
+        c.beginPath(); c.arc(P.x + Math.cos(ang) * rr, cy + Math.sin(ang) * rr * 0.8, 1.6 + 1.6 * k, 0, Math.PI * 2); c.fill();
+      }
+      // поднимающиеся угольки
+      for (var j = 0; j < Math.ceil(7 * k); j++) {
+        var ph = (t * 0.9 + j * 0.37 + f.id * 0.11) % 1, ex = P.x + Math.sin(j * 12.9 + f.id) * r * 0.9;
+        c.fillStyle = 'rgba(' + col + ',' + ((1 - ph) * k * flick) + ')';
+        c.beginPath(); c.arc(ex, cy - ph * r * 2.6, 1.4 + (1 - ph) * 1.8, 0, Math.PI * 2); c.fill();
+      }
+    });
+    c.restore();
   }
 
   // Плашка над кнопками: оттяжки стороны и прогресс ультимейта (◆ — идеальные прыжки за ход)
@@ -635,11 +682,7 @@
     var aim = app.aim; drag = null; app.aim = null;
     if (cancel || !aim || !aim.valid) return;
     // Кольцо на 2-й и следующих оттяжках: отпустил, пока кольца совпадают, — бонус (D-027)
-    if (qteActive()) {
-      aim.cmd.qte = qteInWindow();
-      log('qte', { hit: aim.cmd.qte, t: +(app.qteT % qteCycle()).toFixed(2) });
-      if (!aim.cmd.qte) { var fq = app.s.frogs[aim.frog]; addFx({ k: 'num', x: fq.x, y: fq.y - 40, text: 'MISS', color: '#9fb8c8', life: 0.7 }); }
-    }
+    if (qteActive()) { aim.cmd.qte = true; log('perfect', { left: +app.buffLeft.toFixed(2) }); } // прыгнул, пока бафф горит
     execute(aim.cmd);
   }
   cv.addEventListener('pointerup', function (e) { endDrag(e, false); });
@@ -730,7 +773,7 @@
     else if (myTurn) {
       var where = f.on >= 0 ? 'on ' + FB.FROGS[s.frogs[f.on].kind].name + '\'s back' : (water ? 'in water' : 'on a lily pad');
       var lb = Sim.launchBonus(s, f);
-      if (started && qteActive()) hint = ultNext() ? 'Perfect jump now = ULTIMATE LANDING! Release when the rings meet.' : 'Jump and release when the rings meet: 2 perfect jumps = ultimate.';
+      if (started && qteActive()) hint = ultNext() ? 'Jump before the glow fades = ULTIMATE LANDING!' : 'Jump before the glow fades: PERFECT. 2 perfect jumps = ultimate.';
       else if (app.mode === 'ability') hint = d.abilityName + ': ' + d.abilityDesc;
       else if (started) hint = 'Pull ' + (s.pullsUsed + 1) + ' with any frog — or END the turn.';
       else hint = d.name + ' ' + where + ' — drag back to ' + (water ? 'dash' : 'jump') + '. 3 pulls, any frogs. Or REST.';
@@ -798,7 +841,7 @@
       }
       app.shake = Math.max(0, app.shake - dt * 40);
       tickTimer(dt);
-      if (qteActive()) app.qteT += dt;
+      tickBuff(dt);
       // визуал кувшинок тянется к показанному состоянию
       if (app.shown) app.shown.pads.forEach(function (p) {
         var v = app.padVis[p.id]; if (!v) return;
@@ -825,7 +868,7 @@
       state: app.shown, disp: app.disp, padVis: app.padVis, t: app.t, aim: app.aim, shake: app.shake,
       selected: app.s && app.s.turnSide === 0 && app.s.phase === 'play' ? app.selected : (app.aim ? app.aim.frog : -1),
       actable: function (f) { return actable(app.s.frogs[f.id]); },
-      fxUnder: function (c) { drawFx(c, true); }, fxOver: function (c) { drawFx(c, false); drawTurnOverlay(c); }
+      fxUnder: function (c) { drawFx(c, true); drawTurnOverlay(c, 'under'); }, fxOver: function (c) { drawFx(c, false); drawTurnOverlay(c, 'over'); }
     } : { state: null, t: app.t };
     R.frame(scene);
   }
