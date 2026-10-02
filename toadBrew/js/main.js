@@ -592,8 +592,12 @@
   // pass: 'under' — сияние под жабой, 'over' — искры и угольки поверх
   function drawTurnOverlay(c, pass) {
     var s = app.s; if (!s || app.screen !== 'battle' || !buffOn()) return;
-    var sc = R.view.s, t = app.t, k = Math.max(0, Math.min(1, app.buffLeft / T.buffTime)), ult = ultNext();
-    var flick = k < 0.35 ? 0.45 + 0.55 * Math.abs(Math.sin(t * (18 + (0.35 - k) * 60))) : 1; // под конец мерцает всё чаще
+    var sc = R.view.s, t = app.t, ult = ultNext();
+    // Пульс раз в секунду (D-039): вспышка в начале каждой секунды и спад; каждая следующая вспышка слабее
+    var e = Math.max(0, T.buffTime - app.buffLeft), beat = Math.floor(e), p = e - beat, beats = Math.ceil(T.buffTime);
+    var k = Math.max(0, 1 - beat / beats);                 // сила этой пульсации: 1, 2/3, 1/3 …
+    var pulse = Math.exp(-p * 3.2);                        // 1 на ударе → почти 0 к следующему
+    var flick = 0.12 + 0.88 * pulse;
     var col = ult ? [255, 120, 40] : [255, 205, 80];
     c.save(); c.globalCompositeOperation = pass === 'under' ? 'source-over' : 'lighter';
     s.frogs.forEach(function (f) {
@@ -601,16 +605,21 @@
       var d = D(f.id), P = R.toScreen(d.x, d.y), r = f.r * sc, cy = P.y - (f.on >= 0 ? 6 * sc : 0);
       var sel = f.id === app.selected, a = (0.18 + 0.5 * k) * flick * (sel ? 1 : 0.7);
       if (pass === 'under') { // сияние и языки пламени по краю — тем короче, чем меньше осталось
-        var R2 = r * (2.1 + 1.6 * k);
+        var R2 = r * (1.6 + 1.8 * k * (0.4 + 0.6 * pulse));
         var gr = c.createRadialGradient(P.x, cy, r * 0.6, P.x, cy, R2);
         gr.addColorStop(0, 'rgba(' + col + ',' + Math.min(0.95, a * 1.6) + ')'); gr.addColorStop(0.55, 'rgba(' + col + ',' + (a * 0.7) + ')'); gr.addColorStop(1, 'rgba(' + col + ',0)');
         c.fillStyle = gr; c.beginPath(); c.arc(P.x, cy, R2, 0, Math.PI * 2); c.fill();
+        // волна от удара пульса — расходится и тает
+        var wr = r * (1.3 + 1.6 * p);
+        var wg = c.createRadialGradient(P.x, cy, wr * 0.75, P.x, cy, wr);
+        wg.addColorStop(0, 'rgba(' + col + ',0)'); wg.addColorStop(0.7, 'rgba(' + col + ',' + (0.55 * k * (1 - p)) + ')'); wg.addColorStop(1, 'rgba(' + col + ',0)');
+        c.fillStyle = wg; c.beginPath(); c.arc(P.x, cy, wr, 0, Math.PI * 2); c.fill();
         // языки пламени выходят из-за силуэта жабы и укорачиваются по мере угасания
         for (var layer = 0; layer < 2; layer++) {
           c.fillStyle = layer ? 'rgba(255,245,190,' + (0.85 * flick) + ')' : 'rgba(' + (ult ? '255,90,30' : '255,150,40') + ',' + (0.8 * flick) + ')';
           for (var q = 0; q < 14; q++) {
             var qa = q / 14 * Math.PI * 2 + t * 0.7, wob = 0.65 + 0.35 * Math.sin(t * 10 + q * 1.9);
-            var h = r * (0.35 + 1.0 * k) * wob * (layer ? 0.55 : 1), base = r * 1.3, w = r * (layer ? 0.12 : 0.22);
+            var h = r * (0.2 + 1.1 * k * (0.35 + 0.65 * pulse)) * wob * (layer ? 0.55 : 1), base = r * 1.3, w = r * (layer ? 0.12 : 0.22);
             var bx = P.x + Math.cos(qa) * base, by = cy + Math.sin(qa) * base;
             c.beginPath(); c.moveTo(bx - Math.sin(qa) * w, by + Math.cos(qa) * w);
             c.quadraticCurveTo(bx + Math.cos(qa) * h * 0.6 + Math.sin(qa) * w * 0.6, by + Math.sin(qa) * h * 0.6 - Math.cos(qa) * w * 0.6, bx + Math.cos(qa) * h, by + Math.sin(qa) * h);

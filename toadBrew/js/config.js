@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '0.5.0';
+FB.VERSION = '0.5.1';
 
 FB.T = {
   // Поле (мировые единицы, портрет 9:16, D-004)
