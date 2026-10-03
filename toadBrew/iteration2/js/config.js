@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '2.6.0';
+FB.VERSION = '2.7.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -27,7 +27,7 @@ FB.T = {
   impactBase: 14, impactSpeed: 10,     // физический урон прямого попадания: base + speed × доля дальности
   kbBase: 75, kbMin: 18, kbMax: 190, kbSpeedMin: 0.6,
   slamDamage: 8,                       // удар о стену/колонну/кристалл после отброса
-  contactAssist: 6,
+  contactAssist: 14,                   // запас попадания в жабу (D-084)
   wallBonus: 0.1, wlzBonus: 0.3,       // прибавка остатка дальности после отскока от стены / Wall Launch Zone (§21)
   maxBounces: 2,
 
@@ -53,11 +53,11 @@ FB.T = {
   reservoirMul: 1.5,                   // Reservoir Control (§7)
 
   // Командные свойства (§7)
-  divingPerUnit: 1 / 520, divingMax: 2.0,   // Diving Strike: impact × (1 + путь в воздухе / 520), не больше ×2
+  divingPerUnit: 1 / 1400, divingMax: 2.0,  // Diving Strike: impact × (1 + путь в воздухе / 1400), не больше ×2; полный прыжок ≈ ×1.5, ×2 — с отскоками (D-082)
   catapultRangeMul: 0.8,                    // Living Catapult: доп. прыжок от союзника дальше — до 80% (D-077)
-  // Отскок от союзника (D-077): окно, прыжок вдоль основного направления до allyHopMax, без ввода — автоотскок allyHopMul
+  // Отскок от союзника (D-077, D-080, D-083): сидит на спине, окно на прыжок в любую сторону до allyHopMax, без ввода — автоотскок allyHopMul
   allyWindow: 2.8, allyHopMax: 0.5, allyHopMul: 0.25, // окно 2.8 с, прицел в любую сторону (D-080)
-  allyGap: 18, allyShove: 45,                // расталкивание при прыжке на союзника (D-080)
+  allyGap: 18, allyShove: 55, perchH: 14,    // perchH — высота спины союзника, с которой стартует доп. прыжок (D-083)
   pinnedSlamMul: 3, pinnedBonus: 10,        // Pinned Target
   gripWindow: 0.8, gripRangeMul: 1.25, gripImpactMul: 1.3, // Reactive Grip (§22)
 

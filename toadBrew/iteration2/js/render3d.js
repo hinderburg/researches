@@ -194,7 +194,9 @@
     fall:  { dir: { r: { back: true, s: [0.38, 0.2, 0.1] }, f: { back: false, s: [0.42, 0.22, 0.1] } }, s: 1.04 },
     land:  { f: [-12, 6], r: [16, -6], s: 1.1 },
     grip:  { f: [38, -18], r: [14, 4], s: 1 },
-    dead:  { f: [-34, 20], r: [34, -20], s: 0.95 }
+    dead:  { f: [-34, 20], r: [34, -20], s: 0.95 },
+    perch: { f: [-18, 26], r: [26, -30], s: 0.93 },   // сидит на спине союзника, лапы чуть поджаты (D-083)
+    squash: { f: [-40, 46], r: [44, -52], s: 0.86 }   // на неё запрыгнули: лапы под телом, сплющилась
   };
   function wrapA(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
   function buildFrog(f) {
@@ -313,7 +315,8 @@
     F.ring.scale.setScalar(d.sel ? 1.12 + Math.sin(t * 6) * 0.05 : 1);
     if (!d.alive) { F.mat.color.setRGB(0.35, 0.33, 0.32); F.glow.visible = false; }
     else {
-      var fl = d.flash || 0; F.mat.color.setRGB(1 + fl * 2, 1 + fl * 1.2, 1 + fl * 1.2);
+      var fl = d.flash || 0; F.dk = (F.dk || 0) + ((d.dark ? 1 : 0) - (F.dk || 0)) * Math.min(1, dt * 8); var sh = 1 - F.dk * 0.5; // тень от жабы сверху (D-083)
+      F.mat.color.setRGB((1 + fl * 2) * sh, (1 + fl * 1.2) * sh, (1 + fl * 1.2) * sh);
       F.mat.emissive && F.mat.emissive.setRGB(fl * 0.6, fl * 0.2, fl * 0.2);
       F.glow.visible = true; F.glow.material.opacity = 0.35 + 0.2 * Math.sin(t * 3 + f.id * 1.7) + (f.charge ? 0.25 : 0);
     }

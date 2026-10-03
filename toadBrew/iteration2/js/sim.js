@@ -266,6 +266,11 @@
     }
     s.pending = null;
     var cont = false;
+    // спрыгивая со спины союзника, жаба отталкивает его назад — они расходятся (D-083)
+    if (P && P.kind === 'hop' && P.onAlly !== undefined && (mode === 'hop' || mode === 'end')) {
+      var jd = mode === 'end' ? norm(P.dir.x, P.dir.y) : norm(cmd.dx || 0, cmd.dy || 0); if (!jd.l) jd = norm(P.dir.x, P.dir.y);
+      var al = s.frogs[P.onAlly]; if (al.alive) push(s, al, { x: -jd.x, y: -jd.y }, T.allyShove, events, null, true);
+    }
     if (mode === 'skip') events.push({ t: 'skip', id: f.id });
     else if (mode === 'end') { events.push({ t: 'autoHop', id: f.id }); cont = jump(s, f, P.dir.x * 1e4, P.dir.y * 1e4, 'auto', events, P); }
     else if (mode === 'drop') { events.push({ t: 'drop', id: f.id, from: { x: f.x, y: f.y } }); land(s, f, { x: f.x, y: f.y }, P.dir, 0, 0, events, { drop: true }); }
@@ -281,7 +286,7 @@
   function jump(s, f, dx, dy, mode, events, P) {
     var range = Sim.rangeFor(s, f, mode), v = norm(dx, dy);
     if (v.l < 1e-6) v = { x: 0, y: f.side === 0 ? -1 : 1, l: 1 };
-    var len = Math.min(v.l, range), from = { x: f.x, y: f.y }, h0 = 0;
+    var len = Math.min(v.l, range), from = { x: f.x, y: f.y }, h0 = P && P.onAlly !== undefined ? T.perchH : 0;
     if (mode === 'grip' && P) { // с выступа стены — только от стены
       var dn = v.x * P.n.x + v.y * P.n.y;
       if (dn < 0.2) { var adj = norm(v.x + P.n.x * (0.2 - dn) * 2, v.y + P.n.y * (0.2 - dn) * 2); v = { x: adj.x, y: adj.y, l: v.l }; }
@@ -296,13 +301,14 @@
     fl.segs.forEach(function (sg) { if (sg.hit) events.push({ t: 'bounce', id: f.id, x: sg.to.x, y: sg.to.y, kind: sg.hit, wlz: sg.wlz }); });
     if (fl.grip) { // Reactive Grip: висит на стене, ждёт второй прыжок (§22)
       f.x = fl.grip.x; f.y = fl.grip.y;
-      s.pending = { kind: 'grip', frog: f.id, n: fl.grip.n, h: fl.grip.h, dir: fl.dir, air: fl.air };
+      s.pending = { kind: 'grip', frog: f.id, n: fl.grip.n, h: fl.grip.h, dir: fl.dir, air: fl.air, bounces: fl.bounces + 1 }; // зацеп = ещё один отскок
       events.push({ t: 'grip', id: f.id, x: f.x, y: f.y, n: fl.grip.n, h: fl.grip.h });
       return true;
     }
     var speed = len / f.jump;
     var airTotal = fl.air + (P && P.air ? P.air : 0);
-    return land(s, f, fl.land, fl.dir, speed, airTotal, events, { mode: mode });
+    var bTotal = fl.bounces + (P && P.bounces ? P.bounces : 0);
+    return land(s, f, fl.land, fl.dir, speed, airTotal, events, { mode: mode, bounces: bTotal });
   }
 
   // Приземление (§10, §11, §19): враг / союзник / лужа / узел
@@ -320,14 +326,17 @@
 
     // Союзник: Reaction Charge (§19), без урона и без элемента
     if (ally && !o.drop) {
-      var bk = norm(dir.x, dir.y); if (bk.l < 1e-6) bk = norm(L.x - ally.x, L.y - ally.y); // соскакивает со спины союзника вперёд по ходу прыжка (D-077)
-      f.x = ally.x + bk.x * (f.r + ally.r + T.allyGap); f.y = ally.y + bk.y * (f.r + ally.r + T.allyGap);
-      if (!wallClear(f.x, f.y, f.r * 0.8)) { f.x = L.x; f.y = L.y; }
-      events.push({ t: 'land', id: f.id, x: f.x, y: f.y, onAlly: ally.id });
-      push(s, ally, { x: -bk.x, y: -bk.y }, T.allyShove, events, null, true); // союзника отталкивает назад — жабы не слипаются (D-080)
+      var perch = o.mode !== 'hop' && o.mode !== 'auto';
+      if (perch) { f.x = ally.x; f.y = ally.y; } // сидит на спине союзника, пока не спрыгнет (D-083)
+      else { // доп. прыжок снова на союзника — соскакивает рядом
+        var bk = norm(dir.x, dir.y); if (bk.l < 1e-6) bk = norm(L.x - ally.x, L.y - ally.y);
+        f.x = ally.x + bk.x * (f.r + ally.r + T.allyGap); f.y = ally.y + bk.y * (f.r + ally.r + T.allyGap);
+        if (!wallClear(f.x, f.y, f.r * 0.8)) { f.x = L.x; f.y = L.y; }
+      }
+      events.push({ t: 'land', id: f.id, x: f.x, y: f.y, onAlly: ally.id, perch: perch });
       if (!f.charge) { f.charge = [f.el, ally.el]; events.push({ t: 'charge', id: f.id, els: f.charge.slice(), key: FB.reactionKey(f.el, ally.el) }); }
-      if (o.mode !== 'hop' && o.mode !== 'auto') { // отскок от союзника (D-077): окно на прыжок вдоль основного направления, иначе автоотскок 25%
-        s.pending = { kind: 'hop', frog: f.id, dir: dir };
+      if (perch) { // окно на доп. прыжок в любую сторону, иначе автоотскок 25% по ходу основного (D-077, D-080)
+        s.pending = { kind: 'hop', frog: f.id, dir: dir, onAlly: ally.id };
         events.push({ t: 'hopReady', id: f.id });
         return true;
       }
@@ -335,14 +344,14 @@
     }
 
     f.x = L.x; f.y = L.y;
-    events.push({ t: 'land', id: f.id, x: f.x, y: f.y });
+    events.push({ t: 'land', id: f.id, x: f.x, y: f.y, onEnemy: enemy ? enemy.id : undefined });
     var res = Sim.reactionAt(s, f, f.x, f.y, o.mode === 'hop' || o.mode === 'auto'); // заряд — на следующую активацию, не на отскок
 
     // Прямое попадание (§10)
     if (enemy) {
       var imp = T.impactBase + T.impactSpeed * Math.min(1, speed);
       if (s.traits[f.side] === 'diving') imp *= Math.min(T.divingMax, 1 + air * T.divingPerUnit); // Diving Strike
-      if (o.mode === 'grip') imp *= T.gripImpactMul;
+      if (s.traits[f.side] === 'grip' && o.bounces) imp *= Math.pow(T.gripImpactMul, o.bounces); // Reactive Grip: каждый отскок ×1.3 (D-082)
       events.push({ t: 'impact', id: enemy.id, by: f.id, x: enemy.x, y: enemy.y });
       damage(s, enemy, imp, events, 'impact', f);
       if (enemy.alive && res.kind === 'base') elementHit(s, f, enemy, f.el, 1, events);
