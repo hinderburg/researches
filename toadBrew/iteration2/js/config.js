@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '2.3.0';
+FB.VERSION = '2.3.1';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -49,7 +49,7 @@ FB.T = {
   sameChargeMul: 1.6,                  // заряд из двух одинаковых элементов — усиленный базовый эффект
 
   // Лужи и Drain Nodes (§11, §25–§28)
-  puddleR: 58, nodeR: 34,
+  puddleR: 116, nodeR: 34,             // лужи вдвое больше (D-075)
   reservoirMul: 1.5,                   // Reservoir Control (§7)
 
   // Командные свойства (§7)
@@ -115,8 +115,8 @@ FB.ARENA = {
   nodes: [{ p: A(262, 465), spawn: A(372, 515), pipe: A(268, 428) }, { p: A(684, 465), spawn: A(574, 515), pipe: A(678, 428) },
     { p: A(262, 1155), spawn: A(372, 1105), pipe: A(266, 1122) }, { p: A(684, 1155), spawn: A(574, 1105), pipe: A(680, 1122) }],
   // Wall Launch Zones на боковых стенах (§21)
-  wlz: [{ side: 'L', y0: 240 * FB.K, y1: 360 * FB.K }, { side: 'R', y0: 240 * FB.K, y1: 360 * FB.K },
-    { side: 'L', y0: 1260 * FB.K, y1: 1380 * FB.K }, { side: 'R', y0: 1260 * FB.K, y1: 1380 * FB.K }],
+  // по одной на боковую стену, по центру карты (автор, D-075)
+  wlz: [{ side: 'L', y0: 740 * FB.K, y1: 880 * FB.K }, { side: 'R', y0: 740 * FB.K, y1: 880 * FB.K }],
   starts: [[A(380, 1320), A(566, 1320)], [A(566, 300), A(380, 300)]]
 };
 

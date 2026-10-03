@@ -75,10 +75,10 @@
   });
 
   test('Wall Launch Zone bounce adds +30%', function () {
-    var s = sandbox(); var z = AR.wlz[2]; put(s, 0, 520, (z.y0 + z.y1) / 2);
-    var r = jumpTo(s, 0, 120, (z.y0 + z.y1) / 2), j = ev(r, 'jump')[0];
+    var s = sandbox(); var z = AR.wlz[0]; put(s, 0, 520, (z.y0 + z.y1) / 2);
+    var r = jumpTo(s, 0, 320, (z.y0 + z.y1) / 2), j = ev(r, "jump")[0]; // короткий: отскок не долетает до колонны
     ok(j.segs[0].wlz !== null && j.segs[0].wlz !== undefined, 'hit WLZ');
-    near(j.segs[1].len, (400 - j.segs[0].len) * (1 + T.wlzBonus), 0.5);
+    near(j.segs[1].len, (200 - j.segs[0].len) * (1 + T.wlzBonus), 0.5);
   });
 
   test('column blocks the jump and ricochets', function () {
@@ -190,13 +190,13 @@
 
   test('Reactive Grip: cling to WLZ, second jump is the same activation and stronger', function () {
     var s = sandbox(['bellows', 'spur'], ['spring', 'cling'], ['fire', 'ice'], ['poison', 'lightning']);
-    var z = AR.wlz[2]; put(s, 0, 560, (z.y0 + z.y1) / 2);
+    var z = AR.wlz[0]; put(s, 0, 500, (z.y0 + z.y1) / 2);
     var r = jumpTo(s, 0, 160, (z.y0 + z.y1) / 2);
     ok(r.continues && has(r, 'grip'), 'gripped'); eq(s.pending.kind, 'grip'); eq(s.turnSide, 0);
     ok(!Sim.apply(s, { frog: 1, mode: 'jump', dx: 0, dy: -100 }).ok, 'other frog waits');
     ok(Sim.rangeFor(s, s.frogs[0], 'grip') > s.frogs[0].jump * 1.2);
-    put(s, 2, s.frogs[0].x + 200, s.frogs[0].y);
-    var r2 = jumpTo(s, 0, s.frogs[0].x + 200, s.frogs[0].y, 'grip');
+    put(s, 2, s.frogs[0].x + 115, s.frogs[0].y); // колонна рядом — цель между стеной и колонной
+    var r2 = jumpTo(s, 0, s.frogs[0].x + 115, s.frogs[0].y, "grip");
     ok(r2.ok && has(r2, 'impact')); eq(s.turnSide, 1, 'activation over');
   });
 
