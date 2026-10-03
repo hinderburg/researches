@@ -137,11 +137,12 @@
         facing: side === 0 ? 0 : Math.PI, charge: null, chill: 0, poison: 0, neuro: 0, shell: 0, pinnedBy: -1 });
     }
     s.puddles = AR.puddles.map(function (q, i) { return { id: 'f' + i, x: q.p.x, y: q.p.y, r: T.puddleR, el: q.el, fixed: true, active: true }; });
-    s.nodes = AR.nodes.map(function (n, i) { return { id: i, x: n.p.x, y: n.p.y, sx: n.spawn.x, sy: n.spawn.y, el: null, side: -1 }; });
+    s.nodes = AR.nodes.map(function (n, i) { return { id: i, x: n.p.x, y: n.p.y, sx: n.spawn.x, sy: n.spawn.y, px: n.pipe.x, py: n.pipe.y, el: null, side: -1 }; });
     s.crystals = []; s.veils = [];
     s.round = 1; s.starter = 0; s.turnSide = 0; s.acted = {}; s.pending = null;
     s.phase = 'play'; s.winner = null;
-    return [{ t: 'round', round: 1, side: 0 }];
+    var ev = []; pipePuddles(s, ev); ev.push({ t: 'round', round: 1, side: 0 });
+    return ev;
   };
 
   // ---------- запросы ----------
@@ -469,16 +470,22 @@
     // лужи: постоянные снова активны, выпущенные в прошлом раунде исчезают; узлы выпускают новые (§27)
     s.puddles = s.puddles.filter(function (p) { if (!p.fixed) events.push({ t: 'puddleGone', id: p.id }); return p.fixed; });
     s.puddles.forEach(function (p) { if (!p.active) { p.active = true; events.push({ t: 'puddleOn', id: p.id }); } });
-    s.nodes.forEach(function (n) {
-      if (!n.el) return;
-      var r = T.puddleR * (s.traits[n.side] === 'reservoir' ? T.reservoirMul : 1);
-      var p = { id: 'n' + (++s.seq), x: n.sx, y: n.sy, r: r, el: n.el, fixed: false, active: true, node: n.id };
-      s.puddles.push(p);
-      events.push({ t: 'spawn', puddle: Object.assign({}, p), node: n.id });
-      n.el = null; n.side = -1;
-    });
+    pipePuddles(s, events);
     events.push({ t: 'round', round: s.round, side: s.turnSide });
     if (s.round > T.roundCap) decideByHp(s, events);
+  }
+
+  // Каждая труба в начале раунда выпускает лужу у своей решётки (§27, D-068): элемент заряженного узла,
+  // иначе случайный (от сида матча). Лужа живёт один раунд, одно использование.
+  function pipePuddles(s, events) {
+    s.nodes.forEach(function (n) {
+      var charged = !!n.el, el = charged ? n.el : FB.ELEMENT_ORDER[Math.floor(rng(s) * 4)];
+      var r = T.puddleR * (charged && s.traits[n.side] === 'reservoir' ? T.reservoirMul : 1);
+      var p = { id: 'n' + (++s.seq), x: n.sx, y: n.sy, r: r, el: el, fixed: false, active: true, node: n.id, charged: charged };
+      s.puddles.push(p);
+      events.push({ t: 'spawn', puddle: Object.assign({}, p), node: n.id, pipe: { x: n.px, y: n.py } });
+      n.el = null; n.side = -1;
+    });
   }
 
   function aliveCount(s, side) { return s.frogs.filter(function (f) { return f.side === side && f.alive; }).length; }

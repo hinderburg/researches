@@ -58,13 +58,15 @@
   }
 
   // ---------- загрузка ----------
-  function loadImg(src) { return new Promise(function (res, rej) { var i = new Image(); i.onload = function () { res(i); }; i.onerror = function () { rej(new Error(src)); }; i.src = src; }); }
+  var BUILD = window.FB_BUILD && window.FB_BUILD !== 'dev' ? window.FB_BUILD : String(Date.now()); // метка сборки против кэша
+  function bust(src) { return src + '?b=' + BUILD; }
+  function loadImg(src) { return new Promise(function (res, rej) { var i = new Image(); i.onload = function () { res(i); }; i.onerror = function () { rej(new Error(src)); }; i.src = bust(src); }); }
   R.load = function () {
     var jobs = [loadImg('art/src/arena.webp').then(function (i) { atlasImg.arena = i; })];
     FB.FROG_ORDER.forEach(function (k) {
       jobs.push(loadImg('art/out/' + k + '_atlas.png').then(function (i) { atlasImg[k] = i; }));
       jobs.push(loadImg('art/out/' + k + '_full.png').then(function (i) { fullImg[k] = i; }));
-      jobs.push(fetch('art/out/' + k + '_rig.json').then(function (r) { return r.json(); }).then(function (j) { rigs[k] = j; }));
+      jobs.push(fetch(bust('art/out/' + k + '_rig.json')).then(function (r) { return r.json(); }).then(function (j) { rigs[k] = j; }));
     });
     return Promise.all(jobs);
   };
@@ -463,7 +465,7 @@
     var m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: inkTex(color, Math.floor(Math.random() * 6), false), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
     m.rotation.x = -Math.PI / 2; m.rotation.z = Math.random() * 6.28; m.position.set(x, 1.3 + decals.length * 0.01, y); m.renderOrder = 1;
     scene.add(m);
-    var D = { obj: m, t: 0, life: life || 24, size: size };
+    var D = { obj: m, t: 0, life: life || 24, size: size * FXS };
     decals.push(D);
     while (decals.length > 80) { var o = decals.shift(); scene.remove(o.obj); o.obj.geometry.dispose(); o.obj.material.dispose(); }
   };
@@ -477,22 +479,30 @@
       return true;
     });
   }
+  var FXS = 1.3; // размер всех эффектов (+30% по слову автора, D-067)
+  function drop(x, h, y, vx, vy, vz, color, sz) {
+    var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: dropTex(), color: new THREE.Color(color), transparent: true, depthWrite: false }));
+    sp.scale.set(sz, sz, 1); sp.position.set(x, h, y); scene.add(sp);
+    fxList.push({ obj: sp, t: 0, life: 2, vx: vx, vy: vy, vz: vz, g: 900, color: color, sz: sz });
+  }
   R.burst = function (x, y, color, n, h) {
     for (var i = 0; i < (n || 10); i++) {
-      var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: dropTex(), color: new THREE.Color(color), transparent: true, depthWrite: false }));
-      var a = Math.random() * Math.PI * 2, v = 90 + Math.random() * 220, sz = 9 + Math.random() * 14;
-      sp.scale.set(sz, sz, 1); sp.position.set(x, (h || 10) + Math.random() * 10, y); scene.add(sp);
-      fxList.push({ obj: sp, t: 0, life: 1.2, vx: Math.cos(a) * v, vy: 120 + Math.random() * 220, vz: Math.sin(a) * v, g: 900, color: color, sz: sz });
+      var a = Math.random() * Math.PI * 2, v = (90 + Math.random() * 220) * FXS;
+      drop(x, (h || 10) + Math.random() * 10, y, Math.cos(a) * v, 120 + Math.random() * 220, Math.sin(a) * v, color, (9 + Math.random() * 14) * FXS);
     }
+  };
+  // Струя реагента из устья трубы в точку лужи: капли летят по баллистике и шлёпаются вокруг (D-068)
+  R.pour = function (from, to, color, dur, done) {
+    fxList.push({ pour: true, t: 0, life: dur + 0.5, dur: dur, from: from, to: to, color: color, acc: 0, done: done });
   };
   R.ring = function (x, y, r, color, life) {
     var m = new THREE.Mesh(new THREE.RingGeometry(0.7, 1, 48), new THREE.MeshBasicMaterial({ color: color, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
     m.rotation.x = -Math.PI / 2; m.position.set(x, 3, y); scene.add(m);
-    fxList.push({ obj: m, t: 0, life: life || 0.5, ring: r });
+    fxList.push({ obj: m, t: 0, life: life || 0.5, ring: r * FXS });
   };
   R.flash = function (x, y, r, color) {
     var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(color), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-    sp.position.set(x, 30, y); scene.add(sp); fxList.push({ obj: sp, t: 0, life: 0.45, flash: r });
+    sp.position.set(x, 30, y); scene.add(sp); fxList.push({ obj: sp, t: 0, life: 0.45, flash: r * FXS });
   };
   R.bolt = function (a, b) {
     var pts = [], n = 8;
@@ -511,12 +521,24 @@
     fxList.push({ el: el, t: 0, life: 1.1, x: x, y: y });
   };
   function stepFx(dt) {
-    fxList = fxList.filter(function (f) {
+    var cur = fxList; fxList = []; // эффекты, рождённые во время шага (капли струи, искры снаряда), попадут в новый список
+    var keep = cur.filter(function (f) {
       f.t += dt; var u = f.t / f.life;
+      if (f.pour) {
+        if (f.t < f.dur) {
+          f.acc += dt * 45;
+          while (f.acc >= 1) {
+            f.acc--; var Tf = 0.42 + Math.random() * 0.08, tx = f.to.x + (Math.random() - 0.5) * 50, ty = f.to.y + (Math.random() - 0.5) * 50, h0 = 45;
+            drop(f.from.x, h0, f.from.y, (tx - f.from.x) / Tf, (0.5 * 900 * Tf * Tf - h0) / Tf, (ty - f.from.y) / Tf, f.color, (10 + Math.random() * 10) * FXS);
+          }
+        }
+        if (!f.fired && f.t >= f.dur + 0.42) { f.fired = true; if (f.done) f.done(); }
+        return u < 1 || !f.fired;
+      }
       if (u >= 1) { if (f.obj) scene.remove(f.obj); if (f.el) f.el.remove(); return false; }
       if (f.vx !== undefined) { // капля краски: падает и шлёпается в маленькое пятно
         f.vy -= f.g * dt; f.obj.position.x += f.vx * dt; f.obj.position.y += f.vy * dt; f.obj.position.z += f.vz * dt;
-        if (f.obj.position.y <= 2) { if (Math.random() < 0.55) R.splat(f.obj.position.x, f.obj.position.z, f.color, f.sz * 2.4, 14); scene.remove(f.obj); f.obj.material.dispose(); return false; }
+        if (f.obj.position.y <= 2) { if (Math.random() < 0.55) R.splat(f.obj.position.x, f.obj.position.z, f.color, f.sz * 1.9, 14); scene.remove(f.obj); f.obj.material.dispose(); return false; }
       }
       else if (f.ring) { var r = f.ring * (0.2 + 0.8 * Math.sqrt(u)); f.obj.scale.set(r, r, r); f.obj.material.opacity = 1 - u; }
       else if (f.flash) { var s = f.flash * (0.5 + u); f.obj.scale.set(s, s, 1); f.obj.material.opacity = 1 - u; }
@@ -530,6 +552,7 @@
       if (f.el) { var p = toScreen(f.x, 60 + u * 50, f.y); f.el.style.transform = 'translate(' + (p.x | 0) + 'px,' + (p.y | 0) + 'px) scale(' + (u < 0.15 ? 0.6 + u * 2.6 : 1) + ')'; f.el.style.opacity = u > 0.7 ? (1 - u) / 0.3 : 1; }
       return true;
     });
+    fxList = keep.concat(fxList);
   }
 
   // ---------- превью прицела (§34–§35) ----------

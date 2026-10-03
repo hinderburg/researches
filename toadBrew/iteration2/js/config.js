@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '2.1.0';
+FB.VERSION = '2.2.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -12,7 +12,7 @@ FB.A = A;
 
 FB.T = {
   IMG_W: 941, IMG_H: 1672,
-  U: 60,                       // единица дальности: Jump 7.0 = 420 мира
+  U: 78,                       // единица дальности: Jump 7.0 = 546 мира (+30% по слову автора, D-067)
   wallH: 250,                  // высота стен на экране — выше любой видимой дуги, видно в перспективе (D-051, D-062)
   visH: 2.5,                   // дуга на экране выше симуляционной в 2.5 раза: прыжок читается сверху (D-062)
   obstH: 60,                   // колонна и Toxic Crystal: блокируют дугу ниже этой высоты (§16, §23) — почти любую, кроме пика длинного прыжка (D-052)
@@ -33,19 +33,19 @@ FB.T = {
 
   // Элементы (§9), Tier I; Tier n: × (1 + tierStep × (n-1)) (§5.2)
   tierStep: 0.2,
-  elemR: 60, elemSplash: 0.6,          // элемент на поверхности задевает врагов в радиусе, не прямую цель — × elemSplash
+  elemR: 78, elemSplash: 0.6,          // элемент на поверхности задевает врагов в радиусе, не прямую цель — × elemSplash
   fireDmg: 12,
   iceDmg: 4, chillMul: 0.75,
   poisonDmg: 3, poisonTick: 6, poisonTicks: 2,
-  lightDmg: 7, lightArc: 6, lightArcR: 170,
+  lightDmg: 7, lightArc: 6, lightArcR: 220,
 
   // Реакции (§12–§18)
-  veilR: 150, veilTurns: 4, veilBounceMin: 45,
-  detR: 145, detDamage: 28, detKnock: 85,
-  orbRange: 950, orbR: 16, orbDamage: 26, orbKnock: 55,
-  crystalLen: 135, crystalThick: 20, crystalTurns: 4,
-  shellMul: 0.4, shellKnockR: 115, shellKnock: 70,
-  neuroR: 110, neuroTick: 9, neuroJumps: 2,
+  veilR: 195, veilTurns: 4, veilBounceMin: 58,     // радиусы и размеры эффектов +30% (D-067)
+  detR: 188, detDamage: 28, detKnock: 85,
+  orbRange: 1235, orbR: 16, orbDamage: 26, orbKnock: 55,
+  crystalLen: 175, crystalThick: 26, crystalTurns: 4,
+  shellMul: 0.4, shellKnockR: 150, shellKnock: 70,
+  neuroR: 143, neuroTick: 9, neuroJumps: 2,
   sameChargeMul: 1.6,                  // заряд из двух одинаковых элементов — усиленный базовый эффект
 
   // Лужи и Drain Nodes (§11, §25–§28)
@@ -92,12 +92,12 @@ FB.FROG_ORDER = ['spring', 'cling', 'bellows', 'spur'];
 
 // Командные свойства пар (§7)
 FB.TEAM_TRAITS = {
-  'spring+spur':   { id: 'diving',    name: 'DIVING STRIKE',       arche: 'Rushdown',           desc: 'The longer the flight (wall bounces count), the harder the direct hit.' },
-  'bellows+spring':{ id: 'momentum',  name: 'ALCHEMICAL MOMENTUM', arche: 'Element combo',      desc: 'Use a puddle with one frog — the other gets a Reaction Charge with that element.' },
-  'cling+spring':  { id: 'catapult',  name: 'LIVING CATAPULT',     arche: 'Route building',     desc: 'Land on your ally to get an extra short hop in the same activation.' },
-  'bellows+cling': { id: 'reservoir', name: 'RESERVOIR CONTROL',   arche: 'Zone control',       desc: 'Puddles you prepare through Drain Nodes spawn 50% larger.' },
-  'cling+spur':    { id: 'pinned',    name: 'PINNED TARGET',       arche: 'Billiards',          desc: 'One frog marks a target; the other smashes it into a wall or the column for big damage.' },
-  'bellows+spur':  { id: 'grip',      name: 'REACTIVE GRIP',       arche: 'Trick shot',         desc: 'Hit a Wall Launch Zone to cling on and fire a second, stronger jump.' }
+  'spring+spur':   { id: 'diving', icon: '☄️',    name: 'DIVING STRIKE',       arche: 'Rushdown',           desc: 'The longer the flight (wall bounces count), the harder the direct hit.' },
+  'bellows+spring':{ id: 'momentum', icon: '🌀',  name: 'ALCHEMICAL MOMENTUM', arche: 'Element combo',      desc: 'Use a puddle with one frog — the other gets a Reaction Charge with that element.' },
+  'cling+spring':  { id: 'catapult', icon: '🏹',  name: 'LIVING CATAPULT',     arche: 'Route building',     desc: 'Land on your ally to get an extra short hop in the same activation.' },
+  'bellows+cling': { id: 'reservoir', icon: '⛲', name: 'RESERVOIR CONTROL',   arche: 'Zone control',       desc: 'Puddles you prepare through Drain Nodes spawn 50% larger.' },
+  'cling+spur':    { id: 'pinned', icon: '📌',    name: 'PINNED TARGET',       arche: 'Billiards',          desc: 'One frog marks a target; the other smashes it into a wall or the column for big damage.' },
+  'bellows+spur':  { id: 'grip', icon: '🪝',      name: 'REACTIVE GRIP',       arche: 'Trick shot',         desc: 'Hit a Wall Launch Zone to cling on and fire a second, stronger jump.' }
 };
 FB.traitFor = function (a, b) { return FB.TEAM_TRAITS[FB.reactionKey(a, b)] || null; };
 
@@ -111,8 +111,9 @@ FB.ARENA = {
   // постоянные лужи в нишах (бассейны макета)
   puddles: [{ p: A(341, 100), el: 'poison' }, { p: A(605, 100), el: 'fire' }, { p: A(341, 1520), el: 'fire' }, { p: A(605, 1520), el: 'poison' }],
   // решётки под красными трубами → точки появления луж (§25–§27)
-  nodes: [{ p: A(262, 465), spawn: A(372, 515) }, { p: A(684, 465), spawn: A(574, 515) },
-    { p: A(262, 1155), spawn: A(372, 1105) }, { p: A(684, 1155), spawn: A(574, 1105) }],
+  // pipe — устье красной трубы над решёткой: отсюда в начале раунда льётся реагент (D-068)
+  nodes: [{ p: A(262, 465), spawn: A(372, 515), pipe: A(268, 428) }, { p: A(684, 465), spawn: A(574, 515), pipe: A(678, 428) },
+    { p: A(262, 1155), spawn: A(372, 1105), pipe: A(266, 1122) }, { p: A(684, 1155), spawn: A(574, 1105), pipe: A(680, 1122) }],
   // Wall Launch Zones на боковых стенах (§21)
   wlz: [{ side: 'L', y0: 240 * FB.K, y1: 360 * FB.K }, { side: 'R', y0: 240 * FB.K, y1: 360 * FB.K },
     { side: 'L', y0: 1260 * FB.K, y1: 1380 * FB.K }, { side: 'R', y0: 1260 * FB.K, y1: 1380 * FB.K }],

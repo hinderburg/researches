@@ -15,6 +15,12 @@
   };
   if (!Array.isArray(app.picks) || app.picks.length !== 2 || app.picks.some(function (k) { return !FB.FROGS[k]; }) || app.picks[0] === app.picks[1]) app.picks = ['spring', 'spur'];
   function elOf(kind) { var e = app.elems[kind]; return FB.ELEMENTS[e] ? e : DEF_EL[kind]; }
+  // В паре элементы всегда разные (D-067): совпал — второй берёт свой стартовый или первый свободный
+  function teamEls() {
+    var a = elOf(app.picks[0]), b = elOf(app.picks[1]);
+    if (a === b) { b = DEF_EL[app.picks[1]] !== a ? DEF_EL[app.picks[1]] : FB.ELEMENT_ORDER.filter(function (e) { return e !== a; })[0]; app.elems[app.picks[1]] = b; store.set('elems', app.elems); }
+    return [a, b];
+  }
 
   // ---------- портреты ----------
   function pic(kind, el, size) {
@@ -42,6 +48,7 @@
     store.set('picks', app.picks); renderTeam();
   }
   function renderTeam() {
+    teamEls();
     document.querySelectorAll('.card').forEach(function (el) { el.classList.toggle('sel', app.picks.indexOf(el.dataset.kind) >= 0); });
     app.picks.forEach(function (k, i) {
       var p = $('ped-' + i); p.innerHTML = '';
@@ -49,11 +56,12 @@
       p.insertAdjacentHTML('beforeend', '<div class="pname">' + FB.FROGS[k].name + '</div><div class="ptr">' + FB.FROGS[k].tdesc + '</div>');
     });
     var t = FB.traitFor(app.picks[0], app.picks[1]);
-    $('syn').innerHTML = '<div class="s-ic">⚙</div><div class="s-l">TEAM TRAIT</div><div class="s-n">' + t.name + '</div><div class="s-a">' + t.arche + '</div><div class="s-d">' + t.desc + '</div>';
+    $('syn').innerHTML = '<div class="s-ic">' + t.icon + '</div><div class="s-l">TEAM TRAIT</div><div class="s-n">' + t.name + '</div><div class="s-a">' + t.arche + '</div><div class="s-d">' + t.desc + '</div>';
   }
 
   // ---------- ALCHEMY ----------
   function renderAlchemy() {
+    teamEls();
     var box = $('tanks'); box.innerHTML = '';
     app.picks.forEach(function (k) {
       var row = document.createElement('div'); row.className = 'tank';
@@ -64,7 +72,7 @@
       FB.ELEMENT_ORDER.forEach(function (e) {
         var E = FB.ELEMENTS[e], b = document.createElement('button'); b.className = 'elb' + (elOf(k) === e ? ' on' : '');
         b.style.setProperty('--c', E.color); b.innerHTML = '<span>' + E.icon + '</span>' + E.name;
-        b.onclick = function () { app.elems[k] = e; store.set('elems', app.elems); renderAlchemy(); buildRoster(); renderTeam(); };
+        b.onclick = function () { var mate = app.picks[0] === k ? app.picks[1] : app.picks[0], old = elOf(k); if (elOf(mate) === e) app.elems[mate] = old; app.elems[k] = e; store.set('elems', app.elems); renderAlchemy(); buildRoster(); renderTeam(); };
         right.querySelector('.els').appendChild(b);
       });
       right.querySelector('.el-d').textContent = elDesc(elOf(k));
@@ -114,25 +122,27 @@
   function seedFromUrl() { var m = /[?&]seed=(\d+)/.exec(location.search); return m ? +m[1] : (Date.now() % 1e9); }
   var botRng = Math.random;
   function startBattle(rematch) {
-    var seed = rematch && app.lastSeed ? app.lastSeed : seedFromUrl();
+    var fixed = /[?&]seed=\d+/.test(location.search), seed = fixed ? seedFromUrl() : Math.floor(Math.random() * 1e9);
     app.lastSeed = seed;
     var rr = seed % 233280; botRng = function () { rr = (rr * 9301 + 49297) % 233280; return rr / 233280; };
-    var kinds = FB.FROG_ORDER.slice(), a = Math.floor(botRng() * 4), b = (a + 1 + Math.floor(botRng() * 3)) % 4;
-    var botTeam = rematch && app.botTeam ? app.botTeam : [kinds[a], kinds[b]];
-    var els = FB.ELEMENT_ORDER, botEls = rematch && app.botEls ? app.botEls : [els[Math.floor(botRng() * 4)], els[Math.floor(botRng() * 4)]];
+    // бот всегда берёт случайную пару жаб и два разных случайных элемента (D-067); ?seed= делает выбор повторяемым
+    var pick = fixed ? botRng : Math.random;
+    function two(list) { var a = Math.floor(pick() * list.length), b = (a + 1 + Math.floor(pick() * (list.length - 1))) % list.length; return [list[a], list[b]]; }
+    var botTeam = two(FB.FROG_ORDER), botEls = two(FB.ELEMENT_ORDER);
     app.botTeam = botTeam; app.botEls = botEls;
-    app.s = Sim.createMatch(app.picks, botTeam, [elOf(app.picks[0]), elOf(app.picks[1])], botEls, seed);
+    var my = teamEls();
+    app.s = Sim.createMatch(app.picks, botTeam, my, botEls, seed);
     var ev = Sim.startMatch(app.s);
-    app.shown = Sim.clone(app.s); app.disp = {}; app.queue = []; app.cur = null; app.sel = -1; app.aimCmd = null;
+    app.shown = Sim.clone(app.s); app.disp = {}; app.queue = []; app.cur = null; app.sel = -1; app.aimCmd = null; app.roundActs = []; app.activeId = -1;
+    app.shown.puddles = app.shown.puddles.filter(function (p) { return p.fixed; }); // лужи из труб появятся с анимацией
     app.s.frogs.forEach(function (f) { app.disp[f.id] = { x: f.x, y: f.y, z: 0, facing: f.side === 0 ? 0 : Math.PI, pose: 'idle', poseT: 0, alive: true, flash: 0, squash: 0 }; });
     R.resetFrogs();
     showScreen('battle');
     var p = app.s.frogs[0]; R.focus(p.x + 90, p.y - 200, 0.5);
-    log('battle', { seed: seed, me: app.picks, bot: botTeam, botEls: botEls });
-    buildCards();
+    log('battle', { seed: seed, me: app.picks, myEls: my, bot: botTeam, botEls: botEls });
+    buildCards(); buildTraits(); orderKey = '';
     app.busy = true;
-    banner('ROUND 1', 'p', 'Your move');
-    setTimeout(function () { app.busy = false; nextTurn(); }, 1100);
+    setTimeout(function () { if (app.s && app.screen === 'battle') { app.queue = ev; app.playing = true; } }, 400);
   }
 
   function myTurn() { return app.s && app.s.phase === 'play' && app.s.turnSide === 0 && !app.auto; }
@@ -185,6 +195,7 @@
       if (!f.alive) d.pose = 'dead';
     });
     app.busy = false;
+    if (!s.pending) app.activeId = -1;
     if (s.phase !== 'play') return onMatchOver();
     if (s.pending) {
       var pf = s.frogs[s.pending.frog];
@@ -238,7 +249,7 @@
   function startEvent(e) {
     var d = e.id !== undefined && app.disp[e.id] ? D(e.id) : null, upd = null, end = null, dur = 0;
     switch (e.t) {
-      case 'act': if (!d.hidden) R.focus(d.x, d.y); app.sel = e.id; dur = 0.12; break;
+      case 'act': if (!d.hidden) R.focus(d.x, d.y); app.sel = e.id; app.activeId = e.id; if (app.roundActs.indexOf(e.id) < 0) app.roundActs.push(e.id); dur = 0.12; break;
       case 'jump': {
         // присед → толчок; по дуге время идёт быстрее у земли и медленнее у вершины: взлёт, зависание, падение (D-062)
         var segs = e.segs, durs = segs.map(function (sg) { return 0.3 + sg.len / 1250; }), tot = durs.reduce(function (a, b) { return a + b; }, 0);
@@ -313,9 +324,13 @@
       case 'puddleUsed': app.shown.puddles.forEach(function (p) { if (p.id === e.id) { p.active = false; R.burst(p.x, p.y, ELC(p.el), 14, 8); } }); break;
       case 'puddleGone': app.shown.puddles = app.shown.puddles.filter(function (p) { return p.id !== e.id; }); break;
       case 'puddleOn': app.shown.puddles.forEach(function (p) { if (p.id === e.id) p.active = true; }); break;
-      case 'spawn': app.shown.puddles.push(e.puddle); R.ring(e.puddle.x, e.puddle.y, 100, ELC(e.puddle.el)); break;
+      case 'spawn': { // реагент льётся из трубы, лужа появляется, когда струя долетела (D-068)
+        var pp = e.puddle, shownNow = app.shown;
+        R.pour(e.pipe, pp, ELC(pp.el), 0.45, function () { if (app.shown === shownNow && !shownNow.puddles.some(function (q) { return q.id === pp.id; })) shownNow.puddles.push(pp); R.splat(pp.x, pp.y, ELC(pp.el), pp.r * 2.2, 6); R.ring(pp.x, pp.y, pp.r * 1.6, ELC(pp.el)); });
+        dur = 0.18; break;
+      }
       case 'arc': R.bolt(e.from, e.to); dur = 0.12; break;
-      case 'round': app.shown.round = e.round; app.shown.acted = {}; banner('ROUND ' + e.round, e.side === 0 ? 'p' : 'b', e.side === 0 ? 'You start' : 'Enemy starts'); dur = 0.9; break;
+      case 'round': app.shown.round = e.round; app.shown.acted = {}; app.roundActs = []; app.activeId = -1; banner('ROUND ' + e.round, e.side === 0 ? 'p' : 'b', e.side === 0 ? 'You start' : 'Enemy starts'); dur = 0.9; break;
       case 'turn': app.shown.turnSide = e.side; break;
       case 'label': R.text(d.x, d.y, e.text, 'gold'); dur = 0.3; break;
       case 'hopReady': R.text(d.x, d.y, 'EXTRA HOP!', 'gold'); dur = 0.25; break;
@@ -467,6 +482,44 @@
     var b = $('banner'); b.className = 'banner show ' + (cls || ''); b.innerHTML = txt + (sub ? '<small>' + sub + '</small>' : '');
     clearTimeout(app.bannerT); app.bannerT = setTimeout(function () { b.className = 'banner'; }, 1100);
   }
+  // Значок командного свойства пары в бою (D-070): тап — описание
+  function buildTraits() {
+    [0, 1].forEach(function (side) {
+      var t = FB.TEAM_TRAITS[FB.reactionKey(app.s.teams[side][0], app.s.teams[side][1])], el = $('trait-' + side);
+      el.innerHTML = '<span class="ti">' + t.icon + '</span><b>' + t.name + '</b>';
+      el.onclick = function () { banner(t.icon + ' ' + t.name, side === 0 ? 'p' : 'b', t.desc); };
+    });
+  }
+  // Порядок хода в раунде слева по центру (D-070): сыгравшие, текущий, будущие слоты по сторонам.
+  // Будущий слот стороны с двумя жабами — «?» (она выберет сама), с одной — портрет этой жабы.
+  var orderKey = '';
+  function renderOrder() {
+    var s = app.shown; if (!s) return;
+    var acts = (app.roundActs || []).filter(function (id) { return s.frogs[id]; });
+    var rem = { 0: [], 1: [] };
+    s.frogs.forEach(function (f) { if (f.alive && acts.indexOf(f.id) < 0) rem[f.side].push(f.id); });
+    var slots = acts.map(function (id) { return { id: id, side: s.frogs[id].side, done: id !== app.activeId, now: id === app.activeId }; });
+    var cnt = { 0: rem[0].length, 1: rem[1].length }, cur;
+    if (app.activeId >= 0) { var as = s.frogs[app.activeId].side; cur = cnt[1 - as] ? 1 - as : as; } else cur = s.turnSide;
+    var first = app.activeId < 0;
+    while (cnt[0] + cnt[1] > 0) {
+      if (!cnt[cur]) cur = 1 - cur;
+      slots.push({ side: cur, opts: rem[cur].slice(), now: first }); first = false;
+      cnt[cur]--; if (cnt[1 - cur]) cur = 1 - cur;
+    }
+    var key = JSON.stringify(slots) + s.round;
+    if (key === orderKey) return; orderKey = key;
+    var box = $('order'); box.innerHTML = '<div class="o-h">ROUND ' + Math.min(s.round, T.roundCap) + '</div>';
+    slots.forEach(function (sl, i) {
+      var el = document.createElement('div');
+      el.className = 'oslot ' + (sl.side === 0 ? 'mine' : 'enemy') + (sl.done ? ' done' : '') + (sl.now ? ' now' : '');
+      var id = sl.id !== undefined ? sl.id : (sl.opts.length === 1 ? sl.opts[0] : -1);
+      if (id >= 0) { var f = s.frogs[id]; el.appendChild(pic(f.kind, f.el, 64)); }
+      else el.insertAdjacentHTML('beforeend', '<span class="q">?</span>');
+      el.insertAdjacentHTML('beforeend', '<i>' + (i + 1) + '</i>');
+      box.appendChild(el);
+    });
+  }
   function buildCards() {
     app.s.frogs.forEach(function (f) {
       var c = $('fc-' + f.id); c.innerHTML = '';
@@ -479,6 +532,7 @@
     if (!app.s || !app.shown) return;
     var s = app.shown;
     $('round-n').textContent = Math.min(s.round, T.roundCap);
+    renderOrder();
     s.frogs.forEach(function (f) {
       var c = $('fc-' + f.id); if (!c.lastChild) return;
       var E = FB.ELEMENTS[f.el], hp = Math.max(0, f.hp);

@@ -29,7 +29,7 @@
     var s = Sim.createMatch(['spring', 'cling'], ['bellows', 'spur'], EL[0], EL[1], 1);
     Sim.startMatch(s);
     eq(s.frogs.length, 4); eq(s.turnSide, 0); eq(s.round, 1);
-    eq(s.puddles.length, 4); eq(s.nodes.length, 4);
+    eq(s.puddles.filter(function (p) { return p.fixed; }).length, 4); eq(s.nodes.length, 4);
     s.frogs.forEach(function (f) { ok(Sim.insideArena(f.x, f.y, f.r), 'frog ' + f.id + ' inside'); });
     eq(s.frogs[0].el, 'fire'); eq(s.frogs[3].el, 'lightning');
   });
@@ -118,6 +118,12 @@
     ok(!has(r, 'reaction')); ok(p.active);
   });
 
+  test('pipes: every round each pipe pours a puddle; uncharged pipes pick a random element', function () {
+    var s = Sim.createMatch(['spring', 'cling'], ['bellows', 'spur'], EL[0], EL[1], 3); Sim.startMatch(s);
+    var sp = s.puddles.filter(function (p) { return !p.fixed; });
+    eq(sp.length, 4, 'round 1'); sp.forEach(function (p) { ok(FB.ELEMENTS[p.el] && p.active); });
+  });
+
   test('Drain Node: last element wins, puddle spawns next round, lasts one round', function () {
     var s = sandbox(); var n = s.nodes[2];
     put(s, 0, n.x + 200, n.y); put(s, 2, n.x + 200, n.y + 300);
@@ -126,19 +132,20 @@
     eq(n.el, 'poison'); eq(n.side, 1);
     Sim.apply(s, { frog: 1, mode: 'skip' }); Sim.apply(s, { frog: 3, mode: 'skip' });
     eq(s.round, 2);
-    var sp = s.puddles.filter(function (p) { return !p.fixed; });
-    eq(sp.length, 1); eq(sp[0].el, 'poison'); near(sp[0].x, n.sx, 0.1); near(sp[0].r, T.puddleR, 0.1);
+    var sp = s.puddles.filter(function (p) { return p.node === 2; });
+    eq(s.puddles.filter(function (p) { return !p.fixed; }).length, 4, 'all pipes'); eq(sp.length, 1); eq(sp[0].el, 'poison'); near(sp[0].x, n.sx, 0.1); near(sp[0].r, T.puddleR, 0.1);
     eq(n.el, null, 'node reset');
     for (var i = 0; i < 4; i++) { var side = s.turnSide; Sim.apply(s, { frog: s.frogs.filter(function (x) { return x.side === side && Sim.canAct(s, x); })[0].id, mode: 'skip' }); }
-    eq(s.round, 3); eq(s.puddles.filter(function (p) { return !p.fixed; }).length, 0, 'gone after its round');
+    eq(s.round, 3); ok(!s.puddles.some(function (p) { return p.id === sp[0].id; }), 'gone after its round');
   });
 
   test('Reservoir Control: node puddles ×1.5', function () {
     var s = sandbox(['bellows', 'cling'], ['spring', 'spur']); var n = s.nodes[2];
     put(s, 0, n.x + 200, n.y); jumpTo(s, 0, n.x, n.y);
     for (var i = 0; i < 3; i++) { var side = s.turnSide; Sim.apply(s, { frog: s.frogs.filter(function (x) { return x.side === side && Sim.canAct(s, x); })[0].id, mode: 'skip' }); }
-    var sp = s.puddles.filter(function (p) { return !p.fixed; })[0];
+    var sp = s.puddles.filter(function (p) { return p.node === 2; })[0];
     near(sp.r, T.puddleR * T.reservoirMul, 0.1);
+    ok(s.puddles.filter(function (p) { return !p.fixed && p.node !== 2; }).every(function (p) { return Math.abs(p.r - T.puddleR) < 0.1; }), 'uncharged pipes normal size');
   });
 
   test('Steam Veil hides frogs from the enemy view', function () {
