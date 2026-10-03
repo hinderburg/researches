@@ -90,10 +90,16 @@
 
   test('landing on ally gives Reaction Charge; next jump triggers it anywhere', function () {
     var s = sandbox(['spring', 'bellows'], ['cling', 'spur']); // momentum, не catapult
-    put(s, 1, 600, 1800);
-    var r = jumpTo(s, 0, 600, 1800);
+    put(s, 0, 480, 2000); put(s, 1, 480, 1800); // левее колонны: автоотскок вперёд не упирается в неё
+    var r = jumpTo(s, 0, 480, 1800);
     ok(has(r, 'charge')); eq(s.frogs[0].charge.join('+'), 'fire+ice');
     eq(s.frogs[1].hp, s.frogs[1].maxHp, 'ally not hurt');
+    ok(r.continues && s.pending.kind === 'hop', 'bounce window');
+    var x0 = s.frogs[0].x, y0 = s.frogs[0].y, ra = Sim.apply(s, { frog: 0, mode: 'end' }); // окно прошло — автоотскок
+    ok(has(ra, 'autoHop') && !has(ra, 'reaction'), 'auto bounce does not fire the charge');
+    near(Math.hypot(s.frogs[0].x - x0, s.frogs[0].y - y0), s.frogs[0].jump * T.allyHopMul, 3, 'auto bounce 25%');
+    ok(s.frogs[0].y < y0, 'along the main jump direction (up)');
+    eq(s.frogs[0].charge.join('+'), 'fire+ice', 'charge kept for next turn');
     Sim.apply(s, { frog: 2, mode: "skip" }); Sim.apply(s, { frog: 1, mode: "skip" }); Sim.apply(s, { frog: 3, mode: "skip" }); Sim.apply(s, { frog: 2, mode: "skip" }); // раунд 2 начинает бот
     var r2 = jumpTo(s, 0, s.frogs[0].x + 150, s.frogs[0].y);
     var re = ev(r2, 'reaction')[0];

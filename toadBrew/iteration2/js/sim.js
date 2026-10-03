@@ -155,7 +155,8 @@
     var r = f.jump;
     if (f.chill) r *= T.chillMul;
     if (mode === 'grip') r *= T.gripRangeMul;
-    if (mode === 'hop') r *= T.catapultRangeMul;
+    if (mode === 'hop') r *= s.traits[f.side] === 'catapult' ? T.catapultRangeMul : T.allyHopMax;
+    if (mode === 'auto') r *= T.allyHopMul;
     return r;
   };
   Sim.trait = function (s, side) { return s.traits[side]; };
@@ -163,8 +164,8 @@
   function enemiesOf(s, f) { return s.frogs.filter(function (e) { return e.alive && e.side !== f.side; }); }
 
   // Что случится при приземлении (для превью и подсказок): reaction / charge / base
-  Sim.reactionAt = function (s, f, x, y) {
-    if (f.charge) return { kind: f.charge[0] === f.charge[1] ? 'over' : 'react', key: FB.reactionKey(f.charge[0], f.charge[1]), from: 'charge', els: f.charge };
+  Sim.reactionAt = function (s, f, x, y, skipCharge) {
+    if (f.charge && !skipCharge) return { kind: f.charge[0] === f.charge[1] ? 'over' : 'react', key: FB.reactionKey(f.charge[0], f.charge[1]), from: 'charge', els: f.charge };
     var pd = puddleAt(s, x, y);
     if (pd && pd.el !== f.el) return { kind: 'react', key: FB.reactionKey(f.el, pd.el), from: 'puddle', puddle: pd.id, els: [f.el, pd.el] };
     return { kind: 'base', el: f.el };
@@ -264,7 +265,7 @@
     s.pending = null;
     var cont = false;
     if (mode === 'skip') events.push({ t: 'skip', id: f.id });
-    else if (mode === 'end') events.push({ t: 'endHop', id: f.id });
+    else if (mode === 'end') { events.push({ t: 'autoHop', id: f.id }); cont = jump(s, f, P.dir.x * 1e4, P.dir.y * 1e4, 'auto', events, P); }
     else if (mode === 'drop') { events.push({ t: 'drop', id: f.id, from: { x: f.x, y: f.y } }); land(s, f, { x: f.x, y: f.y }, P.dir, 0, 0, events, { drop: true }); }
     else cont = jump(s, f, cmd.dx || 0, cmd.dy || 0, mode, events, P);
 
@@ -277,6 +278,7 @@
 
   function jump(s, f, dx, dy, mode, events, P) {
     var range = Sim.rangeFor(s, f, mode), v = norm(dx, dy);
+    if (mode === 'hop' && P && P.dir) v = { x: P.dir.x, y: P.dir.y, l: v.l }; // доп. прыжок — только по направлению основного (D-077)
     if (v.l < 1e-6) v = { x: 0, y: f.side === 0 ? -1 : 1, l: 1 };
     var len = Math.min(v.l, range), from = { x: f.x, y: f.y }, h0 = 0;
     if (mode === 'grip' && P) { // с выступа стены — только от стены
@@ -317,12 +319,12 @@
 
     // Союзник: Reaction Charge (§19), без урона и без элемента
     if (ally && !o.drop) {
-      var bk = norm(L.x - ally.x, L.y - ally.y); if (bk.l < 1e-6) bk = { x: -dir.x, y: -dir.y };
+      var bk = norm(dir.x, dir.y); if (bk.l < 1e-6) bk = norm(L.x - ally.x, L.y - ally.y); // соскакивает со спины союзника вперёд по ходу прыжка (D-077)
       f.x = ally.x + bk.x * (f.r + ally.r + 2); f.y = ally.y + bk.y * (f.r + ally.r + 2);
       if (!wallClear(f.x, f.y, f.r * 0.8)) { f.x = L.x; f.y = L.y; }
       events.push({ t: 'land', id: f.id, x: f.x, y: f.y, onAlly: ally.id });
       if (!f.charge) { f.charge = [f.el, ally.el]; events.push({ t: 'charge', id: f.id, els: f.charge.slice(), key: FB.reactionKey(f.el, ally.el) }); }
-      if (s.traits[f.side] === 'catapult' && o.mode !== 'hop') { // Living Catapult: ещё прыжок без отдельной активации
+      if (o.mode !== 'hop' && o.mode !== 'auto') { // отскок от союзника (D-077): окно на прыжок вдоль основного направления, иначе автоотскок 25%
         s.pending = { kind: 'hop', frog: f.id, dir: dir };
         events.push({ t: 'hopReady', id: f.id });
         return true;
@@ -332,7 +334,7 @@
 
     f.x = L.x; f.y = L.y;
     events.push({ t: 'land', id: f.id, x: f.x, y: f.y });
-    var res = Sim.reactionAt(s, f, f.x, f.y);
+    var res = Sim.reactionAt(s, f, f.x, f.y, o.mode === 'hop' || o.mode === 'auto'); // заряд — на следующую активацию, не на отскок
 
     // Прямое попадание (§10)
     if (enemy) {

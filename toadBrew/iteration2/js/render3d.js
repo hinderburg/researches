@@ -342,8 +342,10 @@
         // лужа — глянцевая клякса краски; гладкий край отличает её от следов приземлений
         var disc = new THREE.Mesh(new THREE.PlaneGeometry(p.r * 2.5, p.r * 2.5), new THREE.MeshBasicMaterial({ map: inkTex(E.color, p.id.length + p.x % 5 | 0, true), transparent: true, depthWrite: false }));
         disc.rotation.x = -Math.PI / 2; disc.rotation.z = (p.x * 0.013 + p.y * 0.007) % 6.28; disc.position.y = 1.6; disc.renderOrder = 2; g.add(disc);
-        var gl = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(E.color), transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }));
-        gl.scale.set(p.r * 2.6, p.r * 2.6, 1); gl.position.y = 1.8; g.add(gl);
+        // свечение — плоский круг на полу: спрайт смотрит в камеру, поднимается и ложится поверх жабы (D-076)
+        var gl = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: glowTex(), color: new THREE.Color(E.color), transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }));
+        gl.rotation.x = -Math.PI / 2; gl.renderOrder = 1;
+        gl.scale.set(p.r * 2.6, p.r * 2.6, 1); gl.position.y = 1.0; g.add(gl);
         var lab = document.createElement('div'); lab.className = 'plabel'; lab.textContent = E.icon; labels.appendChild(lab);
         g.position.set(p.x, 0, p.y); scene.add(g);
         D = dyn.puddles[p.id] = { obj: g, disc: disc, gl: gl, lab: lab, born: t };
@@ -611,6 +613,11 @@
       var c = a.crystal, m = new THREE.Mesh(new THREE.BoxGeometry(c.hl * 2, T.obstH * T.visH, c.ht * 2), new THREE.MeshBasicMaterial({ color: 0x5cff2e, transparent: true, opacity: 0.3, depthWrite: false }));
       m.position.set(c.cx, T.obstH * T.visH / 2, c.cy); m.rotation.y = -Math.atan2(c.uy, c.ux); aimGroup.add(m);
     }
+    (a.autoSegs || []).forEach(function (sg) { // автоотскок от союзника — бледнее и мельче
+      var pts = [];
+      for (var i = 0; i <= 16; i++) { var u = i / 16, h = FB.Sim.arcAt(sg.h0, sg.H, u) * T.visH; pts.push(new THREE.Vector3(sg.from.x + (sg.to.x - sg.from.x) * u, h + 4, sg.from.y + (sg.to.y - sg.from.y) * u)); }
+      var g = dots(pts, new THREE.Color(0xffffff), 10, 18); g.children.forEach(function (c) { c.material.opacity = 0.55; }); aimGroup.add(g);
+    });
     if (a.ally) { // заряд: двойное кольцо вокруг своей жабы
       aimGroup.add(flatRing(a.ally.x, a.ally.y, a.ally.r * 1.25, a.ally.r * 1.45, new THREE.Color(a.ally.color), 0.95));
       aimGroup.add(flatRing(a.ally.x, a.ally.y, a.ally.r * 1.7, a.ally.r * 1.82, new THREE.Color(a.ally.color), 0.6));

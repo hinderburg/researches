@@ -214,8 +214,10 @@
       var pf = s.frogs[s.pending.frog];
       if (pf.side === 0 && !app.auto) {
         app.sel = pf.id;
-        if (s.pending.kind === 'grip') { app.gripT = T.gripWindow; $('gripbar').classList.remove('hidden'); }
-        else app.turnLeft = Math.max(app.turnLeft, 6);
+        // окно на доп. прыжок: зацеп за стену или отскок от союзника (D-077)
+        app.gripT = s.pending.kind === 'grip' ? T.gripWindow : T.allyWindow; app.gripMax = app.gripT;
+        $('gripbar').querySelector('span').textContent = s.pending.kind === 'grip' ? 'GRIP! Pull again' : 'BOUNCE! Pull to jump on';
+        $('gripbar').classList.remove('hidden');
         refreshHud(true);
       } else botTurn();
       return;
@@ -275,9 +277,9 @@
           if (i !== last) {
             if (last >= 0 && segs[last].hit) {
               var wl = segs[last].wlz !== null && segs[last].wlz !== undefined, bx = segs[last].to.x, by = segs[last].to.y;
-              R.burst(bx, by, wl ? '#ffa000' : ELC(el0), 12, segs[last].H * 0.5 * T.visH); R.shake(6);
+              R.shake(6); // в полёте без брызг (D-076)
               if (wl) R.text(bx, by, 'LAUNCH +30%', 'gold');
-            } else if (last < 0) { R.burst(d.x, d.y, ELC(el0), 6, 4); }
+            }
             faceDir(d, sg.to.x - sg.from.x, sg.to.y - sg.from.y); last = i;
           }
           d.x = sg.from.x + (sg.to.x - sg.from.x) * k; d.y = sg.from.y + (sg.to.y - sg.from.y) * k;
@@ -292,7 +294,7 @@
         if (e.mode === 'grip') R.text(d.x, d.y, 'WALL LAUNCH ×' + T.gripRangeMul, 'gold');
         break;
       }
-      case 'grip': setPose(d, 'grip'); d.x = e.x; d.y = e.y; d.z = e.h; d.pitch = 1.1; d.stretch = 0.1; faceDir(d, -e.n.x, -e.n.y); R.burst(e.x, e.y, '#ffa000', 12, e.h * T.visH); R.text(e.x, e.y, 'GRIP!', 'gold'); R.shake(6); dur = 0.3; break;
+      case 'grip': setPose(d, 'grip'); d.x = e.x; d.y = e.y; d.z = e.h; d.pitch = 1.1; d.stretch = 0.1; faceDir(d, -e.n.x, -e.n.y); R.text(e.x, e.y, 'GRIP!', 'gold'); R.shake(6); dur = 0.3; break;
       case 'drop': { var z0 = d.z; d.pitch = 0; dur = 0.3; upd = function (u) { d.z = z0 * (1 - u * u); }; end = function () { setPose(d, 'land'); }; break; }
       case 'land': {
         var z1 = d.z; d.x = e.x; d.y = e.y; dur = 0.08;
@@ -346,7 +348,8 @@
       case 'round': app.shown.round = e.round; app.shown.acted = {}; app.roundActs = []; app.activeId = -1; banner('ROUND ' + e.round, e.side === 0 ? 'p' : 'b', e.side === 0 ? 'You start' : 'Enemy starts'); dur = 0.9; break;
       case 'turn': app.shown.turnSide = e.side; break;
       case 'label': R.text(d.x, d.y, e.text, 'gold'); dur = 0.3; break;
-      case 'hopReady': R.text(d.x, d.y, 'EXTRA HOP!', 'gold'); dur = 0.25; break;
+      case 'hopReady': R.text(d.x, d.y, 'BOUNCE!', 'gold'); dur = 0.25; break;
+      case 'autoHop': dur = 0.02; break;
       case 'skip': R.text(d.x, d.y, 'SKIP', 'dmg'); dur = 0.3; break;
       case 'over': dur = 0.3; break;
     }
@@ -400,8 +403,13 @@
       if (e.t === 'land' && e.id === f.id && e.onAlly !== undefined) allyId = e.onAlly;
       if (e.t === 'charge') { if (e.id === f.id) charge = e; else info.lines.push('Ally gets a charge: ' + (FB.REACTIONS[e.key] ? FB.REACTIONS[e.key].name : 'OVERCHARGE')); }
       if (e.t === 'node') info.lines.push('Drain Node → next round ' + FB.ELEMENTS[e.el].icon + ' puddle');
-      if (e.t === 'hopReady') info.lines.push('Living Catapult: extra hop');
     });
+    // отскок от союзника: бледным пунктиром — куда жаба отскочит сама, если не прыгнуть в окно (D-077)
+    if (pv.pending && pv.pending.kind === 'hop' && pv.pending.frog === f.id) {
+      var ac = Sim.clone(pv.state), ar = Sim.apply(ac, { frog: f.id, mode: 'end' }, { noEnd: true });
+      ar.events.forEach(function (e) { if (e.t === 'jump') a.autoSegs = e.segs; });
+      info.lines.push('Bounce: pull again in ' + T.allyWindow + ' s, or auto ' + Math.round(T.allyHopMul * 100) + '%');
+    }
     if (!a.land && !a.grip && a.segs.length) { var ls = a.segs[a.segs.length - 1]; a.land = ls.to; }
     if (!a.land && !a.grip) return;
     if (reacted) { info.title = reacted.name; a.color = RXC[reacted.key] || '#ffe080'; a.labels.push({ x: a.land.x, y: a.land.y, text: reacted.name, cls: 'rx', h: 70 }); }
@@ -413,8 +421,8 @@
       a.color = RXC[charge.key] || '#ffe080';
       a.ally = { x: start[allyId].x, y: start[allyId].y, r: app.s.frogs[allyId].r, color: a.color };
       a.labels.push({ x: start[allyId].x, y: start[allyId].y, text: 'CHARGE<br>' + ic + ' → ' + cn, cls: 'charge', h: 90 });
-      info.title = '⚡ CHARGE COMBO'; info.lines.unshift(ic + ' → ' + cn + ' on the next jump, anywhere');
-      if (f.side === 0) notice('⚡ CHARGE COMBO', ic + ' → <b>' + cn + '</b>', 'The next jump of this frog fires it anywhere', a.color);
+      info.title = '⚡ CHARGE COMBO'; info.lines.unshift(ic + ' → ' + cn + ' on the next turn, anywhere');
+      if (f.side === 0) notice('⚡ CHARGE COMBO', ic + ' → <b>' + cn + '</b>', "Fires on this frog's next turn, wherever it lands", a.color);
     } else notice(null);
     Object.keys(dmg).forEach(function (id) {
       var p = start[id]; a.labels.push({ x: p.x, y: p.y, text: (deaths[id] ? 'KO ' : '') + '−' + dmg[id], cls: +id === f.id ? 'self' : 'dmg' });
@@ -497,6 +505,7 @@
     var w = R.toWorld(p.x, p.y, (d.z || 0) * T.visH);
     if (!w || pow < T.minPull) { app.aimCmd = null; R.setAim(null); notice(null); setPv('Pull back', 'Drag away from the frog and release'); return; }
     var dx = f.x - w.x, dy = f.y - w.y, l = Math.hypot(dx, dy) || 1, m = pendingMode(f), range = Sim.rangeFor(app.s, f, m);
+    if (m === 'hop') { dx = app.s.pending.dir.x; dy = app.s.pending.dir.y; l = 1; } // отскок от союзника: только по направлению основного прыжка, тянем силу (D-077)
     app.aimCmd = { frog: f.id, dx: dx / l * range * pow, dy: dy / l * range * pow, mode: m };
     showAim(f, app.aimCmd);
   }
@@ -586,11 +595,11 @@
       else {
         var f = app.s.frogs[app.sel], P = app.s.pending;
         if (P && P.kind === 'grip') setPv('GRIP!', 'Pull again before the bar runs out — 2nd jump ×' + T.gripRangeMul + ' range, ×' + T.gripImpactMul + ' impact');
-        else if (P && P.kind === 'hop') setPv('EXTRA HOP', 'Living Catapult: one more short jump, or END');
+        else if (P && P.kind === 'hop') setPv('BOUNCE', 'Pull to jump on in the same direction (up to ' + Math.round((app.s.traits[0] === 'catapult' ? T.catapultRangeMul : T.allyHopMax) * 100) + '%), or wait — auto bounce ' + Math.round(T.allyHopMul * 100) + '%');
         else if (f) setPv(FB.ELEMENTS[f.el].icon + ' ' + FB.FROGS[f.kind].name, f.charge ? 'Charged: ' + FB.REACTIONS[FB.reactionKey(f.charge[0], f.charge[1])].name + ' fires on landing' : 'Drag back from the frog to jump');
       }
     }
-    $('btn-skip').textContent = app.s.pending && myTurn() ? (app.s.pending.kind === 'grip' ? 'DROP' : 'END') : 'SKIP';
+    $('btn-skip').textContent = app.s.pending && myTurn() ? (app.s.pending.kind === 'grip' ? 'DROP' : 'AUTO') : 'SKIP';
   }
 
   // ---------- цикл ----------
@@ -608,10 +617,10 @@
       });
       if (canAimNow() && !app.paused) {
         var P = app.s.pending;
-        if (P && P.kind === 'grip') {
+        if (P) {
           if (mode !== 'aim') app.gripT -= dt;
-          $('gripbar').querySelector('i').style.width = Math.max(0, 100 * app.gripT / T.gripWindow) + '%';
-          if (app.gripT <= 0) { cancelAim(); execute({ frog: P.frog, mode: 'drop' }); }
+          $('gripbar').querySelector('i').style.width = Math.max(0, 100 * app.gripT / (app.gripMax || 1)) + '%';
+          if (app.gripT <= 0) { cancelAim(); execute({ frog: P.frog, mode: P.kind === 'grip' ? 'drop' : 'end' }); } // не успел: падение со стены / автоотскок 25%
         } else {
           app.turnLeft -= dt;
           var tl = Math.max(0, app.turnLeft);

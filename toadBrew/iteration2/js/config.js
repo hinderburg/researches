@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '2.3.1';
+FB.VERSION = '2.4.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -54,7 +54,9 @@ FB.T = {
 
   // Командные свойства (§7)
   divingPerUnit: 1 / 520, divingMax: 2.0,   // Diving Strike: impact × (1 + путь в воздухе / 520), не больше ×2
-  catapultRangeMul: 0.6,                    // Living Catapult: дополнительный короткий прыжок
+  catapultRangeMul: 0.8,                    // Living Catapult: доп. прыжок от союзника дальше — до 80% (D-077)
+  // Отскок от союзника (D-077): окно, прыжок вдоль основного направления до allyHopMax, без ввода — автоотскок allyHopMul
+  allyWindow: 0.8, allyHopMax: 0.5, allyHopMul: 0.25,
   pinnedSlamMul: 3, pinnedBonus: 10,        // Pinned Target
   gripWindow: 0.8, gripRangeMul: 1.25, gripImpactMul: 1.3, // Reactive Grip (§22)
 
@@ -94,7 +96,7 @@ FB.FROG_ORDER = ['spring', 'cling', 'bellows', 'spur'];
 FB.TEAM_TRAITS = {
   'spring+spur':   { id: 'diving', icon: '☄️',    name: 'DIVING STRIKE',       arche: 'Rushdown',           desc: 'The longer the flight (wall bounces count), the harder the direct hit.' },
   'bellows+spring':{ id: 'momentum', icon: '🌀',  name: 'ALCHEMICAL MOMENTUM', arche: 'Element combo',      desc: 'Use a puddle with one frog — the other gets a Reaction Charge with that element.' },
-  'cling+spring':  { id: 'catapult', icon: '🏹',  name: 'LIVING CATAPULT',     arche: 'Route building',     desc: 'Land on your ally to get an extra short hop in the same activation.' },
+  'cling+spring':  { id: 'catapult', icon: '🏹',  name: 'LIVING CATAPULT',     arche: 'Route building',     desc: 'Your bounce off an ally reaches up to 80% of a jump instead of 50%.' },
   'bellows+cling': { id: 'reservoir', icon: '⛲', name: 'RESERVOIR CONTROL',   arche: 'Zone control',       desc: 'Puddles you prepare through Drain Nodes spawn 50% larger.' },
   'cling+spur':    { id: 'pinned', icon: '📌',    name: 'PINNED TARGET',       arche: 'Billiards',          desc: 'One frog marks a target; the other smashes it into a wall or the column for big damage.' },
   'bellows+spur':  { id: 'grip', icon: '🪝',      name: 'REACTIVE GRIP',       arche: 'Trick shot',         desc: 'Hit a Wall Launch Zone to cling on and fire a second, stronger jump.' }
