@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '2.5.0';
+FB.VERSION = '2.6.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -56,7 +56,8 @@ FB.T = {
   divingPerUnit: 1 / 520, divingMax: 2.0,   // Diving Strike: impact × (1 + путь в воздухе / 520), не больше ×2
   catapultRangeMul: 0.8,                    // Living Catapult: доп. прыжок от союзника дальше — до 80% (D-077)
   // Отскок от союзника (D-077): окно, прыжок вдоль основного направления до allyHopMax, без ввода — автоотскок allyHopMul
-  allyWindow: 0.8, allyHopMax: 0.5, allyHopMul: 0.25,
+  allyWindow: 2.8, allyHopMax: 0.5, allyHopMul: 0.25, // окно 2.8 с, прицел в любую сторону (D-080)
+  allyGap: 18, allyShove: 45,                // расталкивание при прыжке на союзника (D-080)
   pinnedSlamMul: 3, pinnedBonus: 10,        // Pinned Target
   gripWindow: 0.8, gripRangeMul: 1.25, gripImpactMul: 1.3, // Reactive Grip (§22)
 

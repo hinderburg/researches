@@ -216,7 +216,7 @@
         app.sel = pf.id;
         // окно на доп. прыжок: зацеп за стену или отскок от союзника (D-077)
         app.gripT = s.pending.kind === 'grip' ? T.gripWindow : T.allyWindow; app.gripMax = app.gripT;
-        $('gripbar').querySelector('span').textContent = s.pending.kind === 'grip' ? 'GRIP! Pull again' : 'BOUNCE! Pull to jump on';
+        $('gripbar').querySelector('span').textContent = s.pending.kind === 'grip' ? 'GRIP! Pull again' : 'BOUNCE! Aim anywhere';
         $('gripbar').classList.remove('hidden');
         refreshHud(true);
       } else botTurn();
@@ -323,7 +323,9 @@
         var mate = e.via ? null : app.shown.frogs.filter(function (o) { return o.side === SF(e.id).side && o.id !== e.id; })[0];
         if (!d.hidden) R.chargeFx(mate ? { x: D(mate.id).x, y: D(mate.id).y } : null, { x: d.x, y: d.y }, ELC(e.els[0]), ELC(e.els[1])); R.text(d.x, d.y, 'CHARGE<br><small>' + (FB.REACTIONS[e.key] ? FB.REACTIONS[e.key].name : 'OVERCHARGE') + '</small>', 'charge'); dur = 0.45; break; }
       case 'chargeUsed': SF(e.id).charge = null; break;
-      case 'reaction': R.flash(e.x, e.y, 260, RXC[e.key] || '#ffe080'); R.splat(e.x, e.y, RXC[e.key] || '#ffe080', 230, 14); R.burst(e.x, e.y, RXC[e.key] || '#ffe080', 30, 40); R.ring(e.x, e.y, 180, RXC[e.key] || '#ffe080', 0.6); R.text(e.x, e.y, e.name, 'rx'); R.shake(8); dur = 0.5; break;
+      case 'reaction': // свой эффект у каждой реакции, без чернильных клякс (D-081)
+        app.lastRx = { x: e.x, y: e.y };
+        R.reactionFx(e.key, e.x, e.y, { 'fire+ice': T.veilR, 'fire+poison': T.detR, 'lightning+poison': T.neuroR, 'ice+poison': T.crystalLen * 0.6, 'ice+lightning': 110, 'fire+lightning': 160 }[e.key] || 150); R.text(e.x, e.y, e.name, 'rx'); R.shake(8); dur = 0.5; break;
       case 'veil': app.shown.veils.push(e.veil); dur = 0.3; break;
       case 'veilBounce': {
         var vf = e.from, vt = e.to; dur = d.hidden ? 0.01 : 0.35;
@@ -335,7 +337,7 @@
       case 'orb': R.orb(e.path, 0.6); dur = 0.6; break;
       case 'crystal': app.shown.crystals.push(e.crystal); R.burst(e.crystal.cx, e.crystal.cy, '#8dff5a', 14, 20); R.shake(6); dur = 0.35; break;
       case 'crystalGone': app.shown.crystals = app.shown.crystals.filter(function (c) { return c.id !== e.id; }); break;
-      case 'status': { var key = e.s === 'pinned' ? 'pinnedBy' : e.s, fin = app.s.frogs[e.id][key]; SF(e.id)[key] = e.s === 'pinned' ? (fin >= 0 ? fin : 0) : (fin || 1); if (e.s === 'shell') R.ring(d.x, d.y, 70, '#9fe0ff'); if (e.s === 'pinned') R.text(d.x, d.y, 'MARKED', 'gold'); break; }
+      case 'status': { var key = e.s === 'pinned' ? 'pinnedBy' : e.s, fin = app.s.frogs[e.id][key]; SF(e.id)[key] = e.s === 'pinned' ? (fin >= 0 ? fin : 0) : (fin || 1); if (e.s === 'neuro' && app.lastRx && !d.hidden) R.zap(app.lastRx, { x: d.x, y: d.y }); if (e.s === 'pinned') R.text(d.x, d.y, 'MARKED', 'gold'); break; }
       case 'statusGone': SF(e.id)[e.s] = 0; break;
       case 'shellBreak': SF(e.id).shell = 0; R.ring(e.x, e.y, 130, '#9fe0ff'); R.burst(e.x, e.y, '#9fe0ff', 12, 20); dur = 0.2; break;
       case 'node': { var n = app.shown.nodes[e.id]; n.el = e.el; n.side = e.side; R.ring(n.x, n.y, 70, ELC(e.el)); R.splat(n.x, n.y, ELC(e.el), 70); R.text(n.sx, n.sy, 'NEXT ROUND', 'node'); dur = 0.3; break; }
@@ -508,7 +510,6 @@
     var w = R.toWorld(p.x, p.y, (d.z || 0) * T.visH);
     if (!w || pow < T.minPull) { app.aimCmd = null; R.setAim(null); notice(null); setPv('Pull back', 'Drag away from the frog and release'); return; }
     var dx = f.x - w.x, dy = f.y - w.y, l = Math.hypot(dx, dy) || 1, m = pendingMode(f), range = Sim.rangeFor(app.s, f, m);
-    if (m === 'hop') { dx = app.s.pending.dir.x; dy = app.s.pending.dir.y; l = 1; } // отскок от союзника: только по направлению основного прыжка, тянем силу (D-077)
     app.aimCmd = { frog: f.id, dx: dx / l * range * pow, dy: dy / l * range * pow, mode: m };
     showAim(f, app.aimCmd);
   }
@@ -598,7 +599,7 @@
       else {
         var f = app.s.frogs[app.sel], P = app.s.pending;
         if (P && P.kind === 'grip') setPv('GRIP!', 'Pull again before the bar runs out — 2nd jump ×' + T.gripRangeMul + ' range, ×' + T.gripImpactMul + ' impact');
-        else if (P && P.kind === 'hop') setPv('BOUNCE', 'Pull to jump on in the same direction (up to ' + Math.round((app.s.traits[0] === 'catapult' ? T.catapultRangeMul : T.allyHopMax) * 100) + '%), or wait — auto bounce ' + Math.round(T.allyHopMul * 100) + '%');
+        else if (P && P.kind === 'hop') setPv('BOUNCE', 'Aim anywhere (up to ' + Math.round((app.s.traits[0] === 'catapult' ? T.catapultRangeMul : T.allyHopMax) * 100) + '%), or wait — auto bounce ' + Math.round(T.allyHopMul * 100) + '%');
         else if (f) setPv(FB.ELEMENTS[f.el].icon + ' ' + FB.FROGS[f.kind].name, f.charge ? 'Charged: ' + FB.REACTIONS[FB.reactionKey(f.charge[0], f.charge[1])].name + ' fires on landing' : 'Drag back from the frog to jump');
       }
     }

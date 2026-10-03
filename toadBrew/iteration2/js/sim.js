@@ -165,7 +165,8 @@
 
   // Что случится при приземлении (для превью и подсказок): reaction / charge / base
   Sim.reactionAt = function (s, f, x, y, skipCharge) {
-    if (f.charge && !skipCharge) return { kind: f.charge[0] === f.charge[1] ? 'over' : 'react', key: FB.reactionKey(f.charge[0], f.charge[1]), from: 'charge', els: f.charge };
+    if (skipCharge) return { kind: 'base', el: f.el }; // доп. прыжок от союзника: никаких реакций — ни заряда, ни лужи (D-080)
+    if (f.charge) return { kind: f.charge[0] === f.charge[1] ? 'over' : 'react', key: FB.reactionKey(f.charge[0], f.charge[1]), from: 'charge', els: f.charge };
     var pd = puddleAt(s, x, y);
     if (pd && pd.el !== f.el) return { kind: 'react', key: FB.reactionKey(f.el, pd.el), from: 'puddle', puddle: pd.id, els: [f.el, pd.el] };
     return { kind: 'base', el: f.el };
@@ -211,7 +212,7 @@
   }
 
   // Отброс (§10): шагами, с ударом о стену / колонну / кристалл
-  function push(s, e, dir, amount, events, attacker) {
+  function push(s, e, dir, amount, events, attacker, gentle) { // gentle — без удара о стену (расталкивание союзников)
     if (!e.alive || amount <= 0) return;
     var from = { x: e.x, y: e.y }, x = e.x, y = e.y, hit = null, obs = obstacles(s), step = 4;
     for (var t = step; t <= amount; t += step) {
@@ -223,7 +224,7 @@
     }
     e.x = x; e.y = y;
     events.push({ t: 'push', id: e.id, from: from, to: { x: x, y: y }, wall: hit });
-    if (hit) {
+    if (hit && !gentle) {
       var dmg = T.slamDamage;
       // Pinned Target (§7): помеченную одной жабой цель вторая жаба пары вбивает в стену/колонну
       if (attacker && s.traits[attacker.side] === 'pinned' && e.pinnedBy >= 0 && e.pinnedBy !== attacker.id && s.frogs[e.pinnedBy].side === attacker.side) {
@@ -279,7 +280,6 @@
 
   function jump(s, f, dx, dy, mode, events, P) {
     var range = Sim.rangeFor(s, f, mode), v = norm(dx, dy);
-    if (mode === 'hop' && P && P.dir) v = { x: P.dir.x, y: P.dir.y, l: v.l }; // доп. прыжок — только по направлению основного (D-077)
     if (v.l < 1e-6) v = { x: 0, y: f.side === 0 ? -1 : 1, l: 1 };
     var len = Math.min(v.l, range), from = { x: f.x, y: f.y }, h0 = 0;
     if (mode === 'grip' && P) { // с выступа стены — только от стены
@@ -321,9 +321,10 @@
     // Союзник: Reaction Charge (§19), без урона и без элемента
     if (ally && !o.drop) {
       var bk = norm(dir.x, dir.y); if (bk.l < 1e-6) bk = norm(L.x - ally.x, L.y - ally.y); // соскакивает со спины союзника вперёд по ходу прыжка (D-077)
-      f.x = ally.x + bk.x * (f.r + ally.r + 2); f.y = ally.y + bk.y * (f.r + ally.r + 2);
+      f.x = ally.x + bk.x * (f.r + ally.r + T.allyGap); f.y = ally.y + bk.y * (f.r + ally.r + T.allyGap);
       if (!wallClear(f.x, f.y, f.r * 0.8)) { f.x = L.x; f.y = L.y; }
       events.push({ t: 'land', id: f.id, x: f.x, y: f.y, onAlly: ally.id });
+      push(s, ally, { x: -bk.x, y: -bk.y }, T.allyShove, events, null, true); // союзника отталкивает назад — жабы не слипаются (D-080)
       if (!f.charge) { f.charge = [f.el, ally.el]; events.push({ t: 'charge', id: f.id, els: f.charge.slice(), key: FB.reactionKey(f.el, ally.el) }); }
       if (o.mode !== 'hop' && o.mode !== 'auto') { // отскок от союзника (D-077): окно на прыжок вдоль основного направления, иначе автоотскок 25%
         s.pending = { kind: 'hop', frog: f.id, dir: dir };

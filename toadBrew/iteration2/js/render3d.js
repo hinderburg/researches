@@ -4,7 +4,7 @@
 (function () {
   var T = FB.T, AR = FB.ARENA, K = FB.K;
   var W = T.IMG_W * K, H = T.IMG_H * K;
-  var R = FB.R3 = {};
+  var R = FB.R3 = { fxScale: 1 };
   var renderer, scene, camera, cv, sun, labels;
   var tex = {}, rigs = {}, atlasImg = {}, fullImg = {}, recolored = {};
   var frogs = {}, dyn = { puddles: {}, nodes: {}, veils: {}, crystals: {} }, fxList = [], aimGroup = null;
@@ -337,6 +337,10 @@
         os.material.opacity = 0.65 + 0.35 * Math.sin(t * 9 + i * 2);
       });
     } else if (F.orbit) F.orbit.visible = false;
+    // под Neuroshock жаба потрескивает разрядами (D-081)
+    if (f.neuro && d.alive && !hidden && Math.random() < dt * 4) {
+      var za = Math.random() * 6.28; R.bolt({ x: d.x + Math.cos(za) * f.r, y: d.y + Math.sin(za) * f.r }, { x: d.x - Math.cos(za) * f.r, y: d.y - Math.sin(za) * f.r }, Math.random() < 0.5 ? '#c070ff' : '#c6ff00', hv + 25);
+    }
     // подпись над жабой: HP и статусы
     var st = '';
     if (f.charge) st += '<b class="ch">' + FB.ELEMENTS[f.charge[0]].icon + FB.ELEMENTS[f.charge[1]].icon + '</b>';
@@ -409,7 +413,7 @@
       if (!D) {
         var g = new THREE.Group();
         for (var i = 0; i < 9; i++) {
-          var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: 0xeef4f8, transparent: true, opacity: 0.5, depthWrite: false }));
+          var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTex(), color: 0xeef4f8, transparent: true, opacity: 0.5, depthWrite: false }));
           var a = i / 9 * Math.PI * 2, rr = i ? v.r * 0.55 : 0;
           sp.position.set(Math.cos(a) * rr, 40 + (i % 3) * 14, Math.sin(a) * rr); sp.scale.set(v.r * 1.3, v.r * 1.3, 1);
           sp.userData.ph = i; g.add(sp);
@@ -539,18 +543,22 @@
   };
   // Заряд комбинации (D-079): спираль искр двух цветов вокруг жабы, дуги от напарника, двойное кольцо и вспышка
   R.chargeFx = function (from, to, c1, c2) {
-    for (var i = 0; i < 28; i++) {
-      var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(i % 2 ? c2 : c1), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-      sp.scale.set(22, 22, 1); scene.add(sp);
-      fxList.push({ obj: sp, t: 0, life: 1.1, spiral: { x: to.x, y: to.y, a0: i / 28 * Math.PI * 4, r0: 20 + (i % 7) * 6, d: i * 0.012 } });
+    // две закрученные ленты искр: сплошные капли (видны на светлом полу) и свечение поверх (D-079, крупнее в D-081)
+    for (var i = 0; i < 48; i++) {
+      var solid = i % 3 !== 2, sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: solid ? dropTex() : glowTex(), color: new THREE.Color(i % 2 ? c2 : c1), transparent: true, depthWrite: false, blending: solid ? THREE.NormalBlending : THREE.AdditiveBlending }));
+      scene.add(sp);
+      fxList.push({ obj: sp, t: 0, life: 1.6, spiral: { x: to.x, y: to.y, a0: (i % 2 ? Math.PI : 0) + Math.floor(i / 2) / 24 * Math.PI * 3, r0: 30, d: Math.floor(i / 2) * 0.022, sz: solid ? 30 : 46 } });
     }
+    var col = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(c1), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    col.center.set(0.5, 0.1); col.position.set(to.x, 0, to.y); scene.add(col);
+    fxList.push({ obj: col, t: 0, life: 1.2, part: true, s0: 40, s1: 90, a0: 0.8, fin: 0.15, column: 380 });
     if (from) { R.bolt(from, to, c1, 40); setTimeout(function () { R.bolt(from, to, c2, 46); }, 90); }
     R.ring(to.x, to.y, 90, c1, 0.6); setTimeout(function () { R.ring(to.x, to.y, 120, c2, 0.7); }, 120);
     R.flash(to.x, to.y, 160, c1); R.flash(to.x, to.y, 110, c2);
   };
   R.orb = function (path, dur) {
     var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: 0xffb040, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-    sp.scale.set(T.orbR * 4, T.orbR * 4, 1); scene.add(sp);
+    sp.scale.set(T.orbR * 7, T.orbR * 7, 1); scene.add(sp);
     var L = [0]; for (var i = 1; i < path.length; i++) L.push(L[i - 1] + Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y));
     fxList.push({ obj: sp, t: 0, life: dur, path: path, L: L });
   };
@@ -558,6 +566,65 @@
     var el = document.createElement('div'); el.className = 'ftext ' + (cls || ''); el.innerHTML = txt; labels.appendChild(el);
     fxList.push({ el: el, t: 0, life: 1.1, x: x, y: y });
   };
+  // ---------- эффекты реакций (D-081): свой характер у каждой, без чернильных клякс — не путаются с лужами ----------
+  var texCache = {};
+  function canvasTex(key, draw) {
+    if (texCache[key]) return texCache[key];
+    var c = document.createElement('canvas'); c.width = c.height = 128; draw(c.getContext('2d'));
+    var t = new THREE.CanvasTexture(c); return (texCache[key] = t);
+  }
+  function puffTex() { return canvasTex('puff', function (x) { for (var i = 0; i < 7; i++) { var a = i / 7 * 6.28, cx = 64 + Math.cos(a) * 22, cy = 64 + Math.sin(a) * 22, g = x.createRadialGradient(cx, cy, 2, cx, cy, 38); g.addColorStop(0, 'rgba(255,255,255,0.9)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); } }); }
+  function shardTex() { return canvasTex('shard', function (x) { x.fillStyle = '#ffffff'; x.beginPath(); x.moveTo(64, 4); x.lineTo(84, 64); x.lineTo(64, 124); x.lineTo(44, 64); x.closePath(); x.fill(); x.fillStyle = 'rgba(160,255,230,0.9)'; x.beginPath(); x.moveTo(64, 4); x.lineTo(84, 64); x.lineTo(64, 64); x.closePath(); x.fill(); }); }
+  function scorchTex() { return canvasTex('scorch', function (x) { var g = x.createRadialGradient(64, 64, 4, 64, 64, 62); g.addColorStop(0, 'rgba(10,6,2,0.9)'); g.addColorStop(0.55, 'rgba(40,24,8,0.6)'); g.addColorStop(1, 'rgba(40,24,8,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); x.strokeStyle = 'rgba(255,120,30,0.7)'; x.lineWidth = 2; for (var i = 0; i < 9; i++) { var a = i / 9 * 6.28 + Math.random() * 0.4; x.beginPath(); x.moveTo(64, 64); x.lineTo(64 + Math.cos(a) * (30 + Math.random() * 30), 64 + Math.sin(a) * (30 + Math.random() * 30)); x.stroke(); } }); }
+  function hexTex() { return canvasTex('hex', function (x) { x.strokeStyle = '#ffffff'; x.lineWidth = 6; x.beginPath(); for (var i = 0; i <= 6; i++) { var a = i / 6 * 6.28 + 0.52; if (i) x.lineTo(64 + Math.cos(a) * 58, 64 + Math.sin(a) * 58); else x.moveTo(64 + Math.cos(a) * 58, 64 + Math.sin(a) * 58); } x.stroke(); }); }
+  function solidTex() { return canvasTex('solid', function (x) { var g = x.createRadialGradient(64, 64, 0, 64, 64, 62); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.55, 'rgba(255,255,255,0.95)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); }); }
+  function dotRingTex() { return canvasTex('ring', function (x) { var g = x.createRadialGradient(64, 64, 34, 64, 64, 62); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.55, 'rgba(255,255,255,1)'); g.addColorStop(0.8, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); }); }
+  function sprite(tex, color, blend) { return new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: new THREE.Color(color), transparent: true, depthWrite: false, blending: blend ? THREE.AdditiveBlending : THREE.NormalBlending })); }
+  function flatMesh(tex, color, size, y, blend) {
+    var m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(color), transparent: true, depthWrite: false, blending: blend ? THREE.AdditiveBlending : THREE.NormalBlending }));
+    m.rotation.x = -Math.PI / 2; m.position.y = y || 1.5; m.scale.set(size, size, 1); return m;
+  }
+  // универсальная частица: скорость с торможением, рост, вращение, появление и затухание
+  function particle(obj, x, y, h, o) { obj.position.set(x, h || 20, y); scene.add(obj); fxList.push(Object.assign({ obj: obj, t: 0, part: true }, o)); }
+  function stepParticle(f, dt, u) {
+    var o = f.obj;
+    if (f.v) { o.position.x += f.v.x * dt; o.position.y += f.v.y * dt; o.position.z += f.v.z * dt; if (f.drag) { var k = Math.max(0, 1 - f.drag * dt); f.v.x *= k; f.v.y *= k; f.v.z *= k; } }
+    if (f.s0 !== undefined) { var s = f.s0 + (f.s1 - f.s0) * (f.ease ? 1 - Math.pow(1 - u, 3) : u); o.scale.set(s, f.column || s, 1); }
+    if (f.spin && o.isSprite) o.material.rotation += f.spin * dt;
+    var a = f.a0 !== undefined ? f.a0 : 1, fin = f.fin || 0;
+    o.material.opacity = a * (fin && u < fin ? u / fin : (u > 0.55 ? (1 - u) / 0.45 : 1));
+  }
+  R.reactionFx = function (key, x, y, R0) {
+    var r = R0 || 150, i, a, sp;
+    if (key === 'fire+ice') { // STEAM VEIL — клубы пара разлетаются и поднимаются, шипящая волна
+      for (i = 0; i < 26; i++) { a = Math.random() * 6.28; sp = 60 + Math.random() * 140; particle(sprite(puffTex(), i % 3 ? 0xf4f8fb : 0xc9d6de), x, y, 20, { life: 1.6 + Math.random() * 0.6, v: { x: Math.cos(a) * sp, y: 40 + Math.random() * 60, z: Math.sin(a) * sp }, drag: 1.4, s0: 40, s1: 150 + Math.random() * 80, ease: true, fin: 0.1, spin: (Math.random() - 0.5) * 2, a0: 0.9 }); }
+      particle(flatMesh(dotRingTex(), 0xe8f6ff, 10, 2, false), x, y, 2, { life: 0.7, s0: 20, s1: r * 2.4, ease: true, a0: 0.8 });
+    } else if (key === 'fire+poison') { // TOXIC DETONATION — огненный шар, ударная волна, выжженный след, дым
+      particle(sprite(solidTex(), 0xff8a10, false), x, y, 40, { life: 0.55, s0: 40, s1: r * 1.7, ease: true, a0: 0.95 }); particle(sprite(glowTex(), 0xffd040, true), x, y, 60, { life: 0.4, s0: 60, s1: r * 2.2, ease: true });
+      particle(sprite(solidTex(), 0x8cff10, false), x, y, 44, { life: 0.6, s0: 30, s1: r * 1.05, ease: true, a0: 0.9 });
+      particle(flatMesh(dotRingTex(), 0xffd060, 10, 3, false), x, y, 3, { life: 0.55, s0: 30, s1: r * 2.3, ease: true });
+      var scm = flatMesh(scorchTex(), 0xffffff, r * 1.5, 0.9, false); scm.rotation.z = Math.random() * 6.28; particle(scm, x, y, 0.9, { life: 14, a0: 0.9, fin: 0.02 });
+      for (i = 0; i < 14; i++) { a = Math.random() * 6.28; particle(sprite(puffTex(), i % 2 ? 0x3a3020 : 0x4a5a20), x, y, 30, { life: 1.4, v: { x: Math.cos(a) * 120, y: 90 + Math.random() * 80, z: Math.sin(a) * 120 }, drag: 1.2, s0: 50, s1: 140, ease: true, fin: 0.15, a0: 0.75 }); }
+      R.burst(x, y, '#ff7a00', 10, 30); R.burst(x, y, '#78ff14', 8, 30); R.shake(18);
+    } else if (key === 'fire+lightning') { // PLASMA ORB — плазменный разряд: вспышка и лучи-молнии
+      particle(sprite(solidTex(), 0xffb030, false), x, y, 40, { life: 0.45, s0: 30, s1: r * 1.4, ease: true });
+      for (i = 0; i < 6; i++) { a = i / 6 * 6.28 + Math.random() * 0.3; R.bolt({ x: x, y: y }, { x: x + Math.cos(a) * r * 0.9, y: y + Math.sin(a) * r * 0.9 }, i % 2 ? '#ffe100' : '#ff7a00', 30); }
+    } else if (key === 'ice+poison') { // TOXIC CRYSTAL — осколки разлетаются, морозная волна
+      for (i = 0; i < 18; i++) { a = Math.random() * 6.28; var sh = sprite(shardTex(), i % 2 ? 0x8dff5a : 0x9fe8ff); sh.material.rotation = a; sp = 150 + Math.random() * 150; particle(sh, x, y, 30, { life: 0.9, v: { x: Math.cos(a) * sp, y: 60 + Math.random() * 120, z: Math.sin(a) * sp }, drag: 2, s0: 34, s1: 18 }); }
+      particle(flatMesh(dotRingTex(), 0xb8ffe0, 10, 2.5, false), x, y, 2.5, { life: 0.7, s0: 20, s1: r * 1.8, ease: true });
+    } else if (key === 'ice+lightning') { // STATIC SHELL — шестигранник-щит вспыхивает, по кругу трещат молнии
+      particle(flatMesh(hexTex(), 0x2fd8ff, 10, 3, false), x, y, 3, { life: 0.9, s0: 160, s1: 90, ease: true, fin: 0.1 });
+      for (i = 0; i < 6; i++) { a = i / 6 * 6.28; var b = a + 1.05; R.bolt({ x: x + Math.cos(a) * 70, y: y + Math.sin(a) * 70 }, { x: x + Math.cos(b) * 70, y: y + Math.sin(b) * 70 }, '#9fe0ff', 40); }
+    } else if (key === 'lightning+poison') { // NEUROSHOCK — электрическая волна, фиолетово-лаймовая
+      particle(flatMesh(dotRingTex(), 0xc070ff, 10, 3, false), x, y, 3, { life: 0.8, s0: 20, s1: r * 2.2, ease: true });
+      particle(flatMesh(dotRingTex(), 0xc6ff00, 10, 3.2, false), x, y, 3.2, { life: 0.9, s0: 10, s1: r * 1.7, ease: true });
+      for (i = 0; i < 5; i++) { a = Math.random() * 6.28; R.bolt({ x: x, y: y }, { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r }, i % 2 ? '#c070ff' : '#c6ff00', 25); }
+    } else { // OVERCHARGE — белая вспышка
+      particle(sprite(solidTex(), 0xffffff, false), x, y, 40, { life: 0.5, s0: 30, s1: r * 2, ease: true });
+    }
+  };
+  // нервный разряд к цели Neuroshock
+  R.zap = function (a, b) { R.bolt(a, b, '#c070ff', 30); R.bolt(a, b, '#c6ff00', 36); };
   function stepFx(dt) {
     var cur = fxList; fxList = []; // эффекты, рождённые во время шага (капли струи, искры снаряда), попадут в новый список
     var keep = cur.filter(function (f) {
@@ -584,11 +651,12 @@
         var d = u * f.L[f.L.length - 1], i = 1; while (i < f.L.length - 1 && f.L[i] < d) i++;
         var a = f.path[i - 1], b = f.path[i], k = (d - f.L[i - 1]) / Math.max(1e-6, f.L[i] - f.L[i - 1]);
         f.obj.position.set(a.x + (b.x - a.x) * k, 30, a.y + (b.y - a.y) * k);
-        if (Math.random() < 0.6) R.burst(f.obj.position.x, f.obj.position.z, '#ff8a30', 1, 30);
+        if (Math.random() < 0.8) particle(sprite(glowTex(), Math.random() < 0.5 ? 0xffc040 : 0xfff27a, true), f.obj.position.x, f.obj.position.z, 30, { life: 0.4, s0: 34, s1: 6, v: { x: (Math.random() - 0.5) * 80, y: 20, z: (Math.random() - 0.5) * 80 } }); // след плазмы, не краска
       }
       else if (f.fade) f.obj.material.opacity = 1 - u;
       else if (f.fadeMat) f.fadeMat.opacity = 1 - u;
-      else if (f.spiral) { var S = f.spiral, uu = Math.max(0, (f.t - S.d) / (f.life - S.d)), ang = S.a0 + uu * 9, rr = S.r0 + uu * 70; f.obj.position.set(S.x + Math.cos(ang) * rr, 10 + uu * 160, S.y + Math.sin(ang) * rr); f.obj.material.opacity = uu > 0.6 ? (1 - uu) / 0.4 : 1; f.obj.scale.setScalar(22 * (1 - uu * 0.6)); }
+      else if (f.part) stepParticle(f, dt, u);
+      else if (f.spiral) { var S = f.spiral, uu = Math.max(0, (f.t - S.d) / (f.life - S.d)), ang = S.a0 + uu * 9, rr = S.r0 + uu * 90; f.obj.position.set(S.x + Math.cos(ang) * rr, 10 + uu * 260, S.y + Math.sin(ang) * rr); f.obj.material.opacity = f.t < S.d ? 0 : (uu > 0.65 ? (1 - uu) / 0.35 : 1); var zz = (S.sz || 22) * (1 - uu * 0.5) * FXS; f.obj.scale.set(zz, zz, 1); }
       if (f.el) { var p = toScreen(f.x, 60 + u * 50, f.y); f.el.style.transform = 'translate(' + (p.x | 0) + 'px,' + (p.y | 0) + 'px) scale(' + (u < 0.15 ? 0.6 + u * 2.6 : 1) + ')'; f.el.style.opacity = u > 0.7 ? (1 - u) / 0.3 : 1; }
       return true;
     });
@@ -723,7 +791,7 @@
       syncDyn(s, tAll);
       s.frogs.forEach(function (f) { var d = app.disp[f.id]; if (d) syncFrog(f, d, dt, tAll, d.hidden); });
     }
-    stepFx(dt); stepDecals(dt);
+    stepFx(dt * R.fxScale); stepDecals(dt * R.fxScale); // fxScale — замедление эффектов для отладки
     (R.aimLabels || []).forEach(function (l) { var p = toScreen(l.x, l.h, l.y); l.el.style.transform = 'translate(' + (p.x | 0) + 'px,' + (p.y | 0) + 'px)'; });
     renderer.render(scene, camera);
   };
