@@ -318,7 +318,10 @@
         break;
       }
       case 'death': d.alive = false; setPose(d, 'dead'); SF(e.id).alive = false; R.burst(e.x, e.y, ELC(SF(e.id).el), 28, 30); R.splat(e.x, e.y, ELC(SF(e.id).el), 140, 30); R.text(e.x, e.y, 'KO!', 'ko'); R.shake(14); dur = 0.6; break;
-      case 'charge': SF(e.id).charge = e.els; R.ring(d.x, d.y, 90, RXC[e.key] || '#ffffff'); R.text(d.x, d.y, 'CHARGE<br><small>' + (FB.REACTIONS[e.key] ? FB.REACTIONS[e.key].name : 'OVERCHARGE') + '</small>', 'charge'); dur = 0.45; break;
+      case 'charge': { // заряд комбинации: спираль двух цветов, дуги от напарника (D-079)
+        SF(e.id).charge = e.els;
+        var mate = e.via ? null : app.shown.frogs.filter(function (o) { return o.side === SF(e.id).side && o.id !== e.id; })[0];
+        if (!d.hidden) R.chargeFx(mate ? { x: D(mate.id).x, y: D(mate.id).y } : null, { x: d.x, y: d.y }, ELC(e.els[0]), ELC(e.els[1])); R.text(d.x, d.y, 'CHARGE<br><small>' + (FB.REACTIONS[e.key] ? FB.REACTIONS[e.key].name : 'OVERCHARGE') + '</small>', 'charge'); dur = 0.45; break; }
       case 'chargeUsed': SF(e.id).charge = null; break;
       case 'reaction': R.flash(e.x, e.y, 260, RXC[e.key] || '#ffe080'); R.splat(e.x, e.y, RXC[e.key] || '#ffe080', 230, 14); R.burst(e.x, e.y, RXC[e.key] || '#ffe080', 30, 40); R.ring(e.x, e.y, 180, RXC[e.key] || '#ffe080', 0.6); R.text(e.x, e.y, e.name, 'rx'); R.shake(8); dur = 0.5; break;
       case 'veil': app.shown.veils.push(e.veil); dur = 0.3; break;
@@ -344,7 +347,7 @@
         R.pour(e.pipe, pp, ELC(pp.el), 0.45, function () { if (app.shown === shownNow && !shownNow.puddles.some(function (q) { return q.id === pp.id; })) shownNow.puddles.push(pp); R.splat(pp.x, pp.y, ELC(pp.el), pp.r * 2.2, 6); R.ring(pp.x, pp.y, pp.r * 1.6, ELC(pp.el)); });
         dur = 0.18; break;
       }
-      case 'arc': R.bolt(e.from, e.to); dur = 0.12; break;
+      case 'arc': R.bolt(e.from, e.to, '#ffe100'); dur = 0.12; break;
       case 'round': app.shown.round = e.round; app.shown.acted = {}; app.roundActs = []; app.activeId = -1; banner('ROUND ' + e.round, e.side === 0 ? 'p' : 'b', e.side === 0 ? 'You start' : 'Enemy starts'); dur = 0.9; break;
       case 'turn': app.shown.turnSide = e.side; break;
       case 'label': R.text(d.x, d.y, e.text, 'gold'); dur = 0.3; break;
@@ -378,7 +381,7 @@
     var d = D(f.id);
     return (app.shown.veils || []).some(function (v) {
       if (Math.hypot(d.x - v.x, d.y - v.y) > v.r) return false;
-      return !app.shown.frogs.some(function (o) { return o.side === 0 && o.alive && Math.hypot(D(o.id).x - v.x, D(o.id).y - v.y) <= v.r; });
+      return !app.shown.frogs.some(function (o) { return o.side === 0 && o.alive && Math.hypot(D(o.id).x - d.x, D(o.id).y - d.y) <= T.veilSight; });
     });
   }
 

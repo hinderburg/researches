@@ -179,7 +179,8 @@
     if (f.side === viewer || !f.alive) return false;
     return (s.veils || []).some(function (v) {
       if (dist(f.x, f.y, v.x, v.y) > v.r) return false;
-      return !s.frogs.some(function (o) { return o.side === viewer && o.alive && dist(o.x, o.y, v.x, v.y) <= v.r; });
+      // видна, только если жаба наблюдателя стоит вплотную (veilSight): облако огромное, «внутри облака» видело бы почти всё (D-078)
+      return !s.frogs.some(function (o) { return o.side === viewer && o.alive && dist(o.x, o.y, f.x, f.y) <= T.veilSight; });
     });
   };
   // То, что видит сторона: скрытых врагов уносим с поля (превью и бот не знают, где они)

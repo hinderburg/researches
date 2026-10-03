@@ -11,7 +11,7 @@
   var app = null;
 
   // ---------- камера (D-051) ----------
-  var cam = { tx: W / 2, ty: H * 0.72, d: 1000, td: 1000, maxD: 2000, minD: 400, tilt: 0.3, fov: 42, follow: null, user: false, shake: 0 };
+  var cam = { tx: W / 2, ty: H * 0.72, d: 1000, td: 1000, maxD: 2000, minD: 400, tilt: 0.1, fov: 64, follow: null, user: false, shake: 0 };
   R.cam = cam;
 
   function hsl2rgb(h, s, l) {
@@ -318,6 +318,25 @@
       F.glow.visible = true; F.glow.material.opacity = 0.35 + 0.2 * Math.sin(t * 3 + f.id * 1.7) + (f.charge ? 0.25 : 0);
     }
     F.shell.visible = !!f.shell && d.alive;
+    // заряд комбинации: вокруг корпуса кружат огоньки двух цветов (GDD §20, D-079)
+    if (f.charge && d.alive) {
+      var ck = f.charge.join('+');
+      if (!F.orbit || F.orbitKey !== ck) {
+        if (F.orbit) F.lift.remove(F.orbit);
+        F.orbit = new THREE.Group(); F.orbitKey = ck;
+        for (var oi = 0; oi < 8; oi++) {
+          var os = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(FB.ELEMENTS[f.charge[oi % 2]].color), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+          os.userData.a = oi / 8 * Math.PI * 2; os.scale.set(f.r * 0.55, f.r * 0.55, 1); F.orbit.add(os);
+        }
+        F.lift.add(F.orbit);
+      }
+      F.orbit.visible = true;
+      F.orbit.children.forEach(function (os, i) {
+        var a = os.userData.a + t * (i % 2 ? 2.6 : -2.1), rr = f.r * (1.35 + 0.12 * Math.sin(t * 5 + i));
+        os.position.set(Math.cos(a) * rr, 18 + 10 * Math.sin(t * 4 + i * 1.3), Math.sin(a) * rr);
+        os.material.opacity = 0.65 + 0.35 * Math.sin(t * 9 + i * 2);
+      });
+    } else if (F.orbit) F.orbit.visible = false;
     // подпись над жабой: HP и статусы
     var st = '';
     if (f.charge) st += '<b class="ch">' + FB.ELEMENTS[f.charge[0]].icon + FB.ELEMENTS[f.charge[1]].icon + '</b>';
@@ -507,11 +526,27 @@
     var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(color), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
     sp.position.set(x, 30, y); scene.add(sp); fxList.push({ obj: sp, t: 0, life: 0.45, flash: r * FXS });
   };
-  R.bolt = function (a, b) {
-    var pts = [], n = 8;
-    for (var i = 0; i <= n; i++) { var u = i / n, j = i && i < n ? (Math.random() - 0.5) * 40 : 0; pts.push(new THREE.Vector3(a.x + (b.x - a.x) * u + j, 30 + Math.random() * 10, a.y + (b.y - a.y) * u + j)); }
-    var l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xfff27a, transparent: true }));
-    scene.add(l); fxList.push({ obj: l, t: 0, life: 0.35, fade: true });
+  // Молния — цепочка светящихся точек по ломаной (линии WebGL в 1 px на телефоне не видны)
+  R.bolt = function (a, b, color, h) {
+    var pts = [], n = 8, base = h || 30;
+    for (var i = 0; i <= n; i++) { var u = i / n, j = i && i < n ? (Math.random() - 0.5) * 40 : 0; pts.push(new THREE.Vector3(a.x + (b.x - a.x) * u + j, base + Math.random() * 12, a.y + (b.y - a.y) * u + j)); }
+    var g = new THREE.Group(), mat = new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(color || 0xfff27a), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    for (var k = 1; k < pts.length; k++) {
+      var A = pts[k - 1], B = pts[k], L = A.distanceTo(B), m = Math.max(1, Math.round(L / 9));
+      for (var q = 0; q < m; q++) { var sp = new THREE.Sprite(mat); sp.position.copy(A).lerp(B, q / m); sp.scale.set(16, 16, 1); g.add(sp); }
+    }
+    scene.add(g); fxList.push({ obj: g, t: 0, life: 0.4, fadeMat: mat });
+  };
+  // Заряд комбинации (D-079): спираль искр двух цветов вокруг жабы, дуги от напарника, двойное кольцо и вспышка
+  R.chargeFx = function (from, to, c1, c2) {
+    for (var i = 0; i < 28; i++) {
+      var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(i % 2 ? c2 : c1), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      sp.scale.set(22, 22, 1); scene.add(sp);
+      fxList.push({ obj: sp, t: 0, life: 1.1, spiral: { x: to.x, y: to.y, a0: i / 28 * Math.PI * 4, r0: 20 + (i % 7) * 6, d: i * 0.012 } });
+    }
+    if (from) { R.bolt(from, to, c1, 40); setTimeout(function () { R.bolt(from, to, c2, 46); }, 90); }
+    R.ring(to.x, to.y, 90, c1, 0.6); setTimeout(function () { R.ring(to.x, to.y, 120, c2, 0.7); }, 120);
+    R.flash(to.x, to.y, 160, c1); R.flash(to.x, to.y, 110, c2);
   };
   R.orb = function (path, dur) {
     var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: 0xffb040, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
@@ -552,6 +587,8 @@
         if (Math.random() < 0.6) R.burst(f.obj.position.x, f.obj.position.z, '#ff8a30', 1, 30);
       }
       else if (f.fade) f.obj.material.opacity = 1 - u;
+      else if (f.fadeMat) f.fadeMat.opacity = 1 - u;
+      else if (f.spiral) { var S = f.spiral, uu = Math.max(0, (f.t - S.d) / (f.life - S.d)), ang = S.a0 + uu * 9, rr = S.r0 + uu * 70; f.obj.position.set(S.x + Math.cos(ang) * rr, 10 + uu * 160, S.y + Math.sin(ang) * rr); f.obj.material.opacity = uu > 0.6 ? (1 - uu) / 0.4 : 1; f.obj.scale.setScalar(22 * (1 - uu * 0.6)); }
       if (f.el) { var p = toScreen(f.x, 60 + u * 50, f.y); f.el.style.transform = 'translate(' + (p.x | 0) + 'px,' + (p.y | 0) + 'px) scale(' + (u < 0.15 ? 0.6 + u * 2.6 : 1) + ')'; f.el.style.opacity = u > 0.7 ? (1 - u) / 0.3 : 1; }
       return true;
     });
