@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1c140e">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>TOADBREW — Iteration 2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Lilita+One&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="gl"></canvas>
+  <div id="labels"></div>
+  <div id="loading" class="loading">Brewing…</div>
+
+  <header id="topbar" class="topbar">
+    <div class="logo"><div class="logo-a">T<span class="flask-o">⚗</span>ADBREW</div><div class="logo-b">ALCHEMICAL ARENA · IT.2</div></div>
+    <button id="btn-help" class="chip">How to play</button>
+  </header>
+
+  <!-- TEAM (§5.1, §6, §7) -->
+  <section id="team" class="screen meta">
+    <div class="sec-head"><div class="plaque">TEAM</div><div class="counter">🐸 PICK 2 OF 4</div></div>
+    <div id="roster" class="roster r2"></div>
+    <div class="sec-head small"><div class="plaque sm">⚔ YOUR TEAM</div></div>
+    <div class="pair">
+      <div class="ped" id="ped-0"></div>
+      <div class="syn" id="syn"></div>
+      <div class="ped" id="ped-1"></div>
+    </div>
+  </section>
+
+  <!-- ALCHEMY (§5.2, §8, §9) -->
+  <section id="alchemy" class="screen meta hidden">
+    <div class="sec-head"><div class="plaque">⚗ ALCHEMY</div><div class="counter">ELIXIR · TIER I</div></div>
+    <div id="tanks"></div>
+    <div class="panel-box">
+      <div class="box-head">⚗ REACTIONS <span>Two different elements react: land on a puddle of another element, or land on your ally to get a Reaction Charge.</span></div>
+      <div id="reactions" class="reactions"></div>
+    </div>
+  </section>
+
+  <nav id="nav" class="nav">
+    <button class="tab" data-tab="frogs" disabled><span class="ti">🐸</span>FROGS</button>
+    <button class="tab" data-tab="alchemy"><span class="ti">⚗</span>ALCHEMY</button>
+    <button id="btn-battle" class="battle-btn"><span>⚔</span> BATTLE</button>
+    <button class="tab on" data-tab="team"><span class="ti">👥</span>TEAM</button>
+    <button class="tab" data-tab="arena" disabled><span class="ti">🏆</span>ARENA</button>
+  </nav>
+
+  <!-- Боевой HUD (§29–§31) -->
+  <div id="hud" class="hidden">
+    <div class="top">
+      <div class="fcard enemy" id="fc-2"></div>
+      <div class="round"><div class="round-l">ROUND</div><div class="round-n" id="round-n">1</div></div>
+      <div class="fcard enemy" id="fc-3"></div>
+    </div>
+    <div class="zoomer"><button id="z-in">＋</button><button id="z-out">－</button></div>
+    <div id="gripbar" class="gripbar hidden"><b><i></i></b><span>GRIP! Pull again</span></div>
+    <div class="bottom" id="bottom">
+      <div class="mine">
+        <div class="fcard mine-c" id="fc-0"></div>
+        <div class="fcard mine-c" id="fc-1"></div>
+      </div>
+      <div class="actbar">
+        <button id="btn-menu" class="gear" aria-label="Menu">⚙</button>
+        <div class="pvcard" id="pvcard"></div>
+        <button id="btn-skip" class="skip">SKIP</button>
+      </div>
+      <div class="timer" id="timer"><b><i></i></b><span>15</span></div>
+    </div>
+  </div>
+
+  <div id="banner" class="banner"></div>
+
+  <section id="result" class="screen hidden">
+    <div class="res-title" id="res-title">VICTORY</div>
+    <div class="res-teams">
+      <div class="res-team mine"><div class="rt-h">⚔ YOUR TEAM</div><div class="rt-f" id="res-0"></div></div>
+      <div class="res-team enemy"><div class="rt-h">⚔ ENEMY TEAM</div><div class="rt-f" id="res-1"></div></div>
+    </div>
+    <div class="res-sub" id="res-sub"></div>
+    <button id="btn-continue" class="big-btn">⚔ CONTINUE</button>
+    <button id="btn-rematch" class="chip">Rematch</button>
+  </section>
+
+  <section id="menu" class="modal hidden">
+    <div class="panel">
+      <h2>Paused</h2>
+      <button id="m-resume" class="big-btn">Resume</button>
+      <button id="m-speed" class="chip wide">Animation speed: x1</button>
+      <button id="m-help" class="chip wide">How to play</button>
+      <button id="m-quit" class="chip wide danger">Quit match</button>
+    </div>
+  </section>
+
+  <section id="help" class="modal hidden">
+    <div class="panel help">
+      <h2>How to play</h2>
+      <p><b>Goal.</b> Knock out both enemy frogs. 2 vs 2, turn by turn: each frog acts once per round, sides alternate.</p>
+      <p><b>Camera.</b> Drag the empty floor to scroll, pinch or use the wheel / ＋－ to zoom.</p>
+      <p><b>Jump.</b> Drag back from your frog, aim, release. The arc, bounces, landing ring, knockback and damage show before you let go. Walls bounce you back with a bit of extra range; the glowing <b style="color:#ffb040">Wall Launch Zones</b> add more. The column and crystals block jumps.</p>
+      <p><b>Elixir.</b> Each frog carries one element: <b style="color:#ff6a3a">FIRE</b> damage · <b style="color:#7fd4ff">ICE</b> shorter next jump · <b style="color:#7dff4a">POISON</b> damage over time · <b style="color:#ffe23a">LIGHTNING</b> chains to a second enemy.</p>
+      <p><b>Reactions.</b> Land on a puddle of another element, or land on your ally to get a <b>Reaction Charge</b> (your element + the ally's) — the next jump fires it anywhere. Steam Veil, Toxic Detonation, Plasma Orb, Toxic Crystal, Static Shell, Neuroshock.</p>
+      <p><b>Drain Nodes.</b> Land on a grate under a red pipe: next round a puddle of your element appears nearby. The last frog to land decides the element.</p>
+      <p><b>Team trait.</b> Each pair of frogs has its own trait — see the TEAM screen.</p>
+      <button id="h-close" class="big-btn">Got it</button>
+    </div>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/render3d.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
