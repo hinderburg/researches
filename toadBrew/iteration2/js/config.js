@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '2.2.1';
+FB.VERSION = '2.3.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -12,11 +12,11 @@ FB.A = A;
 
 FB.T = {
   IMG_W: 941, IMG_H: 1672,
-  U: 78,                       // единица дальности: Jump 7.0 = 546 мира (+30% по слову автора, D-067)
-  wallH: 250,                  // высота стен на экране — выше любой видимой дуги, видно в перспективе (D-051, D-062)
+  U: 109,                      // единица дальности: Jump 7.0 = 763 мира (+30% D-067, ещё +40% D-074)
+  wallH: 280,                  // высота стен на экране — выше любой видимой дуги, видно в перспективе (D-051, D-062)
   visH: 2.5,                   // дуга на экране выше симуляционной в 2.5 раза: прыжок читается сверху (D-062)
   obstH: 60,                   // колонна и Toxic Crystal: блокируют дугу ниже этой высоты (§16, §23) — почти любую, кроме пика длинного прыжка (D-052)
-  arcBase: 20, arcPerLen: 0.12,        // высота дуги: 420 → 70, ниже стен
+  arcBase: 20, arcPerLen: 0.09,        // высота дуги: 420 → 70, ниже стен
 
   // Матч (§32, §33)
   roundCap: 15,
@@ -33,19 +33,19 @@ FB.T = {
 
   // Элементы (§9), Tier I; Tier n: × (1 + tierStep × (n-1)) (§5.2)
   tierStep: 0.2,
-  elemR: 78, elemSplash: 0.6,          // элемент на поверхности задевает врагов в радиусе, не прямую цель — × elemSplash
+  elemR: 109, elemSplash: 0.6,          // элемент на поверхности задевает врагов в радиусе, не прямую цель — × elemSplash
   fireDmg: 12,
   iceDmg: 4, chillMul: 0.75,
   poisonDmg: 3, poisonTick: 6, poisonTicks: 2,
-  lightDmg: 7, lightArc: 6, lightArcR: 220,
+  lightDmg: 7, lightArc: 6, lightArcR: 308,
 
   // Реакции (§12–§18)
-  veilR: 195, veilTurns: 4, veilBounceMin: 58,     // радиусы и размеры эффектов +30% (D-067)
-  detR: 188, detDamage: 28, detKnock: 85,
-  orbRange: 1235, orbR: 16, orbDamage: 26, orbKnock: 55,
-  crystalLen: 175, crystalThick: 26, crystalTurns: 4,
-  shellMul: 0.4, shellKnockR: 150, shellKnock: 70,
-  neuroR: 143, neuroTick: 9, neuroJumps: 2,
+  veilR: 273, veilTurns: 4, veilBounceMin: 81,     // радиусы и размеры эффектов +30% (D-067), ещё +40% (D-074)
+  detR: 263, detDamage: 28, detKnock: 85,
+  orbRange: 1729, orbR: 16, orbDamage: 26, orbKnock: 55,
+  crystalLen: 245, crystalThick: 36, crystalTurns: 4,
+  shellMul: 0.4, shellKnockR: 210, shellKnock: 70,
+  neuroR: 200, neuroTick: 9, neuroJumps: 2,
   sameChargeMul: 1.6,                  // заряд из двух одинаковых элементов — усиленный базовый эффект
 
   // Лужи и Drain Nodes (§11, §25–§28)

@@ -244,11 +244,11 @@
     });
     // тень-пятно прямо под жабой: сжимается и бледнеет с высотой — главный признак «вверх, потом вниз»
     var blob = new THREE.Mesh(new THREE.CircleGeometry(f.r * 1.15, 32), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.4, depthWrite: false }));
-    blob.rotation.x = -Math.PI / 2; blob.position.y = 1; blob.renderOrder = 1; grp.add(blob);
+    blob.rotation.x = -Math.PI / 2; blob.position.y = 2.2; blob.renderOrder = 3; grp.add(blob);
     lift.rotation.order = 'YXZ';
     // кольцо стороны и свечение резервуара
     var ring = new THREE.Mesh(new THREE.RingGeometry(f.r * 0.92, f.r * 1.12, 40), new THREE.MeshBasicMaterial({ color: f.side === 0 ? 0x4aa3ff : 0xff5a4a, transparent: true, opacity: 0.85, depthWrite: false }));
-    ring.rotation.x = -Math.PI / 2; ring.position.y = 1.2; ring.renderOrder = 2;
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 2.6; ring.renderOrder = 4;
     grp.add(ring);
     var glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(FB.ELEMENTS[f.el].color), transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
     glow.scale.set(f.r * 2.2, f.r * 2.2, 1); glow.position.y = 14; lift.add(glow);
@@ -285,7 +285,7 @@
     F.label.style.display = hidden || !d.alive ? 'none' : '';
     var hv = (d.z || 0) * T.visH;
     F.grp.position.set(d.x, 0, d.y);
-    F.lift.position.y = hv;
+    F.lift.position.y = hv + 4; // жаба всегда над лужами, пятнами и тенью (D-073)
     F.lift.rotation.y = -(d.facing || 0);
     F.pitch = (F.pitch || 0) + ((d.pitch || 0) - (F.pitch || 0)) * Math.min(1, dt * 12);
     F.lift.rotation.x = F.pitch; // нос вверх на взлёте, вниз на снижении
@@ -341,9 +341,9 @@
         var g = new THREE.Group(), E = FB.ELEMENTS[p.el];
         // лужа — глянцевая клякса краски; гладкий край отличает её от следов приземлений
         var disc = new THREE.Mesh(new THREE.PlaneGeometry(p.r * 2.5, p.r * 2.5), new THREE.MeshBasicMaterial({ map: inkTex(E.color, p.id.length + p.x % 5 | 0, true), transparent: true, depthWrite: false }));
-        disc.rotation.x = -Math.PI / 2; disc.rotation.z = (p.x * 0.013 + p.y * 0.007) % 6.28; disc.position.y = 2.2; disc.renderOrder = 2; g.add(disc);
+        disc.rotation.x = -Math.PI / 2; disc.rotation.z = (p.x * 0.013 + p.y * 0.007) % 6.28; disc.position.y = 1.6; disc.renderOrder = 2; g.add(disc);
         var gl = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(E.color), transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }));
-        gl.scale.set(p.r * 2.6, p.r * 2.6, 1); gl.position.y = 6; g.add(gl);
+        gl.scale.set(p.r * 2.6, p.r * 2.6, 1); gl.position.y = 1.8; g.add(gl);
         var lab = document.createElement('div'); lab.className = 'plabel'; lab.textContent = E.icon; labels.appendChild(lab);
         g.position.set(p.x, 0, p.y); scene.add(g);
         D = dyn.puddles[p.id] = { obj: g, disc: disc, gl: gl, lab: lab, born: t };
@@ -353,7 +353,8 @@
       D.gl.material.opacity = 0.22 + 0.1 * Math.sin(t * 2.5 + p.x);
       var wob = on ? 1 + 0.035 * Math.sin(t * 3.1 + p.y) : 0.92, pop = a < 1 ? 0.3 + a * 0.85 : 1;
       D.obj.scale.set(wob * pop, 1, (2 - wob) * pop);
-      D.lab.style.opacity = on ? 1 : 0.3;
+      var covered = s.frogs.some(function (f) { var dd = app.disp[f.id]; return dd && f.alive && !dd.hidden && Math.hypot(dd.x - p.x, dd.y - p.y) < p.r + f.r * 0.5; });
+      D.lab.style.opacity = covered ? 0 : (on ? 1 : 0.3); // значок не лезет поверх жабы, стоящей в луже
       var q = toScreen(p.x, 2, p.y); D.lab.style.transform = 'translate(' + (q.x | 0) + 'px,' + (q.y | 0) + 'px)';
     });
     Object.keys(dyn.puddles).forEach(function (id) { if (!seen[id]) { scene.remove(dyn.puddles[id].obj); dyn.puddles[id].lab.remove(); delete dyn.puddles[id]; } });
@@ -463,7 +464,7 @@
   // Пятно краски на полу: появляется с «шлепком», живёт life секунд и тает
   R.splat = function (x, y, color, size, life) {
     var m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: inkTex(color, Math.floor(Math.random() * 6), false), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
-    m.rotation.x = -Math.PI / 2; m.rotation.z = Math.random() * 6.28; m.position.set(x, 1.3 + decals.length * 0.01, y); m.renderOrder = 1;
+    m.rotation.x = -Math.PI / 2; m.rotation.z = Math.random() * 6.28; m.position.set(x, 0.8 + decals.length * 0.005, y); m.renderOrder = 1;
     scene.add(m);
     var D = { obj: m, t: 0, life: life || 24, size: size * FXS };
     decals.push(D);
@@ -479,7 +480,7 @@
       return true;
     });
   }
-  var FXS = 1.3; // размер всех эффектов (+30% по слову автора, D-067)
+  var FXS = 1.82; // размер всех эффектов: +30% (D-067), ещё +40% (D-074)
   function drop(x, h, y, vx, vy, vz, color, sz) {
     var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: dropTex(), color: new THREE.Color(color), transparent: true, depthWrite: false }));
     sp.scale.set(sz, sz, 1); sp.position.set(x, h, y); scene.add(sp);
