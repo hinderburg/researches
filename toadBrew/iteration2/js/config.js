@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '2.7.0';
+FB.VERSION = '2.8.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -59,7 +59,7 @@ FB.T = {
   allyWindow: 2.8, allyHopMax: 0.5, allyHopMul: 0.25, // окно 2.8 с, прицел в любую сторону (D-080)
   allyGap: 18, allyShove: 55, perchH: 14,    // perchH — высота спины союзника, с которой стартует доп. прыжок (D-083)
   pinnedSlamMul: 3, pinnedBonus: 10,        // Pinned Target
-  gripWindow: 0.8, gripRangeMul: 1.25, gripImpactMul: 1.3, // Reactive Grip (§22)
+  gripWindow: 0.8, gripRangeMul: 1.25, gripImpactMul: 1.2, // Reactive Grip (§22): ×1.2 за каждый отскок (D-082, D-086)
 
   // Бот
   botAimNoiseDeg: 2.5, botAimNoisePow: 0.04, botTopPick: 3, botDepthTop: 5,
@@ -110,7 +110,9 @@ FB.ARENA = {
   floor: [A(232, 205), A(250, 190), A(290, 190), A(290, 55), A(392, 55), A(392, 190), A(554, 190), A(554, 55), A(656, 55), A(656, 190),
     A(696, 190), A(714, 205), A(714, 1415), A(696, 1430), A(656, 1430), A(656, 1565), A(554, 1565), A(554, 1430), A(392, 1430), A(392, 1565),
     A(290, 1565), A(290, 1430), A(250, 1430), A(232, 1415)],
-  column: { x0: 362 * FB.K, y0: 665 * FB.K, x1: 584 * FB.K, y1: 955 * FB.K },
+  // колонна на 25% меньше нарисованной на макете (D-086): columnArt — где она на картинке, column — её мир
+  columnArt: { x0: 362, y0: 665, x1: 584, y1: 955 },
+  column: { x0: 389.75 * FB.K, y0: 701.25 * FB.K, x1: 556.25 * FB.K, y1: 918.75 * FB.K },
   // постоянные лужи в нишах (бассейны макета)
   puddles: [{ p: A(341, 100), el: 'poison' }, { p: A(605, 100), el: 'fire' }, { p: A(341, 1520), el: 'fire' }, { p: A(605, 1520), el: 'poison' }],
   // решётки под красными трубами → точки появления луж (§25–§27)

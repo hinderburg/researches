@@ -130,6 +130,19 @@
       return [new THREE.Vector2(ay * S, az * S), new THREE.Vector2(by * S, bz * S), new THREE.Vector2(cy * S, cz * S), new THREE.Vector2(dy * S, dz * S)];
     }
   };
+  // Колонна меньше нарисованной (D-086): место старой закрываем плитками пола из-под неё,
+  // саму колонну рисуем уменьшенной на её новом месте, с мягкой тенью.
+  function arenaArt() {
+    var img = atlasImg.arena, c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+    var x = c.getContext('2d'), o = AR.columnArt, w = o.x1 - o.x0, h = o.y1 - o.y0;
+    x.drawImage(img, 0, 0);
+    x.drawImage(img, o.x0, o.y1 + 45, w, h, o.x0, o.y0, w, h); // свободный пол прямо под колонной
+    var n = { x0: AR.column.x0 / K, y0: AR.column.y0 / K, x1: AR.column.x1 / K, y1: AR.column.y1 / K };
+    x.save(); x.shadowColor = 'rgba(0,0,0,0.55)'; x.shadowBlur = 24; x.shadowOffsetY = 10;
+    x.fillStyle = '#2a2420'; x.fillRect(n.x0 + 4, n.y0 + 4, n.x1 - n.x0 - 8, n.y1 - n.y0 - 8); x.restore();
+    x.drawImage(img, o.x0, o.y0, w, h, n.x0, n.y0, n.x1 - n.x0, n.y1 - n.y0);
+    return c;
+  }
   function extrude(shape, h, topMat, sideMat) {
     var g = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false, UVGenerator: arenaUV });
     g.rotateX(-Math.PI / 2); // (x, −y, h) → (x, h, y)
@@ -138,7 +151,7 @@
     return m;
   }
   function buildArena() {
-    var at = new THREE.Texture(atlasImg.arena); at.needsUpdate = true; at.encoding = THREE.sRGBEncoding; at.anisotropy = 8;
+    var at = new THREE.Texture(arenaArt()); at.needsUpdate = true; at.encoding = THREE.sRGBEncoding; at.anisotropy = 8;
     var floorMat = new THREE.MeshLambertMaterial({ map: at });
     var floor = new THREE.Mesh(new THREE.PlaneGeometry(W, H), floorMat);
     floor.rotation.x = -Math.PI / 2; floor.position.set(W / 2, 0, H / 2); floor.receiveShadow = true;

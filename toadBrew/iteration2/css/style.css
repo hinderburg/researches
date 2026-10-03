@@ -275,3 +275,8 @@ button { font-family: inherit; cursor: pointer; }
 .notice .n-m b { color: var(--c); font-weight: normal; }
 .notice .n-s { font-size: 11px; font-weight: 800; color: #d8ccb2; }
 @keyframes npop { from { transform: translateX(-50%) scale(0.7); opacity: 0; } }
+
+/* главное меню: три кнопки — Алхимия, Битва, Команда (D-087) */
+.nav { grid-template-columns: 1fr 1.35fr 1fr; gap: 8px; padding-left: max(10px, calc((100% - 520px) / 2)); padding-right: max(10px, calc((100% - 520px) / 2)); }
+.nav .tab { font-size: 13px; padding: 6px 0 7px; }
+.nav .tab .ti { font-size: 24px; }

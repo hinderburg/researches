@@ -88,6 +88,13 @@
     ok(s.frogs[0].y > C.y1, 'ended below the column');
   });
 
+  test('column blocks even a long high jump (no passing through)', function () {
+    var s = sandbox(); var C = AR.column, cx = (C.x0 + C.x1) / 2; put(s, 0, cx, C.y1 + 140);
+    var r = jumpTo(s, 0, cx, C.y1 + 140 - s.frogs[0].jump); // полный прыжок вверх, вершина дуги — над колонной
+    ok(ev(r, 'bounce').some(function (e) { return e.kind === 'column'; }), 'bounced off column');
+    ok(s.frogs[0].y > C.y1, 'stayed on its side');
+  });
+
   test('landing on ally gives Reaction Charge; next jump triggers it anywhere', function () {
     var s = sandbox(['spring', 'bellows'], ['cling', 'spur']); // momentum, не catapult
     put(s, 0, 480, 2000); put(s, 1, 480, 1800); // левее колонны: автоотскок вперёд не упирается в неё

@@ -94,8 +94,10 @@
           hit = { kind: 'wall', n: ne.e.n, wlz: wz, t: tt - step, h: h };
           break;
         }
-        if (h < T.obstH) for (var k = 0; k < obs.length; k++) {
-          var r = inObst(obs[k], x, y, f.r * 0.6);
+        // колонна высокая — отбивает прыжок на любой высоте; кристалл — только дугу ниже obstH (D-086)
+        for (var k = 0; k < obs.length; k++) {
+          if (obs[k].kind !== 'column' && h >= T.obstH) continue;
+          var r = inObst(obs[k], x, y, f.r * 0.75);
           if (r) { hit = { kind: obs[k].kind, n: r.n, t: tt - step, h: h, obj: obs[k].id }; break; }
         }
         if (hit) break;
