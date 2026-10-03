@@ -14,13 +14,26 @@
     auto: /[?&]auto=1/.test(location.search), sel: -1, aimCmd: null, turnLeft: 0, gripT: 0, hudT: 0
   };
   if (!Array.isArray(app.picks) || app.picks.length !== 2 || app.picks.some(function (k) { return !FB.FROGS[k]; }) || app.picks[0] === app.picks[1]) app.picks = ['spring', 'spur'];
-  function elOf(kind) { var e = app.elems[kind]; return FB.ELEMENTS[e] ? e : DEF_EL[kind]; }
-  // В паре элементы всегда разные (D-067): совпал — второй берёт свой стартовый или первый свободный
-  function teamEls() {
-    var a = elOf(app.picks[0]), b = elOf(app.picks[1]);
-    if (a === b) { b = DEF_EL[app.picks[1]] !== a ? DEF_EL[app.picks[1]] : FB.ELEMENT_ORDER.filter(function (e) { return e !== a; })[0]; app.elems[app.picks[1]] = b; store.set('elems', app.elems); }
-    return [a, b];
+  function elOf(kind) { return app.elems[kind]; }
+  // У четырёх жаб всегда четыре разных элемента (D-071): стартовые — свои у каждой, при выборе на ALCHEMY
+  // занятый элемент меняется местами с жабой, у которой он был. Поэтому и в паре элементы разные.
+  function normalizeEls() {
+    var used = {}, out = {};
+    FB.FROG_ORDER.forEach(function (k) { var e = app.elems[k]; if (FB.ELEMENTS[e] && !used[e]) { out[k] = e; used[e] = 1; } });
+    FB.FROG_ORDER.forEach(function (k) {
+      if (out[k]) return;
+      var e = !used[DEF_EL[k]] ? DEF_EL[k] : FB.ELEMENT_ORDER.filter(function (x) { return !used[x]; })[0];
+      out[k] = e; used[e] = 1;
+    });
+    app.elems = out; store.set('elems', out);
   }
+  normalizeEls();
+  function setEl(kind, e) {
+    var old = app.elems[kind];
+    FB.FROG_ORDER.forEach(function (k) { if (k !== kind && app.elems[k] === e) app.elems[k] = old; });
+    app.elems[kind] = e; store.set('elems', app.elems);
+  }
+  function teamEls() { return [elOf(app.picks[0]), elOf(app.picks[1])]; }
 
   // ---------- портреты ----------
   function pic(kind, el, size) {
@@ -72,7 +85,7 @@
       FB.ELEMENT_ORDER.forEach(function (e) {
         var E = FB.ELEMENTS[e], b = document.createElement('button'); b.className = 'elb' + (elOf(k) === e ? ' on' : '');
         b.style.setProperty('--c', E.color); b.innerHTML = '<span>' + E.icon + '</span>' + E.name;
-        b.onclick = function () { var mate = app.picks[0] === k ? app.picks[1] : app.picks[0], old = elOf(k); if (elOf(mate) === e) app.elems[mate] = old; app.elems[k] = e; store.set('elems', app.elems); renderAlchemy(); buildRoster(); renderTeam(); };
+        b.onclick = function () { setEl(k, e); renderAlchemy(); buildRoster(); renderTeam(); };
         right.querySelector('.els').appendChild(b);
       });
       right.querySelector('.el-d').textContent = elDesc(elOf(k));
@@ -179,7 +192,7 @@
   function execute(cmd) {
     var res = Sim.apply(app.s, cmd);
     log('cmd', { cmd: { frog: cmd.frog, mode: cmd.mode || 'jump', dx: cmd.dx && Math.round(cmd.dx), dy: cmd.dy && Math.round(cmd.dy) }, ok: res.ok, why: res.why });
-    app.aimCmd = null; R.setAim(null); $('gripbar').classList.add('hidden');
+    app.aimCmd = null; R.setAim(null); $('gripbar').classList.add('hidden'); notice(null);
     if (!res.ok) { app.busy = false; return; }
     app.busy = true; app.playing = true;
     app.queue = app.queue.concat(res.events);
@@ -369,7 +382,8 @@
   // ---------- прицел и превью ----------
   function showAim(f, cmd) {
     var pv = Sim.preview(app.s, cmd, f.side === 0 ? 0 : undefined), a = { segs: [], r: f.r, color: ELC(f.el), labels: [], pushes: [] };
-    var dmg = {}, deaths = {}, info = { title: FB.ELEMENTS[f.el].icon + ' ' + FB.ELEMENTS[f.el].name, lines: [] }, reacted = null;
+    var charge = null, allyId = -1;
+    var dmg = {}, deaths = {}, info ={ title: FB.ELEMENTS[f.el].icon + ' ' + FB.ELEMENTS[f.el].name, lines: [] }, reacted = null;
     var start = {}; app.s.frogs.forEach(function (x) { start[x.id] = { x: x.x, y: x.y }; });
     pv.events.forEach(function (e) {
       if (e.t === 'jump') a.segs = a.segs.concat(e.segs);
@@ -383,14 +397,25 @@
       if (e.t === 'crystal') a.crystal = e.crystal;
       if (e.t === 'veil') a.veilR = T.veilR;
       if (e.t === 'reaction') { reacted = e; if (e.key === 'fire+poison') a.blastR = T.detR; }
-      if (e.t === 'charge') info.lines.push((e.id === f.id ? 'Reaction Charge: ' : 'Ally gets a charge: ') + (FB.REACTIONS[e.key] ? FB.REACTIONS[e.key].name : 'OVERCHARGE'));
+      if (e.t === 'land' && e.id === f.id && e.onAlly !== undefined) allyId = e.onAlly;
+      if (e.t === 'charge') { if (e.id === f.id) charge = e; else info.lines.push('Ally gets a charge: ' + (FB.REACTIONS[e.key] ? FB.REACTIONS[e.key].name : 'OVERCHARGE')); }
       if (e.t === 'node') info.lines.push('Drain Node → next round ' + FB.ELEMENTS[e.el].icon + ' puddle');
       if (e.t === 'hopReady') info.lines.push('Living Catapult: extra hop');
     });
     if (!a.land && !a.grip && a.segs.length) { var ls = a.segs[a.segs.length - 1]; a.land = ls.to; }
     if (!a.land && !a.grip) return;
     if (reacted) { info.title = reacted.name; a.color = RXC[reacted.key] || '#ffe080'; a.labels.push({ x: a.land.x, y: a.land.y, text: reacted.name, cls: 'rx', h: 70 }); }
-    else if (a.land) a.elemR = T.elemR;
+    else if (a.land && allyId < 0) a.elemR = T.elemR;
+    // прыжок на свою жабу: дуга цвета будущей реакции, кольцо вокруг напарника, плашка «CHARGE COMBO» (D-072)
+    if (charge && allyId >= 0) {
+      var cn = FB.REACTIONS[charge.key] ? FB.REACTIONS[charge.key].name : 'OVERCHARGE';
+      var ic = FB.ELEMENTS[charge.els[0]].icon + ' + ' + FB.ELEMENTS[charge.els[1]].icon;
+      a.color = RXC[charge.key] || '#ffe080';
+      a.ally = { x: start[allyId].x, y: start[allyId].y, r: app.s.frogs[allyId].r, color: a.color };
+      a.labels.push({ x: start[allyId].x, y: start[allyId].y, text: 'CHARGE<br>' + ic + ' → ' + cn, cls: 'charge', h: 90 });
+      info.title = '⚡ CHARGE COMBO'; info.lines.unshift(ic + ' → ' + cn + ' on the next jump, anywhere');
+      if (f.side === 0) notice('⚡ CHARGE COMBO', ic + ' → <b>' + cn + '</b>', 'The next jump of this frog fires it anywhere', a.color);
+    } else notice(null);
     Object.keys(dmg).forEach(function (id) {
       var p = start[id]; a.labels.push({ x: p.x, y: p.y, text: (deaths[id] ? 'KO ' : '') + '−' + dmg[id], cls: +id === f.id ? 'self' : 'dmg' });
     });
@@ -398,6 +423,14 @@
     if (tot) info.lines.unshift('Damage ' + tot + (Object.keys(deaths).length ? ' · KO!' : ''));
     R.setAim(a);
     if (f.side === 0) setPv(info.title, info.lines.join(' · ') || 'Release to jump');
+  }
+  // Плашка-уведомление над полем: появляется, пока прицел ведёт на свою жабу (заряд комбинации)
+  function notice(title, main, sub, color) {
+    var n = $('notice'); if (!n) return;
+    if (!title) { n.classList.add('hidden'); return; }
+    n.style.setProperty('--c', color || '#ffe080');
+    n.innerHTML = '<div class="n-t">' + title + '</div><div class="n-m">' + main + '</div><div class="n-s">' + sub + '</div>';
+    n.classList.remove('hidden');
   }
   function setPv(t, d) { $('pvcard').innerHTML = '<div class="pv-t">' + t + '</div><div class="pv-d">' + d + '</div>'; }
 
@@ -462,12 +495,12 @@
     var f = app.s.frogs[aimFrog], d = D(f.id), sp = R.toScreen(d.x, (d.z || 0) * T.visH, d.y);
     var L = Math.hypot(p.x - sp.x, p.y - sp.y), pull = Math.min(cv.clientWidth, cv.clientHeight) * 0.3, pow = Math.min(1, L / pull);
     var w = R.toWorld(p.x, p.y, (d.z || 0) * T.visH);
-    if (!w || pow < T.minPull) { app.aimCmd = null; R.setAim(null); setPv('Pull back', 'Drag away from the frog and release'); return; }
+    if (!w || pow < T.minPull) { app.aimCmd = null; R.setAim(null); notice(null); setPv('Pull back', 'Drag away from the frog and release'); return; }
     var dx = f.x - w.x, dy = f.y - w.y, l = Math.hypot(dx, dy) || 1, m = pendingMode(f), range = Sim.rangeFor(app.s, f, m);
     app.aimCmd = { frog: f.id, dx: dx / l * range * pow, dy: dy / l * range * pow, mode: m };
     showAim(f, app.aimCmd);
   }
-  function cancelAim() { app.aimCmd = null; R.setAim(null); if (aimFrog >= 0 && D(aimFrog)) D(aimFrog).pose = 'idle'; aimFrog = -1; refreshHud(true); }
+  function cancelAim() { app.aimCmd = null; R.setAim(null); notice(null); if (aimFrog >= 0 && D(aimFrog)) D(aimFrog).pose = 'idle'; aimFrog = -1; refreshHud(true); }
 
   $('btn-skip').onclick = function () {
     if (!canAimNow()) return;

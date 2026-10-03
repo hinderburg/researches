@@ -610,6 +610,10 @@
       var c = a.crystal, m = new THREE.Mesh(new THREE.BoxGeometry(c.hl * 2, T.obstH * T.visH, c.ht * 2), new THREE.MeshBasicMaterial({ color: 0x5cff2e, transparent: true, opacity: 0.3, depthWrite: false }));
       m.position.set(c.cx, T.obstH * T.visH / 2, c.cy); m.rotation.y = -Math.atan2(c.uy, c.ux); aimGroup.add(m);
     }
+    if (a.ally) { // заряд: двойное кольцо вокруг своей жабы
+      aimGroup.add(flatRing(a.ally.x, a.ally.y, a.ally.r * 1.25, a.ally.r * 1.45, new THREE.Color(a.ally.color), 0.95));
+      aimGroup.add(flatRing(a.ally.x, a.ally.y, a.ally.r * 1.7, a.ally.r * 1.82, new THREE.Color(a.ally.color), 0.6));
+    }
     if (a.veilR) aimGroup.add(flatRing(a.land.x, a.land.y, a.veilR - 3, a.veilR, 0xeef4f8, 0.6));
     if (a.blastR) aimGroup.add(flatRing(a.land.x, a.land.y, a.blastR - 3, a.blastR, 0xff7a30, 0.6));
     (a.labels || []).forEach(function (l) {

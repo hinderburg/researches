@@ -267,3 +267,11 @@ button { font-family: inherit; cursor: pointer; }
 .oslot i { position: absolute; bottom: -4px; right: -6px; font-style: normal; font-family: var(--font-b); font-size: 11px; background: #1a120b; border: 1.5px solid var(--brass-d); border-radius: 50%; width: 18px; height: 18px; display: grid; place-items: center; color: var(--brass-l); }
 .oslot.done { opacity: 0.4; filter: grayscale(0.7); }
 .oslot.now { transform: scale(1.18); box-shadow: 0 0 0 3px #fff, 0 0 14px rgba(255,240,180,0.9); }
+
+/* ---------- плашка заряда комбинации (D-072) ---------- */
+.notice { position: absolute; left: 50%; top: calc(max(6px, env(safe-area-inset-top)) + 100px); transform: translateX(-50%); min-width: 230px; max-width: 86%; text-align: center; background: rgba(18,12,8,0.94); border: 3px solid var(--c); border-radius: 14px; padding: 6px 14px 8px; box-shadow: 0 0 18px var(--c); pointer-events: none; animation: npop 0.25s cubic-bezier(.2,1.6,.4,1); }
+.notice .n-t { font-family: var(--font-b); font-size: 13px; color: var(--c); letter-spacing: 0.5px; }
+.notice .n-m { font-family: var(--font-b); font-size: 21px; color: #fff; text-shadow: 0 2px 0 #000; }
+.notice .n-m b { color: var(--c); font-weight: normal; }
+.notice .n-s { font-size: 11px; font-weight: 800; color: #d8ccb2; }
+@keyframes npop { from { transform: translateX(-50%) scale(0.7); opacity: 0; } }
