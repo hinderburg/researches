@@ -36,7 +36,7 @@
       if (d[i + 3] < 10) continue;
       var q = rgb2hsl(d[i], d[i + 1], d[i + 2]);
       if (q[0] < 150 || q[0] > 195 || q[1] < 0.25) continue;
-      var rgb = hsl2rgb(E.hue, Math.min(1, q[1] * 1.05), Math.min(0.95, q[2] + (E.light || 0)));
+      var rgb = hsl2rgb(E.hue, Math.min(1, q[1] * 1.3 + 0.25), Math.min(0.95, q[2] + (E.light || 0))); // ярче, чем на арте: «краска» (D-063)
       d[i] = rgb[0]; d[i + 1] = rgb[1]; d[i + 2] = rgb[2];
     }
     x.putImageData(id, 0, 0);
@@ -186,11 +186,15 @@
   var POSES = { // градусы для левой стороны [плечо, предплечье]; правая — зеркально (D-053)
     idle:  { f: [0, 0], r: [0, 0], s: 1 },
     aim:   { f: [-14, 22], r: [22, -26], s: 0.93 },
-    air:   { f: [26, -12], r: [-34, 30], s: 1.04 },
+    // полёт: лапы вытянуты вдоль тела, как у настоящей жабы. dir — направление сегментов (рад от оси тела в свою сторону)
+    air:   { dir: { r: { back: true, s: [0.22, 0.1, 0.04] }, f: { back: true, s: [0.62, 0.42, 0.25] } }, s: 1.06 },
+    // снижение: задние ещё вытянуты, передние выносятся вперёд под приземление
+    fall:  { dir: { r: { back: true, s: [0.38, 0.2, 0.1] }, f: { back: false, s: [0.42, 0.22, 0.1] } }, s: 1.04 },
     land:  { f: [-12, 6], r: [16, -6], s: 1.1 },
     grip:  { f: [38, -18], r: [14, 4], s: 1 },
     dead:  { f: [-34, 20], r: [34, -20], s: 0.95 }
   };
+  function wrapA(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
   function buildFrog(f) {
     var rig = rigs[f.kind], grp = new THREE.Group(), lift = new THREE.Group(), root = new THREE.Group();
     grp.add(lift); lift.add(root);
@@ -213,8 +217,14 @@
       node.userData = { base: p.rot, p: p };
       node.rotation.y = -p.rot;
       nodes[p.name] = node;
+      // «кость» сегмента: от шарнира к следующему шарниру той же лапы (или к центру детали) — для поз «вдоль тела»
+      var kid = rig.parts.filter(function (c) { return c.parent === p.name && c.grp === p.grp; })[0];
+      var bv = kid ? [kid.at[0] - p.pivot[0], kid.at[1] - p.pivot[1]] : [w / 2 - p.pivot[0], h / 2 - p.pivot[1]];
+      order.push({ node: node, p: p, parent: par ? info[par.name] : null, base: p.rot, cur: p.rot, bone: Math.atan2(bv[1], bv[0]), cum: 0 });
+      info[p.name] = order[order.length - 1];
       return node;
     }
+    var order = [], info = {};
     rig.parts.forEach(make);
     var body = by.body || rig.parts[0], sc = (f.r * 2 * 1.08) / Math.max(body.rect[2], body.rect[3]);
     root.scale.set(sc, sc, sc);
@@ -223,12 +233,17 @@
     grp.updateMatrixWorld(true);
     var bodyPos = new THREE.Vector3(); nodes[body.name].getWorldPosition(bodyPos);
     var limbs = [];
-    rig.parts.forEach(function (p) {
-      if (!p.seg) return;
+    order.forEach(function (I) {
+      var p = I.p; if (!p.seg) return;
       var top = p; while (top.parent && by[top.parent].grp === p.grp) top = by[top.parent];
       var wp = new THREE.Vector3(); nodes[top.name].getWorldPosition(wp);
-      limbs.push({ node: nodes[p.name], seg: p.seg, front: wp.z < bodyPos.z, sign: (wp.x < bodyPos.x ? 1 : -1) * (rig.flip ? -1 : 1), cur: 0 });
+      I.limb = { seg: p.seg, front: wp.z < bodyPos.z, side: wp.x < bodyPos.x ? 1 : -1, sign: (wp.x < bodyPos.x ? 1 : -1) * (rig.flip ? -1 : 1) };
+      limbs.push(I);
     });
+    // тень-пятно прямо под жабой: сжимается и бледнеет с высотой — главный признак «вверх, потом вниз»
+    var blob = new THREE.Mesh(new THREE.CircleGeometry(f.r * 1.15, 32), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.4, depthWrite: false }));
+    blob.rotation.x = -Math.PI / 2; blob.position.y = 1; blob.renderOrder = 1; grp.add(blob);
+    lift.rotation.order = 'YXZ';
     // кольцо стороны и свечение резервуара
     var ring = new THREE.Mesh(new THREE.RingGeometry(f.r * 0.92, f.r * 1.12, 40), new THREE.MeshBasicMaterial({ color: f.side === 0 ? 0x4aa3ff : 0xff5a4a, transparent: true, opacity: 0.85, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2; ring.position.y = 1.2; ring.renderOrder = 2;
@@ -241,7 +256,7 @@
     label.innerHTML = '<div class="fl-st"></div><div class="fl-hp"><i></i></div>';
     labels.appendChild(label);
     scene.add(grp);
-    return { grp: grp, lift: lift, root: root, mat: mat, limbs: limbs, ring: ring, glow: glow, shell: shell, label: label, el: f.el, pose: 'idle', kind: f.kind, r: f.r };
+    return { grp: grp, lift: lift, root: root, mat: mat, limbs: limbs, order: order, rootA: rig.flip ? Math.PI : 0, blob: blob, ring: ring, glow: glow, shell: shell, label: label, el: f.el, pose: 'idle', kind: f.kind, r: f.r };
   }
   var _glow = null;
   function glowTex() {
@@ -257,6 +272,7 @@
     frogs = {};
     ['puddles', 'nodes', 'veils', 'crystals'].forEach(function (k) { Object.keys(dyn[k]).forEach(function (id) { scene.remove(dyn[k][id].obj); }); dyn[k] = {}; });
     fxList.forEach(function (f) { if (f.obj) scene.remove(f.obj); if (f.el) f.el.remove(); }); fxList = [];
+    decals.forEach(function (D) { scene.remove(D.obj); }); decals = [];
     R.setAim(null);
   };
 
@@ -265,18 +281,32 @@
     if (F.el !== f.el) { F.el = f.el; F.mat.map = atlasTex(f.kind, f.el); F.mat.needsUpdate = true; F.glow.material.color.set(FB.ELEMENTS[f.el].color); }
     F.grp.visible = !hidden;
     F.label.style.display = hidden || !d.alive ? 'none' : '';
+    var hv = (d.z || 0) * T.visH;
     F.grp.position.set(d.x, 0, d.y);
-    F.lift.position.y = d.z || 0;
+    F.lift.position.y = hv;
     F.lift.rotation.y = -(d.facing || 0);
-    var pose = POSES[d.pose] || POSES.idle, k = Math.min(1, dt * 14);
-    F.limbs.forEach(function (L) {
-      var a = (L.front ? pose.f : pose.r)[Math.min(1, L.seg - 1)] * (L.seg > 2 ? 0.5 : 1) * L.sign;
-      L.cur += (a - L.cur) * k;
-      L.node.rotation.y = -(L.node.userData.base + L.cur * Math.PI / 180);
+    F.pitch = (F.pitch || 0) + ((d.pitch || 0) - (F.pitch || 0)) * Math.min(1, dt * 12);
+    F.lift.rotation.x = F.pitch; // нос вверх на взлёте, вниз на снижении
+    F.blob.material.opacity = d.alive ? 0.42 * Math.max(0.15, 1 - hv / 320) : 0.2;
+    F.blob.scale.setScalar(Math.max(0.45, 1 - hv / 450));
+    var pose = POSES[d.pose] || POSES.idle, k = Math.min(1, dt * (pose.dir ? 18 : 12));
+    F.order.forEach(function (I) {
+      var pc = I.parent ? I.parent.cum : F.rootA;
+      if (I.limb) {
+        var L = I.limb, want, dr = pose.dir && pose.dir[L.front ? 'f' : 'r'];
+        if (dr) { // направление сегмента в кадре тела: назад (π/2) или вперёд (−π/2), чуть в свою сторону
+          var sp = dr.s[Math.min(dr.s.length - 1, L.seg - 1)], tgt = dr.back ? Math.PI / 2 + L.side * sp : -Math.PI / 2 - L.side * sp;
+          want = I.base + wrapA(tgt - pc - I.bone - I.base);
+        } else want = I.base + (L.front ? pose.f : pose.r)[Math.min(1, L.seg - 1)] * (L.seg > 2 ? 0.5 : 1) * L.sign * Math.PI / 180;
+        I.cur += (want - I.cur) * k;
+        I.node.rotation.y = -I.cur;
+      }
+      I.cum = pc + I.cur;
     });
     var breathe = d.pose === 'idle' && d.alive ? 1 + Math.sin(t * 2.4 + f.id) * 0.018 : 1;
     F.sc = (F.sc || 1) + ((pose.s * breathe * (1 + (d.squash || 0))) - (F.sc || 1)) * Math.min(1, dt * 16);
-    F.lift.scale.set(F.sc, F.sc, F.sc);
+    F.st = (F.st || 0) + ((d.stretch || 0) - (F.st || 0)) * Math.min(1, dt * 14);
+    F.lift.scale.set(F.sc * (1 - F.st * 0.45), F.sc, F.sc * (1 + F.st)); // вытягивается вдоль тела в полёте
     F.ring.visible = d.alive; F.ring.material.opacity = d.sel ? 1 : 0.6;
     F.ring.scale.setScalar(d.sel ? 1.12 + Math.sin(t * 6) * 0.05 : 1);
     if (!d.alive) { F.mat.color.setRGB(0.35, 0.33, 0.32); F.glow.visible = false; }
@@ -294,7 +324,7 @@
     if (F.stHtml !== st) { F.stHtml = st; F.label.firstChild.innerHTML = st; }
     var w = Math.max(0, f.hp / f.maxHp) * 100;
     if (F.hpW !== w) { F.hpW = w; F.label.lastChild.firstChild.style.width = w + '%'; }
-    var p = toScreen(d.x, (d.z || 0) + 30, d.y - f.r * 1.2);
+    var p = toScreen(d.x, hv + 30, d.y - f.r * 1.2);
     F.label.style.transform = 'translate(' + (p.x | 0) + 'px,' + (p.y | 0) + 'px)';
   }
 
@@ -307,19 +337,20 @@
       var D = dyn.puddles[p.id];
       if (!D) {
         var g = new THREE.Group(), E = FB.ELEMENTS[p.el];
-        var disc = new THREE.Mesh(new THREE.CircleGeometry(p.r, 40), new THREE.MeshLambertMaterial({ color: E.color, emissive: new THREE.Color(E.color), emissiveIntensity: 0.45, transparent: true, opacity: 0.78, depthWrite: false }));
-        disc.rotation.x = -Math.PI / 2; disc.position.y = 1.5; g.add(disc);
-        var rim = new THREE.Mesh(new THREE.RingGeometry(p.r * 0.94, p.r * 1.06, 40), discMat(0xfff0c8, 0.6)); rim.rotation.x = -Math.PI / 2; rim.position.y = 1.7; g.add(rim);
-        var gl = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(E.color), transparent: true, opacity: 0.4, depthWrite: false, blending: THREE.AdditiveBlending }));
-        gl.scale.set(p.r * 2.1, p.r * 2.1, 1); gl.position.y = 8; g.add(gl);
+        // лужа — глянцевая клякса краски; гладкий край отличает её от следов приземлений
+        var disc = new THREE.Mesh(new THREE.PlaneGeometry(p.r * 2.5, p.r * 2.5), new THREE.MeshBasicMaterial({ map: inkTex(E.color, p.id.length + p.x % 5 | 0, true), transparent: true, depthWrite: false }));
+        disc.rotation.x = -Math.PI / 2; disc.rotation.z = (p.x * 0.013 + p.y * 0.007) % 6.28; disc.position.y = 2.2; disc.renderOrder = 2; g.add(disc);
+        var gl = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(E.color), transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }));
+        gl.scale.set(p.r * 2.6, p.r * 2.6, 1); gl.position.y = 6; g.add(gl);
         var lab = document.createElement('div'); lab.className = 'plabel'; lab.textContent = E.icon; labels.appendChild(lab);
         g.position.set(p.x, 0, p.y); scene.add(g);
         D = dyn.puddles[p.id] = { obj: g, disc: disc, gl: gl, lab: lab, born: t };
       }
-      var on = p.active, a = Math.min(1, (t - D.born) * 2);
-      D.disc.material.opacity = (on ? 0.8 : 0.22) * a; D.gl.visible = on;
-      D.gl.material.opacity = 0.2 + 0.1 * Math.sin(t * 2.5 + p.x);
-      D.obj.scale.setScalar(0.3 + 0.7 * a);
+      var on = p.active, a = Math.min(1, (t - D.born) * 3);
+      D.disc.material.opacity = on ? 1 : 0.35; D.disc.material.color.setScalar(on ? 1 : 0.55); D.gl.visible = on;
+      D.gl.material.opacity = 0.22 + 0.1 * Math.sin(t * 2.5 + p.x);
+      var wob = on ? 1 + 0.035 * Math.sin(t * 3.1 + p.y) : 0.92, pop = a < 1 ? 0.3 + a * 0.85 : 1;
+      D.obj.scale.set(wob * pop, 1, (2 - wob) * pop);
       D.lab.style.opacity = on ? 1 : 0.3;
       var q = toScreen(p.x, 2, p.y); D.lab.style.transform = 'translate(' + (q.x | 0) + 'px,' + (q.y | 0) + 'px)';
     });
@@ -372,27 +403,90 @@
       cs[c.id] = 1;
       var D = dyn.crystals[c.id];
       if (!D) {
-        var m = new THREE.Mesh(new THREE.BoxGeometry(c.hl * 2, T.obstH, c.ht * 2), new THREE.MeshLambertMaterial({ color: 0x8dff5a, emissive: new THREE.Color(0x2a8a20), transparent: true, opacity: 0.8 }));
-        m.castShadow = true; m.position.set(c.cx, T.obstH / 2, c.cy); m.rotation.y = -Math.atan2(c.uy, c.ux);
+        var m = new THREE.Mesh(new THREE.BoxGeometry(c.hl * 2, T.obstH * T.visH, c.ht * 2), new THREE.MeshLambertMaterial({ color: 0x5cff2e, emissive: new THREE.Color(0x1f9a10), transparent: true, opacity: 0.88 }));
+        m.castShadow = true; m.position.set(c.cx, T.obstH * T.visH / 2, c.cy); m.rotation.y = -Math.atan2(c.uy, c.ux);
         scene.add(m); D = dyn.crystals[c.id] = { obj: m, born: t };
       }
       var a3 = Math.min(1, (t - D.born) * 3);
-      D.obj.scale.y = Math.max(0.01, a3); D.obj.position.y = T.obstH / 2 * a3;
+      D.obj.scale.y = Math.max(0.01, a3); D.obj.position.y = T.obstH * T.visH / 2 * a3;
     });
     Object.keys(dyn.crystals).forEach(function (id) { if (!cs[id]) { scene.remove(dyn.crystals[id].obj); delete dyn.crystals[id]; } });
   }
 
   // ---------- эффекты ----------
+  // ---------- краска в духе Splatoon (D-063): глянцевые кляксы, капли, пятна на полу ----------
+  var inkCache = {}, decals = [];
+  function rnd(seed) { var s = seed * 9301 + 49297; return function () { s = (s * 9301 + 49297) % 233280; return s / 233280; }; }
+  function shade(hex, k) { var c = new THREE.Color(hex); if (k < 0) c.multiplyScalar(1 + k); else c.lerp(new THREE.Color(1, 1, 1), k); return '#' + c.getHexString(); }
+  // Клякса: неровный круг + брызги вокруг; тёмный нижний край и белые блики сверху — «мокрая» глянцевая краска
+  function inkTex(color, variant, smooth) {
+    var key = color + ':' + variant + ':' + (smooth ? 1 : 0);
+    if (inkCache[key]) return inkCache[key];
+    var S = 256, c = document.createElement('canvas'); c.width = c.height = S; var x = c.getContext('2d'), r = rnd(variant * 7 + (smooth ? 101 : 3));
+    var R0 = smooth ? 92 : 64, waves = smooth ? [[3, 0.06], [5, 0.04], [7, 0.025]] : [[5, 0.13], [7, 0.1], [11, 0.07]];
+    var ph = waves.map(function () { return r() * 6.28; });
+    function blob(dx, dy, scale) {
+      x.beginPath();
+      for (var i = 0; i <= 72; i++) {
+        var a = i / 72 * Math.PI * 2, rr = R0 * scale;
+        waves.forEach(function (w, j) { rr += R0 * scale * w[1] * Math.sin(w[0] * a + ph[j]); });
+        var px = S / 2 + dx + Math.cos(a) * rr, py = S / 2 + dy + Math.sin(a) * rr;
+        if (i) x.lineTo(px, py); else x.moveTo(px, py);
+      }
+      if (!smooth) for (var k = 0; k < 9; k++) { // брызги
+        var a2 = r() * 6.28, dd = R0 * scale * (1.15 + r() * 0.55), s2 = 5 + r() * 13;
+        x.moveTo(S / 2 + dx + Math.cos(a2) * dd + s2, S / 2 + dy + Math.sin(a2) * dd);
+        x.arc(S / 2 + dx + Math.cos(a2) * dd, S / 2 + dy + Math.sin(a2) * dd, s2, 0, 7);
+      }
+    }
+    x.fillStyle = shade(color, -0.42); blob(0, 0, 1); x.fill();
+    x.globalCompositeOperation = 'source-atop';
+    x.fillStyle = color; blob(-3, -6, 0.97); x.fill();
+    x.fillStyle = shade(color, 0.28); blob(-8, -14, 0.62); x.fill();
+    x.fillStyle = 'rgba(255,255,255,0.85)';
+    x.beginPath(); x.ellipse(S / 2 - R0 * 0.35, S / 2 - R0 * 0.42, R0 * 0.22, R0 * 0.09, -0.5, 0, 7); x.fill();
+    x.beginPath(); x.arc(S / 2 - R0 * 0.62, S / 2 - R0 * 0.12, R0 * 0.07, 0, 7); x.fill();
+    var t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4;
+    return (inkCache[key] = t);
+  }
+  var _drop = null;
+  function dropTex() {
+    if (_drop) return _drop;
+    var c = document.createElement('canvas'); c.width = c.height = 32; var x = c.getContext('2d');
+    x.fillStyle = '#9a9a9a'; x.beginPath(); x.arc(16, 16, 15, 0, 7); x.fill();
+    x.fillStyle = '#ffffff'; x.beginPath(); x.arc(15, 14, 12.5, 0, 7); x.fill();
+    x.fillStyle = 'rgba(255,255,255,1)'; x.beginPath(); x.ellipse(11, 9, 4, 2.4, -0.6, 0, 7); x.fill();
+    _drop = new THREE.CanvasTexture(c); return _drop;
+  }
+  // Пятно краски на полу: появляется с «шлепком», живёт life секунд и тает
+  R.splat = function (x, y, color, size, life) {
+    var m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: inkTex(color, Math.floor(Math.random() * 6), false), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+    m.rotation.x = -Math.PI / 2; m.rotation.z = Math.random() * 6.28; m.position.set(x, 1.3 + decals.length * 0.01, y); m.renderOrder = 1;
+    scene.add(m);
+    var D = { obj: m, t: 0, life: life || 24, size: size };
+    decals.push(D);
+    while (decals.length > 80) { var o = decals.shift(); scene.remove(o.obj); o.obj.geometry.dispose(); o.obj.material.dispose(); }
+  };
+  function stepDecals(dt) {
+    decals = decals.filter(function (D) {
+      D.t += dt; var u = D.t / D.life;
+      if (u >= 1) { scene.remove(D.obj); D.obj.geometry.dispose(); D.obj.material.dispose(); return false; }
+      var pop = D.t < 0.12 ? 0.4 + 0.6 * (D.t / 0.12) * 1.15 : (D.t < 0.2 ? 1.15 - (D.t - 0.12) / 0.08 * 0.15 : 1);
+      D.obj.scale.set(D.size * pop, D.size * pop, 1);
+      D.obj.material.opacity = u > 0.7 ? (1 - u) / 0.3 : 1;
+      return true;
+    });
+  }
   R.burst = function (x, y, color, n, h) {
     for (var i = 0; i < (n || 10); i++) {
-      var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(color), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-      var a = Math.random() * Math.PI * 2, v = 80 + Math.random() * 200, sz = 8 + Math.random() * 12;
+      var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: dropTex(), color: new THREE.Color(color), transparent: true, depthWrite: false }));
+      var a = Math.random() * Math.PI * 2, v = 90 + Math.random() * 220, sz = 9 + Math.random() * 14;
       sp.scale.set(sz, sz, 1); sp.position.set(x, (h || 10) + Math.random() * 10, y); scene.add(sp);
-      fxList.push({ obj: sp, t: 0, life: 0.4 + Math.random() * 0.4, vx: Math.cos(a) * v, vy: 60 + Math.random() * 120, vz: Math.sin(a) * v, g: 300 });
+      fxList.push({ obj: sp, t: 0, life: 1.2, vx: Math.cos(a) * v, vy: 120 + Math.random() * 220, vz: Math.sin(a) * v, g: 900, color: color, sz: sz });
     }
   };
   R.ring = function (x, y, r, color, life) {
-    var m = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 48), new THREE.MeshBasicMaterial({ color: color, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    var m = new THREE.Mesh(new THREE.RingGeometry(0.7, 1, 48), new THREE.MeshBasicMaterial({ color: color, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
     m.rotation.x = -Math.PI / 2; m.position.set(x, 3, y); scene.add(m);
     fxList.push({ obj: m, t: 0, life: life || 0.5, ring: r });
   };
@@ -420,7 +514,10 @@
     fxList = fxList.filter(function (f) {
       f.t += dt; var u = f.t / f.life;
       if (u >= 1) { if (f.obj) scene.remove(f.obj); if (f.el) f.el.remove(); return false; }
-      if (f.vx !== undefined) { f.vy -= f.g * dt; f.obj.position.x += f.vx * dt; f.obj.position.y = Math.max(2, f.obj.position.y + f.vy * dt); f.obj.position.z += f.vz * dt; f.obj.material.opacity = 1 - u; }
+      if (f.vx !== undefined) { // капля краски: падает и шлёпается в маленькое пятно
+        f.vy -= f.g * dt; f.obj.position.x += f.vx * dt; f.obj.position.y += f.vy * dt; f.obj.position.z += f.vz * dt;
+        if (f.obj.position.y <= 2) { if (Math.random() < 0.55) R.splat(f.obj.position.x, f.obj.position.z, f.color, f.sz * 2.4, 14); scene.remove(f.obj); f.obj.material.dispose(); return false; }
+      }
       else if (f.ring) { var r = f.ring * (0.2 + 0.8 * Math.sqrt(u)); f.obj.scale.set(r, r, r); f.obj.material.opacity = 1 - u; }
       else if (f.flash) { var s = f.flash * (0.5 + u); f.obj.scale.set(s, s, 1); f.obj.material.opacity = 1 - u; }
       else if (f.path) {
@@ -472,7 +569,7 @@
     var col = new THREE.Color(a.color || '#ffffff');
     a.segs.forEach(function (sg) {
       var pts = [];
-      for (var i = 0; i <= 24; i++) { var u = i / 24, h = sg.h0 * (1 - u) + Math.sin(Math.PI * u) * sg.H; pts.push(new THREE.Vector3(sg.from.x + (sg.to.x - sg.from.x) * u, h + 4, sg.from.y + (sg.to.y - sg.from.y) * u)); }
+      for (var i = 0; i <= 24; i++) { var u = i / 24, h = FB.Sim.arcAt(sg.h0, sg.H, u) * T.visH; pts.push(new THREE.Vector3(sg.from.x + (sg.to.x - sg.from.x) * u, h + 4, sg.from.y + (sg.to.y - sg.from.y) * u)); }
       aimGroup.add(dots(pts, col, 15, 22));
       if (sg.hit) aimGroup.add(flatRing(sg.to.x, sg.to.y, 6, 12, sg.wlz !== null && sg.wlz !== undefined ? 0xffb040 : 0xffffff, 0.9));
     });
@@ -487,8 +584,8 @@
     });
     if (a.orb) aimGroup.add(dots(a.orb.map(function (q) { return new THREE.Vector3(q.x, 30, q.y); }), new THREE.Color(0xffa040), 11, 24));
     if (a.crystal) {
-      var c = a.crystal, m = new THREE.Mesh(new THREE.BoxGeometry(c.hl * 2, T.obstH, c.ht * 2), new THREE.MeshBasicMaterial({ color: 0x8dff5a, transparent: true, opacity: 0.3, depthWrite: false }));
-      m.position.set(c.cx, T.obstH / 2, c.cy); m.rotation.y = -Math.atan2(c.uy, c.ux); aimGroup.add(m);
+      var c = a.crystal, m = new THREE.Mesh(new THREE.BoxGeometry(c.hl * 2, T.obstH * T.visH, c.ht * 2), new THREE.MeshBasicMaterial({ color: 0x5cff2e, transparent: true, opacity: 0.3, depthWrite: false }));
+      m.position.set(c.cx, T.obstH * T.visH / 2, c.cy); m.rotation.y = -Math.atan2(c.uy, c.ux); aimGroup.add(m);
     }
     if (a.veilR) aimGroup.add(flatRing(a.land.x, a.land.y, a.veilR - 3, a.veilR, 0xeef4f8, 0.6));
     if (a.blastR) aimGroup.add(flatRing(a.land.x, a.land.y, a.blastR - 3, a.blastR, 0xff7a30, 0.6));
@@ -554,7 +651,7 @@
       syncDyn(s, tAll);
       s.frogs.forEach(function (f) { var d = app.disp[f.id]; if (d) syncFrog(f, d, dt, tAll, d.hidden); });
     }
-    stepFx(dt);
+    stepFx(dt); stepDecals(dt);
     (R.aimLabels || []).forEach(function (l) { var p = toScreen(l.x, l.h, l.y); l.el.style.transform = 'translate(' + (p.x | 0) + 'px,' + (p.y | 0) + 'px)'; });
     renderer.render(scene, camera);
   };

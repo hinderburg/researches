@@ -23,8 +23,8 @@ body { font-family: var(--font); color: var(--text); user-select: none; -webkit-
 button { font-family: inherit; cursor: pointer; }
 .hidden { display: none !important; }
 
-#app { position: fixed; inset: 0; margin: 0 auto; max-width: 480px; overflow: hidden; background: #1c140e; }
-@media (min-width: 481px) { #app { box-shadow: 0 0 60px rgba(0,0,0,0.7); } }
+#app { position: fixed; inset: 0; overflow: hidden; background: #1c140e; }
+
 #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 #labels > div { position: absolute; left: 0; top: 0; will-change: transform; }
@@ -223,3 +223,31 @@ button { font-family: inherit; cursor: pointer; }
 .ftext.rx { color: #fff3c0; font-size: 28px; } .ftext.charge { color: #ffe9a0; font-size: 18px; } .ftext.node { color: #ffd0a0; font-size: 13px; }
 .alabel { margin-left: -70px; margin-top: -12px; width: 140px; text-align: center; font-family: var(--font-b); font-size: 17px; color: #ffd0c0; -webkit-text-stroke: 1px #1a0e06; text-shadow: 0 2px 0 #1a0e06; }
 .alabel.rx { color: #fff3c0; font-size: 19px; } .alabel.gold { color: var(--brass-l); font-size: 14px; } .alabel.self { color: #ff9a8a; font-size: 14px; }
+
+/* ---------- главное меню на весь экран без прокрутки (D-064) ---------- */
+.screen.meta { overflow: hidden; touch-action: none; height: 100%; padding-left: max(10px, calc((100% - 600px) / 2)); padding-right: max(10px, calc((100% - 600px) / 2)); padding-bottom: max(100px, calc(92px + env(safe-area-inset-bottom))); }
+#team.screen { display: grid; grid-template-rows: auto minmax(0, 1.3fr) auto minmax(0, 1fr); gap: 6px; }
+.roster.r2 { grid-template-rows: 1fr 1fr; min-height: 0; }
+.roster.r2 .card { display: flex; flex-direction: column; min-height: 0; padding-bottom: 3px; }
+.roster.r2 .card canvas { flex: 1 1 0; min-height: 0; width: 100%; height: 100%; aspect-ratio: auto; object-fit: contain; }
+.pair { min-height: 0; height: 100%; align-items: stretch; }
+.ped { display: flex; flex-direction: column; min-height: 0; justify-content: flex-end; }
+.ped canvas { flex: 1 1 0; min-height: 0; width: 100%; height: 100%; aspect-ratio: auto; object-fit: contain; }
+.ped .ptr { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.syn .s-d { display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+#alchemy.screen { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px; }
+#tanks { display: grid; grid-template-rows: 1fr 1fr; gap: 6px; min-height: 0; }
+.tank { margin: 0; min-height: 0; height: 100%; }
+.tank > div:first-child { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.tank canvas { flex: 1 1 0; min-height: 0; height: 100%; aspect-ratio: auto; object-fit: contain; }
+.tank .elb { padding: 4px; font-size: 12px; }
+.tank .el-d { font-size: 10.5px; }
+#alchemy .reactions { grid-template-columns: repeat(3, 1fr); gap: 4px; }
+#alchemy .rx { padding: 3px 5px; }
+#alchemy .rx .rn { font-size: 12.5px; line-height: 1.1; }
+#alchemy .rx .rd { font-size: 9.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#alchemy .rx .rv { font-size: 9px; }
+#alchemy .box-head span { font-size: 10px; }
+#hud .top, #hud .bottom { max-width: 640px; margin: 0 auto; }
+@media (max-height: 700px) { .card .ctrait, #alchemy .rx .rd { display: none; } .screen.meta { padding-top: 64px; } }
+.tank .rname { margin-top: 0; font-size: 11px; white-space: nowrap; }

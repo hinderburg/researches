@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '2.0.0';
+FB.VERSION = '2.1.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -13,7 +13,8 @@ FB.A = A;
 FB.T = {
   IMG_W: 941, IMG_H: 1672,
   U: 60,                       // единица дальности: Jump 7.0 = 420 мира
-  wallH: 150,                  // высота стен арены — заметно выше любой дуги (70), видно в перспективе (D-051)
+  wallH: 250,                  // высота стен на экране — выше любой видимой дуги, видно в перспективе (D-051, D-062)
+  visH: 2.5,                   // дуга на экране выше симуляционной в 2.5 раза: прыжок читается сверху (D-062)
   obstH: 60,                   // колонна и Toxic Crystal: блокируют дугу ниже этой высоты (§16, §23) — почти любую, кроме пика длинного прыжка (D-052)
   arcBase: 20, arcPerLen: 0.12,        // высота дуги: 420 → 70, ниже стен
 
@@ -63,10 +64,10 @@ FB.T = {
 };
 
 FB.ELEMENTS = {
-  fire:      { name: 'FIRE',      icon: '🔥', color: '#ff5a2a', glow: '255,110,40', hue: 18,  light: 0 },
-  ice:       { name: 'ICE',       icon: '❄',  color: '#7fd4ff', glow: '140,215,255', hue: 200, light: 0.12 },
-  poison:    { name: 'POISON',    icon: '☠',  color: '#7dff4a', glow: '120,255,70', hue: 105, light: 0 },
-  lightning: { name: 'LIGHTNING', icon: '⚡', color: '#ffe23a', glow: '255,225,60', hue: 52,  light: 0.05 }
+  fire:      { name: 'FIRE',      icon: '🔥', color: '#ff5a00', glow: '255,110,0', hue: 20,  light: 0 },
+  ice:       { name: 'ICE',       icon: '❄',  color: '#12c8ff', glow: '20,200,255', hue: 195, light: 0.06 },
+  poison:    { name: 'POISON',    icon: '☠',  color: '#78ff14', glow: '120,255,20', hue: 98, light: 0 },
+  lightning: { name: 'LIGHTNING', icon: '⚡', color: '#ffe100', glow: '255,225,0', hue: 52,  light: 0.05 }
 };
 FB.ELEMENT_ORDER = ['fire', 'ice', 'poison', 'lightning'];
 

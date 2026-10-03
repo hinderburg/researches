@@ -75,6 +75,8 @@
   function reflect(d, n) { var k = 2 * (d.x * n.x + d.y * n.y); return norm(d.x - k * n.x, d.y - k * n.y); }
 
   Sim.arcHeight = function (len) { return T.arcBase + len * T.arcPerLen; };
+  // Высота на доле пути u: парабола (как под гравитацией), старт с высоты h0 (отскок от стены, зацеп)
+  Sim.arcAt = function (h0, H, u) { return h0 * (1 - u) + 4 * H * u * (1 - u); };
 
   // Полёт с отскоками (§21, §23): шагами по дуге; стены выше любой дуги, колонна/кристалл — только низкой.
   // opts.grip — команда может зацепиться за Wall Launch Zone (Reactive Grip, §22)
@@ -85,7 +87,7 @@
     while (true) {
       var segLen = Math.max(1, remaining), H = Sim.arcHeight(segLen), hit = null, t;
       for (t = step; t <= segLen + 0.01; t += step) {
-        var tt = Math.min(t, segLen), x = pos.x + d.x * tt, y = pos.y + d.y * tt, u = tt / segLen, h = h0 * (1 - u) + Math.sin(Math.PI * u) * H;
+        var tt = Math.min(t, segLen), x = pos.x + d.x * tt, y = pos.y + d.y * tt, u = tt / segLen, h = Sim.arcAt(h0, H, u);
         if (!wallClear(x, y, f.r * 0.8)) {
           var ne = nearestEdge(x, y), wz = null;
           if (ne.e.wlzs) ne.e.wlzs.forEach(function (z) { if (y >= z.y0 && y <= z.y1) wz = z; });

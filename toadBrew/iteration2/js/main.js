@@ -181,7 +181,7 @@
     app.shown = Sim.clone(s);
     s.frogs.forEach(function (f) {
       var d = app.disp[f.id]; d.x = f.x; d.y = f.y; d.alive = f.alive;
-      if (!(s.pending && s.pending.frog === f.id && s.pending.kind === 'grip')) { d.z = 0; if (d.pose === 'air' || d.pose === 'grip') d.pose = 'land'; }
+      if (!(s.pending && s.pending.frog === f.id && s.pending.kind === 'grip')) { d.z = 0; d.pitch = 0; d.stretch = 0; if (d.pose === 'air' || d.pose === 'grip') d.pose = 'land'; }
       if (!f.alive) d.pose = 'dead';
     });
     app.busy = false;
@@ -233,35 +233,53 @@
   function faceDir(d, dx, dy) { if (Math.abs(dx) + Math.abs(dy) > 0.5) d.facing = Math.atan2(dx, -dy); }
   function setPose(d, p) { d.pose = p; d.poseT = 0; }
   var ELC = function (el) { return FB.ELEMENTS[el] ? FB.ELEMENTS[el].color : '#ffffff'; };
-  var RXC = { 'fire+ice': '#eef4f8', 'fire+poison': '#ff7a30', 'fire+lightning': '#ffb040', 'ice+poison': '#8dff5a', 'ice+lightning': '#9fe0ff', 'lightning+poison': '#d6ff4a' };
+  var RXC = { 'fire+ice': '#eefaff', 'fire+poison': '#ff6a00', 'fire+lightning': '#ff9800', 'ice+poison': '#46ff2e', 'ice+lightning': '#18d4ff', 'lightning+poison': '#c6ff00' };
 
   function startEvent(e) {
     var d = e.id !== undefined && app.disp[e.id] ? D(e.id) : null, upd = null, end = null, dur = 0;
     switch (e.t) {
       case 'act': if (!d.hidden) R.focus(d.x, d.y); app.sel = e.id; dur = 0.12; break;
       case 'jump': {
-        var segs = e.segs, durs = segs.map(function (sg) { return 0.2 + sg.len / 1500; }), tot = durs.reduce(function (a, b) { return a + b; }, 0);
-        var last = -1; setPose(d, 'air'); dur = tot;
+        // присед → толчок; по дуге время идёт быстрее у земли и медленнее у вершины: взлёт, зависание, падение (D-062)
+        var segs = e.segs, durs = segs.map(function (sg) { return 0.3 + sg.len / 1250; }), tot = durs.reduce(function (a, b) { return a + b; }, 0);
+        var pre = e.mode === 'grip' ? 0.04 : 0.12, last = -1, el0 = SF(e.id).el; dur = pre + tot;
         upd = function (u) {
-          var t = u * tot, i = 0; while (i < segs.length - 1 && t > durs[i]) { t -= durs[i]; i++; }
-          var sg = segs[i], k = Math.min(1, t / durs[i]);
-          if (i !== last) { if (last >= 0 && segs[last].hit) { R.burst(segs[last].to.x, segs[last].to.y, segs[last].wlz !== null && segs[last].wlz !== undefined ? '#ffb040' : '#e8dcc0', 8, segs[last].H * 0.5); R.shake(5); if (segs[last].wlz !== null && segs[last].wlz !== undefined) R.text(segs[last].to.x, segs[last].to.y, 'LAUNCH +30%', 'gold'); } faceDir(d, sg.to.x - sg.from.x, sg.to.y - sg.from.y); last = i; }
+          var t = u * dur;
+          if (t < pre) { d.pose = 'aim'; d.squash = -0.12 * t / pre; return; }
+          t -= pre; var i = 0; while (i < segs.length - 1 && t > durs[i]) { t -= durs[i]; i++; }
+          var sg = segs[i], q = Math.min(1, t / durs[i]), k = q + 0.32 * Math.sin(2 * Math.PI * q) / (2 * Math.PI);
+          if (i !== last) {
+            if (last >= 0 && segs[last].hit) {
+              var wl = segs[last].wlz !== null && segs[last].wlz !== undefined, bx = segs[last].to.x, by = segs[last].to.y;
+              R.burst(bx, by, wl ? '#ffa000' : ELC(el0), 12, segs[last].H * 0.5 * T.visH); R.shake(6);
+              if (wl) R.text(bx, by, 'LAUNCH +30%', 'gold');
+            } else if (last < 0) { R.burst(d.x, d.y, ELC(el0), 6, 4); }
+            faceDir(d, sg.to.x - sg.from.x, sg.to.y - sg.from.y); last = i;
+          }
           d.x = sg.from.x + (sg.to.x - sg.from.x) * k; d.y = sg.from.y + (sg.to.y - sg.from.y) * k;
-          d.z = sg.h0 * (1 - k) + Math.sin(Math.PI * k) * sg.H;
+          d.z = Sim.arcAt(sg.h0, sg.H, k);
+          var slope = (-sg.h0 + 4 * sg.H * (1 - 2 * k)) / Math.max(40, sg.len) * T.visH;
+          d.pitch = Math.max(-0.65, Math.min(0.65, Math.atan(slope) * 0.75));
+          d.stretch = Math.min(0.28, 0.1 + 0.12 * Math.abs(slope));
+          d.squash = 0;
+          d.pose = i === segs.length - 1 && k > 0.55 ? 'fall' : 'air';
           if (!d.hidden && !cam().user) R.focus(d.x, d.y);
         };
         if (e.mode === 'grip') R.text(d.x, d.y, 'WALL LAUNCH ×' + T.gripRangeMul, 'gold');
         break;
       }
-      case 'grip': setPose(d, 'grip'); d.x = e.x; d.y = e.y; d.z = e.h; faceDir(d, -e.n.x, -e.n.y); R.burst(e.x, e.y, '#ffb040', 10, e.h); R.text(e.x, e.y, 'GRIP!', 'gold'); R.shake(6); dur = 0.3; break;
-      case 'drop': { var z0 = d.z; dur = 0.3; upd = function (u) { d.z = z0 * (1 - u * u); }; end = function () { setPose(d, 'land'); }; break; }
+      case 'grip': setPose(d, 'grip'); d.x = e.x; d.y = e.y; d.z = e.h; d.pitch = 1.1; d.stretch = 0.1; faceDir(d, -e.n.x, -e.n.y); R.burst(e.x, e.y, '#ffa000', 12, e.h * T.visH); R.text(e.x, e.y, 'GRIP!', 'gold'); R.shake(6); dur = 0.3; break;
+      case 'drop': { var z0 = d.z; d.pitch = 0; dur = 0.3; upd = function (u) { d.z = z0 * (1 - u * u); }; end = function () { setPose(d, 'land'); }; break; }
       case 'land': {
-        var z1 = d.z; d.x = e.x; d.y = e.y; dur = 0.12;
+        var z1 = d.z; d.x = e.x; d.y = e.y; dur = 0.08;
         upd = function (u) { d.z = z1 * (1 - u); };
-        end = function () { d.z = 0; setPose(d, 'land'); d.squash = 0.12; if (!d.hidden) R.burst(e.x, e.y, '#b89a70', 7, 5); R.shake(3); SF(e.id).x = e.x; SF(e.id).y = e.y; };
+        end = function () {
+          d.z = 0; d.pitch = 0; d.stretch = 0; setPose(d, 'land'); d.squash = 0.28; R.shake(4); SF(e.id).x = e.x; SF(e.id).y = e.y;
+          if (!d.hidden) { var c = ELC(SF(e.id).el); R.splat(e.x, e.y, c, SF(e.id).r * 3.4); R.burst(e.x, e.y, c, 10, 6); }
+        };
         break;
       }
-      case 'impact': D(e.id).flash = 1; R.flash(e.x, e.y, 120, '#fff0c0'); R.shake(12); dur = 0.12; break;
+      case 'impact': D(e.id).flash = 1; R.flash(e.x, e.y, 120, '#fff0c0'); R.burst(e.x, e.y, ELC(SF(e.by).el), 16, 30); R.splat(e.x, e.y, ELC(SF(e.by).el), 80); R.shake(12); dur = 0.12; break;
       case 'hit': {
         var hf = SF(e.id); hf.hp = Math.max(0, hf.hp - e.dmg); d.flash = 1;
         var cls = { fire: 'fire', ice: 'ice', poison: 'poison', lightning: 'light', slam: 'slam', neuro: 'light' }[e.src] || 'dmg';
@@ -270,13 +288,13 @@
       case 'push': {
         var f0 = e.from, t0 = e.to; dur = 0.32;
         upd = function (u) { var k = easeOut(u); d.x = f0.x + (t0.x - f0.x) * k; d.y = f0.y + (t0.y - f0.y) * k; };
-        end = function () { SF(e.id).x = t0.x; SF(e.id).y = t0.y; if (e.wall) { R.burst(t0.x, t0.y, '#ffd080', 12, 20); R.shake(10); R.text(t0.x, t0.y, 'SLAM!', 'slam'); } };
+        end = function () { SF(e.id).x = t0.x; SF(e.id).y = t0.y; if (e.wall) { R.burst(t0.x, t0.y, ELC(SF(e.id).el), 14, 20); R.splat(t0.x, t0.y, ELC(SF(e.id).el), 70); R.shake(10); R.text(t0.x, t0.y, 'SLAM!', 'slam'); } };
         break;
       }
-      case 'death': d.alive = false; setPose(d, 'dead'); SF(e.id).alive = false; R.burst(e.x, e.y, '#ff6040', 18, 20); R.text(e.x, e.y, 'KO!', 'ko'); R.shake(14); dur = 0.6; break;
+      case 'death': d.alive = false; setPose(d, 'dead'); SF(e.id).alive = false; R.burst(e.x, e.y, ELC(SF(e.id).el), 28, 30); R.splat(e.x, e.y, ELC(SF(e.id).el), 140, 30); R.text(e.x, e.y, 'KO!', 'ko'); R.shake(14); dur = 0.6; break;
       case 'charge': SF(e.id).charge = e.els; R.ring(d.x, d.y, 90, RXC[e.key] || '#ffffff'); R.text(d.x, d.y, 'CHARGE<br><small>' + (FB.REACTIONS[e.key] ? FB.REACTIONS[e.key].name : 'OVERCHARGE') + '</small>', 'charge'); dur = 0.45; break;
       case 'chargeUsed': SF(e.id).charge = null; break;
-      case 'reaction': R.flash(e.x, e.y, 260, RXC[e.key] || '#ffe080'); R.ring(e.x, e.y, 180, RXC[e.key] || '#ffe080', 0.6); R.text(e.x, e.y, e.name, 'rx'); R.shake(8); dur = 0.5; break;
+      case 'reaction': R.flash(e.x, e.y, 260, RXC[e.key] || '#ffe080'); R.splat(e.x, e.y, RXC[e.key] || '#ffe080', 230, 14); R.burst(e.x, e.y, RXC[e.key] || '#ffe080', 30, 40); R.ring(e.x, e.y, 180, RXC[e.key] || '#ffe080', 0.6); R.text(e.x, e.y, e.name, 'rx'); R.shake(8); dur = 0.5; break;
       case 'veil': app.shown.veils.push(e.veil); dur = 0.3; break;
       case 'veilBounce': {
         var vf = e.from, vt = e.to; dur = d.hidden ? 0.01 : 0.35;
@@ -291,7 +309,7 @@
       case 'status': { var key = e.s === 'pinned' ? 'pinnedBy' : e.s, fin = app.s.frogs[e.id][key]; SF(e.id)[key] = e.s === 'pinned' ? (fin >= 0 ? fin : 0) : (fin || 1); if (e.s === 'shell') R.ring(d.x, d.y, 70, '#9fe0ff'); if (e.s === 'pinned') R.text(d.x, d.y, 'MARKED', 'gold'); break; }
       case 'statusGone': SF(e.id)[e.s] = 0; break;
       case 'shellBreak': SF(e.id).shell = 0; R.ring(e.x, e.y, 130, '#9fe0ff'); R.burst(e.x, e.y, '#9fe0ff', 12, 20); dur = 0.2; break;
-      case 'node': { var n = app.shown.nodes[e.id]; n.el = e.el; n.side = e.side; R.ring(n.x, n.y, 70, ELC(e.el)); R.text(n.sx, n.sy, 'NEXT ROUND', 'node'); dur = 0.3; break; }
+      case 'node': { var n = app.shown.nodes[e.id]; n.el = e.el; n.side = e.side; R.ring(n.x, n.y, 70, ELC(e.el)); R.splat(n.x, n.y, ELC(e.el), 70); R.text(n.sx, n.sy, 'NEXT ROUND', 'node'); dur = 0.3; break; }
       case 'puddleUsed': app.shown.puddles.forEach(function (p) { if (p.id === e.id) { p.active = false; R.burst(p.x, p.y, ELC(p.el), 14, 8); } }); break;
       case 'puddleGone': app.shown.puddles = app.shown.puddles.filter(function (p) { return p.id !== e.id; }); break;
       case 'puddleOn': app.shown.puddles.forEach(function (p) { if (p.id === e.id) p.active = true; }); break;
@@ -373,7 +391,7 @@
   function frogAt(sx, sy, list) {
     var best = -1, bd = 1e9;
     list.forEach(function (f) {
-      var d = D(f.id), p = R.toScreen(d.x, d.z || 0, d.y), q = R.toScreen(d.x + f.r, d.z || 0, d.y);
+      var d = D(f.id), p = R.toScreen(d.x, (d.z || 0) * T.visH, d.y), q = R.toScreen(d.x + f.r, (d.z || 0) * T.visH, d.y);
       var rad = Math.max(34, Math.abs(q.x - p.x) * 1.5), dd = Math.hypot(p.x - sx, p.y - sy);
       if (dd < rad && dd < bd) { bd = dd; best = f.id; }
     });
@@ -426,9 +444,9 @@
 
   function pendingMode(f) { var P = app.s.pending; return P && P.frog === f.id ? P.kind : 'jump'; }
   function updateAim(p) {
-    var f = app.s.frogs[aimFrog], d = D(f.id), sp = R.toScreen(d.x, d.z || 0, d.y);
+    var f = app.s.frogs[aimFrog], d = D(f.id), sp = R.toScreen(d.x, (d.z || 0) * T.visH, d.y);
     var L = Math.hypot(p.x - sp.x, p.y - sp.y), pull = Math.min(cv.clientWidth, cv.clientHeight) * 0.3, pow = Math.min(1, L / pull);
-    var w = R.toWorld(p.x, p.y, d.z || 0);
+    var w = R.toWorld(p.x, p.y, (d.z || 0) * T.visH);
     if (!w || pow < T.minPull) { app.aimCmd = null; R.setAim(null); setPv('Pull back', 'Drag away from the frog and release'); return; }
     var dx = f.x - w.x, dy = f.y - w.y, l = Math.hypot(dx, dy) || 1, m = pendingMode(f), range = Sim.rangeFor(app.s, f, m);
     app.aimCmd = { frog: f.id, dx: dx / l * range * pow, dy: dy / l * range * pow, mode: m };
@@ -531,6 +549,12 @@
   function raf(now) { lastRaf = performance.now(); tick(now); requestAnimationFrame(raf); }
   setInterval(function () { var n = performance.now(); if (n - lastRaf > 120) tick(n); }, 50); // вкладка без rAF (скрытая панель)
   window.addEventListener('resize', function () { R.resize(); });
+
+  // На телефоне — полноэкранный режим с первого касания (браузер разрешает его только по жесту; iOS Safari не умеет)
+  document.addEventListener('pointerdown', function goFull() {
+    var el = document.documentElement;
+    if (!document.fullscreenElement && el.requestFullscreen && window.matchMedia('(pointer: coarse)').matches) el.requestFullscreen({ navigationUI: 'hide' }).catch(function () {});
+  }, { capture: true });
 
   // ---------- старт ----------
   R.load().then(function () {
