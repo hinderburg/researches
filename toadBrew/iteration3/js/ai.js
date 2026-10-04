@@ -10,7 +10,8 @@
       var b = before.frogs[i], lost = b.hp - f.hp;
       if (f.side === side) { v -= lost * 1.15; if (b.alive && !f.alive) v -= 70; }
       else if (!b.hidden) {
-        v += lost * (1 + 0.6 * (1 - b.hp / b.maxHp)) * (f.npc ? T.botNpcW : 1); if (b.alive && !f.alive) v += 80; // NPC — главная цель: её добивание = победа (D-104) if (f.poison > b.poison) v += 6; if (f.neuro > b.neuro) v += 8; if (f.chill > b.chill) v += 4; // урон по раненому ценнее — фокус огня пары (D-095)
+        v += lost * (1 + 0.6 * (1 - b.hp / b.maxHp)) * (f.npc ? T.botNpcW : 1); if (b.alive && !f.alive) v += 80; // урон по раненому ценнее (D-095); NPC — главная цель (D-104)
+        if (f.poison > b.poison) v += 6; if (f.neuro > b.neuro) v += 8; if (f.chill > b.chill) v += 4;
         if (f.pinnedBy >= 0 && b.pinnedBy < 0) v += trait === 'pinned' ? 12 : 6;
         // Pinned Target: помеченный враг у стены/колонны — напарнику есть куда его вбить (D-095)
         if (trait === 'pinned' && f.alive && f.pinnedBy >= 0 && !Sim.insideArena(f.x, f.y, f.r + 120)) v += 6;
