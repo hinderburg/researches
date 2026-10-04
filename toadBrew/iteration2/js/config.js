@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '2.14.0';
+FB.VERSION = '2.15.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -26,7 +26,7 @@ FB.T = {
 
   // Урон и физика (§10)
   impactBase: 14, impactSpeed: 10,     // физический урон прямого попадания: base + speed × доля дальности
-  kbBase: 150, kbMin: 36, kbMax: 380, kbSpeedMin: 0.6, // отброс прямого удара ×2 (D-097)
+  kbBase: 195, kbMin: 47, kbMax: 480, kbSpeedMin: 0.6, // отброс удара сверху: ×2 (D-097), ещё +30% (D-101)
   slamDamage: 8,                       // удар о стену/колонну/кристалл после отброса
   kbSplash: 35, kbArc: 35, kbShard: 45, kbOver: 55, kbSteam: 95, kbNeuro: 50, // отброс от урона и реакций, как в 1.0 (D-097)
   contactAssist: 14,                   // запас попадания в жабу (D-084)
@@ -44,7 +44,7 @@ FB.T = {
   // Реакции (§12–§18)
   veilR: 273, veilTurns: 4, veilBounceMin: 81, veilSight: 150,     // радиусы и размеры эффектов +30% (D-067), ещё +40% (D-074)
   detR: 263, detDamage: 28, detKnock: 170,
-  orbRange: 1729, orbR: 16, orbDamage: 26, orbKnock: 110,
+  orbRange: 1729, orbR: 16, orbDamage: 26, orbKnock: 110, orbTurn: 0.009, // orbTurn — доворот самонаведения, рад на единицу пути (D-101)
   crystalLen: 245, crystalThick: 36, crystalTurns: 4, crystalRiseDmg: 14, crystalRiseKnock: 100, // кристалл под жабой: урон и отброс (D-096)
   shellMul: 0.4, shellKnockR: 210, shellKnock: 140,
   neuroR: 200, neuroTick: 9, neuroJumps: 2,

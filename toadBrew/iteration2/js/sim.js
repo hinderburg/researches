@@ -477,7 +477,10 @@
         if (!o.alive) return;
         var r = inObst(c, o.x, o.y, o.r); if (!r) return;
         if (o.side !== f.side) damage(s, o, T.crystalRiseDmg * m, events, 'crystal', f);
-        if (o.alive) push(s, o, r.n, r.pen + T.crystalRiseKnock, events, null, true, c.id);
+        // выталкиваем поперёк стены на её сторону; если жаба по центру — на дальнюю от кастера (D-101)
+        var nd = { x: -c.uy, y: c.ux }, lv = (o.x - c.cx) * nd.x + (o.y - c.cy) * nd.y;
+        var sg = Math.abs(lv) > 4 ? Math.sign(lv) : Math.sign((c.cx - f.x) * nd.x + (c.cy - f.y) * nd.y) || 1;
+        if (o.alive) push(s, o, { x: nd.x * sg, y: nd.y * sg }, c.ht + o.r - Math.abs(lv) + T.crystalRiseKnock, events, null, true, c.id);
       });
     } else if (key === 'ice+lightning') { // STATIC SHELL (§17)
       f.shell = 1; events.push({ t: 'status', id: f.id, s: 'shell' });
@@ -496,19 +499,37 @@
     return { cx: f.x + d.x * (f.r + T.crystalThick / 2 + 12), cy: f.y + d.y * (f.r + T.crystalThick / 2 + 12), ux: -d.y, uy: d.x, hl: T.crystalLen / 2, ht: T.crystalThick / 2 };
   };
 
-  // Путь Plasma Orb: прямая, одно отражение от стены/колонны/кристалла, первый враг на пути
+  // Plasma Orb (§15, D-101): самонаводится — плавно доворачивает к ближайшему врагу впереди (orbTurn рад на единицу пути),
+  // один отскок от стены/колонны/кристалла; после отскока цель выбирается заново
   Sim.orbPath = function (s, f, from, dir) {
-    var d = norm(dir.x, dir.y), pos = { x: from.x, y: from.y }, path = [{ x: pos.x, y: pos.y }], bounced = false, obs = obstacles(s), step = 8;
+    var d = norm(dir.x, dir.y), pos = { x: from.x, y: from.y }, path = [{ x: pos.x, y: pos.y }], bounced = false, obs = obstacles(s), step = 8, n = 0;
+    function pickTarget() {
+      var best = null, bs = 1e9;
+      s.frogs.forEach(function (e) {
+        if (!e.alive || e.side === f.side) return;
+        var v = norm(e.x - pos.x, e.y - pos.y), ahead = v.x * d.x + v.y * d.y;
+        var sc = v.l * (ahead > 0.2 ? 1 : 3); // впереди — предпочтительнее
+        if (v.l < T.orbRange && sc < bs) { bs = sc; best = e; }
+      });
+      return best;
+    }
+    var target = pickTarget();
     for (var t = 0; t < T.orbRange; t += step) {
+      if (target && target.alive) { // доворот к цели не больше orbTurn × шаг
+        var want = norm(target.x - pos.x, target.y - pos.y), cur = Math.atan2(d.y, d.x), aim = Math.atan2(want.y, want.x), da = aim - cur;
+        while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
+        var lim = T.orbTurn * step; da = Math.max(-lim, Math.min(lim, da)); cur += da; d = { x: Math.cos(cur), y: Math.sin(cur), l: 1 };
+      }
       var nx = pos.x + d.x * step, ny = pos.y + d.y * step, hitN = null;
       if (!wallClear(nx, ny, T.orbR)) hitN = nearestEdge(nx, ny).e.n;
       else for (var k = 0; k < obs.length; k++) { var r = inObst(obs[k], nx, ny, T.orbR); if (r) { hitN = r.n; break; } }
       if (hitN) {
         path.push({ x: pos.x, y: pos.y });
         if (bounced) return { path: path, hit: -1 };
-        bounced = true; d = reflect(d, hitN); continue;
+        bounced = true; d = reflect(d, hitN); target = pickTarget(); continue;
       }
       pos = { x: nx, y: ny };
+      if (++n % 4 === 0) path.push({ x: pos.x, y: pos.y }); // точки дуги для анимации
       if (t > f.r) for (var i = 0; i < s.frogs.length; i++) {
         var e = s.frogs[i];
         if (e.alive && e.side !== f.side && dist(e.x, e.y, pos.x, pos.y) <= e.r + T.orbR) { path.push({ x: pos.x, y: pos.y }); return { path: path, hit: e.id, dirAtHit: d }; }

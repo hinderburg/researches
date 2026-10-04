@@ -193,8 +193,10 @@
 
   test('Toxic Crystal rising on a frog hits it and throws it out (not stuck)', function () {
     var s = sandbox(); s.frogs[0].el = 'ice'; s.frogs[0].charge = ['ice', 'poison'];
-    var c = Sim.crystalFor({ x: 600, y: 1850, r: s.frogs[0].r }, { x: 0, y: -1 }); put(s, 2, c.cx, c.cy); // враг ровно там, где встанет стена
-    var hp = s.frogs[2].hp; jumpTo(s, 0, 600, 1850);
+    put(s, 0, 480, 2000); // левее колонны
+    var c = Sim.crystalFor({ x: 480, y: 1850, r: s.frogs[0].r }, { x: 0, y: -1 }); put(s, 2, c.cx, c.cy); // враг ровно там, где встанет стена
+    var hp = s.frogs[2].hp; jumpTo(s, 0, 480, 1850);
+    ok(s.frogs[2].y < c.cy, 'thrown to the far side, away from the caster');
     eq(s.crystals.length, 1); ok(s.frogs[2].hp < hp, 'damaged by the rising crystal');
     var cr = s.crystals[0], dx = s.frogs[2].x - cr.cx, dy = s.frogs[2].y - cr.cy;
     ok(Math.abs(-dx * cr.uy + dy * cr.ux) > cr.ht + s.frogs[2].r * 0.5, 'thrown out of the crystal');
@@ -223,6 +225,12 @@
     var s = sandbox(); s.frogs[0].el = 'fire'; s.frogs[0].charge = ["fire", "lightning"]; put(s, 0, 480, 2000); put(s, 2, 480, 1400);
     var r = jumpTo(s, 0, s.frogs[0].x, 1850);
     var o = ev(r, 'orb')[0]; ok(o, 'orb'); eq(o.hit, 2);
+  });
+
+  test('Plasma Orb homes in: fired past an enemy, it curves and hits', function () {
+    var s = sandbox(); s.frogs[0].el = 'fire'; s.frogs[0].charge = ['fire', 'lightning']; put(s, 0, 480, 2050); put(s, 2, 480 + 230, 1500);
+    var r = jumpTo(s, 0, 480, 1850); // прыжок прямо вверх — враг в стороне под углом ~23°
+    var o = ev(r, 'orb')[0]; ok(o, 'orb'); eq(o.hit, 2, 'homing hit');
   });
 
   test('Reactive Grip: cling to WLZ, second jump is the same activation and stronger', function () {
