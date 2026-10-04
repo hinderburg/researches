@@ -217,7 +217,7 @@
     ok(r2.ok && has(r2, 'impact')); eq(s.turnSide, 1, 'activation over');
   });
 
-  test('ally bounce: ally is shoved back; extra hop never reacts (no charge, no puddle)', function () {
+  test('ally bounce: perch, shove on jump-off; extra hop onto an enemy fires the charge, puddles stay', function () {
     var s = sandbox(['spring', 'bellows'], ['cling', 'spur']);
     put(s, 0, 480, 2050); put(s, 1, 480, 1850); put(s, 2, 760, 1700);
     var p = s.puddles[0]; p.active = true; p.x = 760; p.y = 1700; // враг стоит в луже Poison
@@ -225,8 +225,9 @@
     eq(Sim.dist(s.frogs[0].x, s.frogs[0].y, s.frogs[1].x, s.frogs[1].y), 0, 'perched on the ally');
     var r2 = jumpTo(s, 0, 760, 1700, 'hop');
     ok(s.frogs[1].x < 480 - 20, 'ally shoved away when the frog jumps off');
-    ok(has(r2, 'impact'), 'hit the enemy'); ok(!has(r2, 'reaction'), 'no reaction on extra hop'); ok(p.active, 'puddle untouched');
-    ok(s.frogs[0].charge, 'charge kept');
+    var rx = ev(r2, 'reaction')[0];
+    ok(has(r2, 'impact'), 'hit the enemy'); ok(rx && rx.key === 'fire+ice', 'charged reaction fires on an enemy hit'); ok(p.active, 'puddle untouched');
+    eq(s.frogs[0].charge, null, 'charge spent');
   });
 
   test('Living Catapult: landing on ally gives an extra hop', function () {

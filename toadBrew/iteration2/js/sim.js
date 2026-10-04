@@ -348,7 +348,9 @@
 
     f.x = L.x; f.y = L.y;
     events.push({ t: 'land', id: f.id, x: f.x, y: f.y, onEnemy: enemy ? enemy.id : undefined });
-    var res = Sim.reactionAt(s, f, f.x, f.y, o.mode === 'hop' || o.mode === 'auto'); // заряд — на следующую активацию, не на отскок
+    // доп. прыжок со спины союзника: заряд срабатывает, только если попал во врага; лужи не срабатывают (D-094)
+    var hopLike = o.mode === 'hop' || o.mode === 'auto';
+    var res = hopLike ? (enemy && f.charge ? Sim.reactionAt(s, f, f.x, f.y) : { kind: 'base', el: f.el }) : Sim.reactionAt(s, f, f.x, f.y);
 
     // Прямое попадание (§10)
     if (enemy) {
