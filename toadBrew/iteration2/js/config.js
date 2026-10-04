@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '2.9.0';
+FB.VERSION = '2.10.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -48,7 +48,8 @@ FB.T = {
   shellMul: 0.4, shellKnockR: 210, shellKnock: 70,
   neuroR: 200, neuroTick: 9, neuroJumps: 2,
   sameChargeMul: 1.6,                  // заряд из двух одинаковых элементов — усиленный базовый эффект
-  surgeR: 200, surgePhys: 10, surgeKnock: 40, // ВСПЛЕСК: лужа своего цвета — физ. 10 + полный элемент всем в радиусе 200, отброс 40 (D-089)
+  surgeR: 110, surgePhys: 10, surgeKnock: 40, // ВСПЛЕСК: небольшая область — физ. 10 + полный элемент, отброс 40 (D-089, D-091)
+  shardRange: 300, shardDmg: 8,              // 6 осколков всплеска: дальность 1.5 × прежние 200, урон 8 + элемент × 0.6 (D-091)
 
   // Лужи и Drain Nodes (§11, §25–§28)
   puddleR: 116, nodeR: 34,             // лужи вдвое больше (D-075)

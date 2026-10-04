@@ -292,3 +292,17 @@ button { font-family: inherit; cursor: pointer; }
 .tip-bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,0.12); overflow: hidden; margin-top: 14px; }
 .tip-bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #3a8cff, #8fd0ff); }
 .tip-s { font-size: 11px; font-weight: 800; color: var(--muted); margin-top: 6px; }
+
+/* таймер хода — кольцо под номером раунда, на виду, но вне поля (D-093) */
+#timer { display: none !important; }
+.round { position: relative; padding-bottom: 6px; }
+.tring { position: relative; width: 50px; height: 50px; margin: 4px auto 0; transition: opacity 0.2s, transform 0.2s; }
+.tring.off { opacity: 0; transform: scale(0.6); }
+.tring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.tring circle { fill: rgba(12,8,5,0.9); stroke-width: 4.5; }
+.tring .bg { stroke: rgba(255,255,255,0.12); }
+.tring .fg { fill: none; stroke: #5fb0ff; stroke-linecap: round; stroke-dasharray: 106.8; stroke-dashoffset: 0; transition: stroke-dashoffset 0.15s linear; filter: drop-shadow(0 0 3px rgba(95,176,255,0.8)); }
+.tring span { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--font-b); font-size: 19px; color: #fff; text-shadow: 0 2px 0 #000; }
+.tring.low .fg { stroke: #ff5a3a; filter: drop-shadow(0 0 4px rgba(255,90,58,0.9)); }
+.tring.low span { color: #ffb0a0; animation: tlow 0.5s ease-in-out infinite alternate; }
+@keyframes tlow { to { transform: scale(1.18); } }

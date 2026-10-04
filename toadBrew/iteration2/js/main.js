@@ -9,11 +9,11 @@
   };
   var DEF_EL = { spring: 'fire', cling: 'ice', bellows: 'poison', spur: 'lightning' };
   var app = FB.app = {
-    screen: 'team', picks: store.get('picks') || ['spring', 'spur'], elems: store.get('elems') || {},
+    screen: 'team', picks: store.get('picks2') || ['spring', 'bellows'], elems: store.get('elems') || {},
     s: null, shown: null, disp: {}, queue: [], cur: null, busy: false, playing: false, speed: 1, paused: false,
     auto: /[?&]auto=1/.test(location.search), sel: -1, aimCmd: null, turnLeft: 0, gripT: 0, hudT: 0
   };
-  if (!Array.isArray(app.picks) || app.picks.length !== 2 || app.picks.some(function (k) { return !FB.FROGS[k]; }) || app.picks[0] === app.picks[1]) app.picks = ['spring', 'spur'];
+  if (!Array.isArray(app.picks) || app.picks.length !== 2 || app.picks.some(function (k) { return !FB.FROGS[k]; }) || app.picks[0] === app.picks[1]) app.picks = ['spring', 'bellows']; // стартовая пара (D-092)
   function elOf(kind) { return app.elems[kind]; }
   // У четырёх жаб всегда четыре разных элемента (D-071): стартовые — свои у каждой, при выборе на ALCHEMY
   // занятый элемент меняется местами с жабой, у которой он был. Поэтому и в паре элементы разные.
@@ -58,7 +58,7 @@
     var i = app.picks.indexOf(k);
     if (i >= 0) return; // всегда ровно 2: тап по другой жабе заменяет старшую
     app.picks = [app.picks[1], k];
-    store.set('picks', app.picks); renderTeam();
+    store.set('picks2', app.picks); renderTeam();
   }
   function renderTeam() {
     teamEls();
@@ -353,7 +353,7 @@
       case 'reaction': // свой эффект у каждой реакции, без чернильных клякс (D-081)
         app.lastRx = { x: e.x, y: e.y };
         R.reactionFx(e.key, e.x, e.y, { 'fire+ice': T.veilR, 'fire+poison': T.detR, 'lightning+poison': T.neuroR, 'ice+poison': T.crystalLen * 0.6, 'ice+lightning': 110, 'fire+lightning': 160 }[e.key] || 150); R.text(e.x, e.y, e.name, 'rx'); R.shake(8); dur = 0.5; break;
-      case 'surge': R.surgeFx(e.x, e.y, ELC(e.el), e.r); R.text(e.x, e.y, FB.ELEMENTS[e.el].name + ' SURGE', 'rx'); dur = 0.45; break; // лужа своего цвета (D-089)
+      case 'surge': R.surgeFx(e.x, e.y, ELC(e.el), e.r, e.shards, e.el); R.text(e.x, e.y, FB.ELEMENTS[e.el].name + ' SURGE', 'rx'); dur = 0.45; break; // лужа своего цвета (D-089)
       case 'veil': app.shown.veils.push(e.veil); dur = 0.3; break;
       case 'veilBounce': {
         var vf = e.from, vt = e.to; dur = d.hidden ? 0.01 : 0.35;
@@ -433,7 +433,7 @@
       if (e.t === 'crystal') a.crystal = e.crystal;
       if (e.t === 'veil') a.veilR = T.veilR;
       if (e.t === 'reaction') { reacted = e; if (e.key === 'fire+poison') a.blastR = T.detR; }
-      if (e.t === 'surge') { surged = e; a.blastR = e.r; }
+      if (e.t === 'surge') { surged = e; a.blastR = e.r; a.shards = e.shards; a.shardColor = ELC(e.el); }
       if (e.t === 'land' && e.id === f.id && e.onAlly !== undefined) allyId = e.onAlly;
       if (e.t === 'charge') { if (e.id === f.id) charge = e; else info.lines.push('Ally gets a charge: ' + (FB.REACTIONS[e.key] ? FB.REACTIONS[e.key].name : 'OVERCHARGE')); }
       if (e.t === 'node') info.lines.push('Drain Node → next round ' + FB.ELEMENTS[e.el].icon + ' puddle');
@@ -632,6 +632,7 @@
     });
     var mine = myTurn() && !app.playing && !app.busy;
     $('bottom').classList.toggle('wait', !mine);
+    $('tring').classList.toggle('off', !mine || !!app.s.pending);
     if (!app.aimCmd) {
       if (!mine) setPv(app.s.phase === 'play' ? (app.s.turnSide === 1 ? 'Enemy turn' : 'Watching…') : 'Match over', app.s.turnSide === 1 ? 'The bot is thinking' : '');
       else {
@@ -673,6 +674,7 @@
           var tl = Math.max(0, app.turnLeft);
           $('timer').querySelector('i').style.width = (100 * tl / T.turnTimeSec) + '%';
           $('timer').querySelector('span').textContent = Math.ceil(tl);
+          $('tring-n').textContent = Math.ceil(tl); $('tring-fg').style.strokeDashoffset = (106.8 * (1 - tl / T.turnTimeSec)).toFixed(1); $('tring').classList.toggle('low', tl < 5);
           $('timer').classList.toggle('low', tl < 5);
           if (app.turnLeft <= 0) {
             cancelAim(); mode = null;

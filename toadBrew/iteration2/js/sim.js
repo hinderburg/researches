@@ -380,13 +380,22 @@
           if (pt && pt.alive && !pt.charge) { pt.charge = [pt.el, pd.el]; events.push({ t: 'charge', id: pt.id, els: pt.charge.slice(), key: FB.reactionKey(pt.el, pd.el), via: 'momentum' }); }
         }
       }
-      if (res.kind === 'surge') { // ВСПЛЕСК (D-089): удар по площади — сильнее обычной атаки, слабее комбинации
-        events.push({ t: 'surge', id: f.id, el: f.el, x: f.x, y: f.y, r: T.surgeR });
+      if (res.kind === 'surge') { // ВСПЛЕСК (D-091): небольшая область + 6 осколков, траектория по элементу
+        var hitBy = {}, shards = surgeShards(s, f, dir);
+        events.push({ t: 'surge', id: f.id, el: f.el, x: f.x, y: f.y, r: T.surgeR, shards: shards });
         enemiesOf(s, f).forEach(function (e) {
           if (dist(e.x, e.y, f.x, f.y) > T.surgeR + e.r) return;
+          hitBy[e.id] = 1;
           damage(s, e, T.surgePhys * tierMul(f), events, 'surge', f);
           if (e.alive) elementHit(s, f, e, f.el, 1, events);
           if (e.alive && e !== enemy) { var sd = norm(e.x - f.x, e.y - f.y); push(s, e, sd.l ? sd : dir, T.surgeKnock, events, f); }
+        });
+        shards.forEach(function (sh) { // каждого врага — не больше одного осколка, и не тех, кого задела область
+          if (sh.hit < 0 || hitBy[sh.hit]) return;
+          var e = s.frogs[sh.hit]; if (!e.alive) return;
+          hitBy[e.id] = 1;
+          damage(s, e, T.shardDmg * tierMul(f), events, 'shard', f);
+          if (e.alive) elementHit(s, f, e, f.el, T.elemSplash, events);
         });
       } else if (res.kind === 'over') { // одинаковые элементы — усиленный базовый эффект
         events.push({ t: 'reaction', id: f.id, key: null, name: 'OVERCHARGE', x: f.x, y: f.y });
@@ -399,6 +408,28 @@
     return false;
   }
 
+  // Осколки всплеска (D-091): 6 направлений от направления прыжка, дальность T.shardRange.
+  // Огонь — навесом (бьёт в точке падения), лёд — прямо, яд — волной, молния — зигзагом.
+  // Путь — ломаная в мире; режется о стены и колонну; первый задетый враг — цель осколка.
+  function surgeShards(s, f, dir) {
+    var out = [], base = Math.atan2(dir.y || -1, dir.x || 0), obs = obstacles(s), el = f.el;
+    for (var i = 0; i < 6; i++) {
+      var a = base + i / 6 * Math.PI * 2, ux = Math.cos(a), uy = Math.sin(a), nx = -uy, ny = ux, pts = [{ x: f.x, y: f.y }], hit = -1, N = 24;
+      for (var k = 1; k <= N; k++) {
+        var u = k / N, d = T.shardRange * u, off = 0;
+        if (el === 'poison') off = Math.sin(u * Math.PI * 3) * 34;
+        else if (el === 'lightning') off = (k % 2 ? 1 : -1) * 26 * Math.min(1, u * 4);
+        var x = f.x + ux * d + nx * off, y = f.y + uy * d + ny * off;
+        if (!wallClear(x, y, 6) || obs.some(function (o) { return inObst(o, x, y, 6); })) break;
+        pts.push({ x: x, y: y });
+        if (el === 'fire' && k < N) continue; // навесом: бьёт только там, где упал
+        var target = s.frogs.filter(function (e) { return e.alive && e.side !== f.side && dist(e.x, e.y, x, y) <= e.r + (el === 'fire' ? 50 : 14); })[0];
+        if (target) { hit = target.id; break; }
+      }
+      out.push({ pts: pts, hit: hit, lob: el === 'fire' });
+    }
+    return out;
+  }
   function reaction(s, f, key, dir, enemy, events) {
     var R = FB.REACTIONS[key], m = tierMul(f);
     events.push({ t: 'reaction', id: f.id, key: key, name: R.name, x: f.x, y: f.y });

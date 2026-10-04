@@ -126,11 +126,13 @@
 
   test('own-color puddle SURGES: area hit, stronger than a splash, puddle used', function () {
     var s = sandbox(); var p = s.puddles[1]; p.active = true; eq(p.el, 'fire'); p.x = 600; p.y = 1700;
-    put(s, 0, 600, 1950); put(s, 2, 600 + 150, 1700); put(s, 3, 600 - 120, 1760); // обе вражеские — в радиусе, не прямая цель
-    var hp2 = s.frogs[2].hp, r = jumpTo(s, 0, 600, 1700);
-    ok(has(r, 'surge') && !has(r, 'reaction'), 'surge, not a combo'); ok(!p.active, 'puddle used');
+    put(s, 0, 600, 1950); put(s, 2, 600 + 90, 1700); put(s, 3, 600, 1700 - T.shardRange); // один — в малой области, другой — там, где падает огненный осколок
+    var hp2 = s.frogs[2].hp, hp3 = s.frogs[3].hp, r = jumpTo(s, 0, 600, 1700), sg = ev(r, 'surge')[0];
+    ok(sg && !has(r, 'reaction'), 'surge, not a combo'); ok(!p.active, 'puddle used'); eq(sg.shards.length, 6, '6 shards');
     var d2 = hp2 - s.frogs[2].hp, splash = Math.round(T.fireDmg * T.elemSplash * (1 - FB.FROGS.bellows.def / 100));
-    ok(d2 > splash * 1.8, 'surge ' + d2 + ' vs splash ' + splash); ok(s.frogs[3].hp < s.frogs[3].maxHp, 'both enemies hit');
+    ok(d2 > splash * 1.8, 'area ' + d2 + ' vs splash ' + splash);
+    ok(sg.shards.some(function (q) { return q.hit === 3; }) && s.frogs[3].hp < hp3, 'far enemy hit by a shard');
+    eq(ev(r, 'hit').filter(function (e) { return e.id === 3 && e.src === 'shard'; }).length, 1, 'one shard per enemy');
   });
 
   test('pipes: every round each pipe pours a puddle; uncharged pipes pick a random element', function () {

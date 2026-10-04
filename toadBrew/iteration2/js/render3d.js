@@ -639,15 +639,39 @@
       particle(sprite(solidTex(), 0xffffff, false), x, y, 40, { life: 0.5, s0: 30, s1: r * 2, ease: true });
     }
   };
-  // ВСПЛЕСК (D-089): лужа своего цвета взрывается гейзером — столб капель вверх и ударная волна цвета элемента
-  R.surgeFx = function (x, y, color, r) {
+  // ВСПЛЕСК (D-091): небольшая волна цвета элемента и 6 осколков по траекториям из симуляции
+  R.surgeFx = function (x, y, color, r, shards, el) {
     var i, a, sp;
-    for (i = 0; i < 30; i++) { a = Math.random() * 6.28; sp = 40 + Math.random() * 90; particle(sprite(i % 3 ? dropTex() : glowTex(), color, i % 3 === 0), x, y, 10, { life: 1.1, v: { x: Math.cos(a) * sp, y: 260 + Math.random() * 260, z: Math.sin(a) * sp }, drag: 1.6, s0: 30, s1: 12 }); }
-    particle(flatMesh(dotRingTex(), color, 10, 3, false), x, y, 3, { life: 0.6, s0: 20, s1: r * 2.1, ease: true });
-    particle(flatMesh(dotRingTex(), 0xffffff, 10, 3.3, true), x, y, 3.3, { life: 0.45, s0: 10, s1: r * 1.6, ease: true, a0: 0.7 });
-    particle(sprite(solidTex(), color, false), x, y, 30, { life: 0.4, s0: 30, s1: r * 0.9, ease: true, a0: 0.85 });
-    R.shake(10);
+    for (i = 0; i < 14; i++) { a = Math.random() * 6.28; sp = 30 + Math.random() * 60; particle(sprite(dropTex(), color, false), x, y, 10, { life: 0.8, v: { x: Math.cos(a) * sp, y: 200 + Math.random() * 160, z: Math.sin(a) * sp }, drag: 1.8, s0: 26, s1: 10 }); }
+    particle(flatMesh(dotRingTex(), color, 10, 3, false), x, y, 3, { life: 0.5, s0: 20, s1: r * 2.1, ease: true });
+    particle(sprite(solidTex(), color, false), x, y, 30, { life: 0.35, s0: 30, s1: r * 1.1, ease: true, a0: 0.85 });
+    (shards || []).forEach(function (sh, k) {
+      if (sh.pts.length < 2) return;
+      var L = [0]; for (var j = 1; j < sh.pts.length; j++) L.push(L[j - 1] + Math.hypot(sh.pts[j].x - sh.pts[j - 1].x, sh.pts[j].y - sh.pts[j - 1].y));
+      var tex = el === 'ice' ? shardTex() : el === 'fire' ? solidTex() : el === 'poison' ? dropTex() : glowTex();
+      var o = sprite(tex, color, el === 'lightning'); scene.add(o);
+      fxList.push({ obj: o, t: 0, life: el === 'ice' ? 0.35 : el === 'fire' ? 0.65 : 0.5, shard: { pts: sh.pts, L: L, el: el, color: color, lob: sh.lob } });
+    });
+    R.shake(8);
   };
+  function stepShard(f, u) {
+    var S = f.shard, d = u * S.L[S.L.length - 1], i = 1; while (i < S.L.length - 1 && S.L[i] < d) i++;
+    var a = S.pts[i - 1], b = S.pts[i], k = (d - S.L[i - 1]) / Math.max(1e-6, S.L[i] - S.L[i - 1]);
+    var x = a.x + (b.x - a.x) * k, y = a.y + (b.y - a.y) * k, h = S.lob ? 20 + Math.sin(Math.PI * u) * 150 : 28;
+    f.obj.position.set(x, h, y);
+    var sz = (S.el === 'ice' ? 46 : S.el === 'fire' ? 30 : 32) * FXS;
+    f.obj.scale.set(sz, sz, 1);
+    if (S.el === 'ice') { // льдинка смотрит по ходу полёта
+      var p0 = R.toScreen(a.x, h, a.y), p1 = R.toScreen(b.x, h, b.y); f.obj.material.rotation = Math.atan2(-(p1.y - p0.y), p1.x - p0.x) - Math.PI / 2;
+    }
+    f.obj.material.opacity = u > 0.85 ? (1 - u) / 0.15 : 1;
+    if (S.el === 'poison') f.obj.scale.set(sz * (1 + 0.25 * Math.sin(u * 30)), sz * (1 - 0.2 * Math.sin(u * 30)), 1);
+    if (Math.random() < 0.7) { // след: огонь — искры, лёд — иней, яд — капли, молния — разряд
+      if (S.el === 'lightning' && Math.random() < 0.35) R.bolt({ x: a.x, y: a.y }, { x: x, y: y }, S.color, 26);
+      else particle(sprite(S.el === 'poison' ? dropTex() : glowTex(), S.color, S.el !== 'poison'), x, y, h, { life: 0.35, s0: sz * 0.6, s1: 4, v: { x: 0, y: S.el === 'fire' ? 40 : 0, z: 0 } });
+    }
+    if (u > 0.97 && !f.boom) { f.boom = true; particle(sprite(solidTex(), S.color, false), x, y, h, { life: 0.3, s0: 20, s1: S.lob ? 110 : 60, ease: true, a0: 0.8 }); }
+  }
   // нервный разряд к цели Neuroshock
   R.zap = function (a, b) { R.bolt(a, b, '#c070ff', 30); R.bolt(a, b, '#c6ff00', 36); };
   function stepFx(dt) {
@@ -681,6 +705,7 @@
       else if (f.fade) f.obj.material.opacity = 1 - u;
       else if (f.fadeMat) f.fadeMat.opacity = 1 - u;
       else if (f.part) stepParticle(f, dt, u);
+      else if (f.shard) stepShard(f, u);
       else if (f.spiral) { var S = f.spiral, uu = Math.max(0, (f.t - S.d) / (f.life - S.d)), ang = S.a0 + uu * 9, rr = S.r0 + uu * 90; f.obj.position.set(S.x + Math.cos(ang) * rr, 10 + uu * 260, S.y + Math.sin(ang) * rr); f.obj.material.opacity = f.t < S.d ? 0 : (uu > 0.65 ? (1 - uu) / 0.35 : 1); var zz = (S.sz || 22) * (1 - uu * 0.5) * FXS; f.obj.scale.set(zz, zz, 1); }
       if (f.el) { var p = toScreen(f.x, 60 + u * 50, f.y); f.el.style.transform = 'translate(' + (p.x | 0) + 'px,' + (p.y | 0) + 'px) scale(' + (u < 0.15 ? 0.6 + u * 2.6 : 1) + ')'; f.el.style.opacity = u > 0.7 ? (1 - u) / 0.3 : 1; }
       return true;
@@ -747,6 +772,10 @@
       var pts = [];
       for (var i = 0; i <= 16; i++) { var u = i / 16, h = FB.Sim.arcAt(sg.h0, sg.H, u) * T.visH; pts.push(new THREE.Vector3(sg.from.x + (sg.to.x - sg.from.x) * u, h + 4, sg.from.y + (sg.to.y - sg.from.y) * u)); }
       var g = dots(pts, new THREE.Color(0xffffff), 10, 18); g.children.forEach(function (c) { c.material.opacity = 0.55; }); aimGroup.add(g);
+    });
+    (a.shards || []).forEach(function (sh) { // пути осколков всплеска — бледным пунктиром цвета элемента
+      var g = dots(sh.pts.map(function (q) { return new THREE.Vector3(q.x, 8, q.y); }), new THREE.Color(a.shardColor || '#ffffff'), 9, 22);
+      g.children.forEach(function (c) { c.material.opacity = 0.6; }); aimGroup.add(g);
     });
     if (a.ally) { // заряд: двойное кольцо вокруг своей жабы
       aimGroup.add(flatRing(a.ally.x, a.ally.y, a.ally.r * 1.25, a.ally.r * 1.45, new THREE.Color(a.ally.color), 0.95));

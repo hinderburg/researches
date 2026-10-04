@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Lilita+One&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?b=2.9.0-1791073521">
+<link rel="stylesheet" href="css/style.css?b=2.10.0-1791074229">
 </head>
 <body>
 <div id="app">
@@ -56,7 +56,10 @@
   <div id="hud" class="hidden">
     <div class="top">
       <div class="fcard enemy" id="fc-2"></div>
-      <div class="round"><div class="round-l">ROUND</div><div class="round-n" id="round-n">1</div></div>
+      <div class="round"><div class="round-l">ROUND</div><div class="round-n" id="round-n">1</div>
+        <!-- таймер хода — кольцо под номером раунда (D-093) -->
+        <div class="tring off" id="tring"><svg viewBox="0 0 40 40"><circle class="bg" cx="20" cy="20" r="17"/><circle class="fg" id="tring-fg" cx="20" cy="20" r="17"/></svg><span id="tring-n">15</span></div>
+      </div>
       <div class="fcard enemy" id="fc-3"></div>
     </div>
     <div id="trait-1" class="tbadge enemy"></div>
@@ -132,11 +135,11 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>window.FB_BUILD = '2.9.0-1791073521'; // tools/deploy.sh ставит сюда метку сборки — браузер не берёт старые файлы из кэша</script>
-<script src="js/config.js?b=2.9.0-1791073521"></script>
-<script src="js/sim.js?b=2.9.0-1791073521"></script>
-<script src="js/ai.js?b=2.9.0-1791073521"></script>
-<script src="js/render3d.js?b=2.9.0-1791073521"></script>
-<script src="js/main.js?b=2.9.0-1791073521"></script>
+<script>window.FB_BUILD = '2.10.0-1791074229'; // tools/deploy.sh ставит сюда метку сборки — браузер не берёт старые файлы из кэша</script>
+<script src="js/config.js?b=2.10.0-1791074229"></script>
+<script src="js/sim.js?b=2.10.0-1791074229"></script>
+<script src="js/ai.js?b=2.10.0-1791074229"></script>
+<script src="js/render3d.js?b=2.10.0-1791074229"></script>
+<script src="js/main.js?b=2.10.0-1791074229"></script>
 </body>
 </html>
