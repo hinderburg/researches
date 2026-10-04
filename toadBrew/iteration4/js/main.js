@@ -352,8 +352,8 @@
         var f0 = e.from, t0 = e.to; dur = 0.32;
         var pd = Math.hypot(t0.x - f0.x, t0.y - f0.y), hop = Math.min(18, 4 + pd * 0.12);
         upd = function (u) { var k = easeOut(u); d.x = f0.x + (t0.x - f0.x) * k; d.y = f0.y + (t0.y - f0.y) * k; d.z = Math.sin(Math.PI * u) * hop; };
-        // отброс виден: жабу сплющивает, она раскачивается и подлетает (D-108), без брызг
-        d.hitT = T.hitAnimSec; d.hitPow = Math.min(1, 0.45 + pd / 120); d.flash = Math.max(d.flash || 0, 0.6);
+        // отброс виден: жабу сплющивает, она раскачивается и подлетает (D-108), без брызг и белой вспышки
+        d.hitT = T.hitAnimSec; d.hitPow = Math.min(1, 0.45 + pd / 120);
         end = function () { d.z = 0; SF(e.id).x = t0.x; SF(e.id).y = t0.y; if (e.wall) { R.burst(t0.x, t0.y, ELC(SF(e.id).el), 14, 20); R.splat(t0.x, t0.y, ELC(SF(e.id).el), 70); R.shake(10); R.text(t0.x, t0.y, 'SLAM!', 'slam'); } };
         break;
       }

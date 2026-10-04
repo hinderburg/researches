@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '4.1.1';
+FB.VERSION = '4.1.2';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
