@@ -83,7 +83,7 @@
   Sim.flight = function (s, f, from, dir, len, opts) {
     opts = opts || {};
     var segs = [], pos = { x: from.x, y: from.y }, d = norm(dir.x, dir.y), remaining = len, h0 = opts.h0 || 0, air = 0, bounces = 0, step = 6;
-    var obs = obstacles(s);
+    var obs = obstacles(s).filter(function (o) { return !inObst(o, from.x, from.y, f.r * 0.75); }); // стоит внутри — может выбраться (D-096)
     while (true) {
       var segLen = Math.max(1, remaining), H = Sim.arcHeight(segLen), hit = null, t;
       for (t = step; t <= segLen + 0.01; t += step) {
@@ -215,9 +215,9 @@
   }
 
   // Отброс (§10): шагами, с ударом о стену / колонну / кристалл
-  function push(s, e, dir, amount, events, attacker, gentle) { // gentle — без удара о стену (расталкивание союзников)
+  function push(s, e, dir, amount, events, attacker, gentle, ignoreId) { // gentle — без удара о стену; ignoreId — препятствие, из которого выталкиваем
     if (!e.alive || amount <= 0) return;
-    var from = { x: e.x, y: e.y }, x = e.x, y = e.y, hit = null, obs = obstacles(s), step = 4;
+    var from = { x: e.x, y: e.y }, x = e.x, y = e.y, hit = null, obs = obstacles(s).filter(function (o) { return (ignoreId === undefined || o.id !== ignoreId) && !inObst(o, e.x, e.y, e.r * 0.8); }), step = 4;
     for (var t = step; t <= amount; t += step) {
       var nx = e.x + dir.x * t, ny = e.y + dir.y * t;
       if (!wallClear(nx, ny, e.r * 0.9)) { hit = 'wall'; break; }
@@ -463,9 +463,11 @@
       c.id = ++s.seq; c.turns = T.crystalTurns;
       s.crystals.push(c);
       events.push({ t: 'crystal', crystal: Object.assign({}, c) });
-      s.frogs.forEach(function (o) { // кого задело — выталкиваем
+      s.frogs.forEach(function (o) { // кристалл, поднимаясь под жабой, бьёт врага и отбрасывает наружу (D-096)
         if (!o.alive) return;
-        var r = inObst(c, o.x, o.y, o.r); if (r) push(s, o, r.n, r.pen + 2, events, null);
+        var r = inObst(c, o.x, o.y, o.r); if (!r) return;
+        if (o.side !== f.side) damage(s, o, T.crystalRiseDmg * m, events, 'crystal', f);
+        if (o.alive) push(s, o, r.n, r.pen + T.crystalRiseKnock, events, null, true, c.id);
       });
     } else if (key === 'ice+lightning') { // STATIC SHELL (§17)
       f.shell = 1; events.push({ t: 'status', id: f.id, s: 'shell' });

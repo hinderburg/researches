@@ -181,6 +181,16 @@
     eq(s.crystals.length, 0);
   });
 
+  test('Toxic Crystal rising on a frog hits it and throws it out (not stuck)', function () {
+    var s = sandbox(); s.frogs[0].el = 'ice'; s.frogs[0].charge = ['ice', 'poison'];
+    var c = Sim.crystalFor({ x: 600, y: 1850, r: s.frogs[0].r }, { x: 0, y: -1 }); put(s, 2, c.cx, c.cy); // враг ровно там, где встанет стена
+    var hp = s.frogs[2].hp; jumpTo(s, 0, 600, 1850);
+    eq(s.crystals.length, 1); ok(s.frogs[2].hp < hp, 'damaged by the rising crystal');
+    var cr = s.crystals[0], dx = s.frogs[2].x - cr.cx, dy = s.frogs[2].y - cr.cy;
+    ok(Math.abs(-dx * cr.uy + dy * cr.ux) > cr.ht + s.frogs[2].r * 0.5, 'thrown out of the crystal');
+    var sx = s.frogs[2].x, sy = s.frogs[2].y, away = Sim.norm(dx, dy); Sim.apply(s, { frog: 2, dx: away.x * 300, dy: away.y * 300 }); ok(Sim.dist(s.frogs[2].x, s.frogs[2].y, sx, sy) > 200, 'can jump away freely');
+  });
+
   test('Static Shell cuts the next hit and lasts until own activation', function () {
     var s = sandbox(); s.frogs[0].el = 'ice'; s.frogs[0].charge = ['ice', 'lightning'];
     jumpTo(s, 0, 600, 1900); eq(s.frogs[0].shell, 1);

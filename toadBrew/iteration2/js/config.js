@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '2.10.1';
+FB.VERSION = '2.11.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -44,7 +44,7 @@ FB.T = {
   veilR: 273, veilTurns: 4, veilBounceMin: 81, veilSight: 150,     // радиусы и размеры эффектов +30% (D-067), ещё +40% (D-074)
   detR: 263, detDamage: 28, detKnock: 85,
   orbRange: 1729, orbR: 16, orbDamage: 26, orbKnock: 55,
-  crystalLen: 245, crystalThick: 36, crystalTurns: 4,
+  crystalLen: 245, crystalThick: 36, crystalTurns: 4, crystalRiseDmg: 14, crystalRiseKnock: 50, // кристалл под жабой: урон и отброс (D-096)
   shellMul: 0.4, shellKnockR: 210, shellKnock: 70,
   neuroR: 200, neuroTick: 9, neuroJumps: 2,
   sameChargeMul: 1.6,                  // заряд из двух одинаковых элементов — усиленный базовый эффект
@@ -66,6 +66,7 @@ FB.T = {
 
   // Бот
   botAimNoiseDeg: 2.5, botAimNoisePow: 0.04, botTopPick: 3, botDepthTop: 5,
+  botTeamTop: 8, botTeamW: 0.6,            // бот просчитывает связку с напарником для 8 лучших ходов (D-095)
   animSpeed: 1
 };
 
