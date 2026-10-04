@@ -379,7 +379,11 @@
     var breathe = d.pose === 'idle' && d.alive ? 1 + Math.sin(t * 2.4 + f.id) * 0.018 : 1;
     F.sc = (F.sc || 1) + ((pose.s * breathe * (1 + (d.squash || 0))) - (F.sc || 1)) * Math.min(1, dt * 16);
     F.st = (F.st || 0) + ((d.stretch || 0) - (F.st || 0)) * Math.min(1, dt * 14);
-    F.lift.scale.set(F.sc * (1 - F.st * 0.45), F.sc, F.sc * (1 + F.st)); // вытягивается вдоль тела в полёте
+    // реакция на отброс (D-108), видна сверху: «желе» — сплющило вдоль тела и раздуло вширь, потом наоборот,
+    // затухая; корпус мотает из стороны в сторону, сама жаба на миг раздувается
+    var hk = d.hitT > 0 ? d.hitT / T.hitAnimSec : 0, hp = 1 - hk, hw = (d.hitPow || 1) * hk, jel = 0.38 * hw * Math.cos(hp * Math.PI * 4), pop = 1 + 0.22 * hw * Math.max(0, Math.cos(hp * Math.PI * 1.5));
+    F.lift.rotation.y = -(d.facing || 0) + 0.55 * hw * Math.sin(hp * Math.PI * 5);
+    F.lift.scale.set(F.sc * (1 - F.st * 0.45) * (1 + jel) * pop, F.sc * pop, F.sc * (1 + F.st) * (1 - jel) * pop); // вытягивается вдоль тела в полёте
     F.ring.visible = d.alive; F.ring.material.opacity = d.sel ? 1 : 0.6;
     F.ring.scale.setScalar(d.sel ? 1.12 + Math.sin(t * 6) * 0.05 : 1);
     if (!d.alive) { F.mat.color.setRGB(0.35, 0.33, 0.32); F.glow.visible = false; }

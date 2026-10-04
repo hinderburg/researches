@@ -357,6 +357,8 @@
     // доп. прыжок со спины союзника: заряд срабатывает, только если попал во врага; лужи не срабатывают (D-094)
     var hopLike = o.mode === 'hop' || o.mode === 'auto';
     var res = hopLike ? (enemy && f.charge ? Sim.reactionAt(s, f, f.x, f.y) : { kind: 'base', el: f.el }) : Sim.reactionAt(s, f, f.x, f.y);
+    // последняя жаба стороны, попав в лужу, получает доп. прыжок, как со спины союзника (D-109)
+    var solo = !hopLike && !o.drop && puddleAt(s, f.x, f.y) && s.frogs.filter(function (o2) { return o2.alive && o2.side === f.side; }).length === 1;
 
     // Прямое попадание (§10)
     if (enemy) {
@@ -416,6 +418,11 @@
 
     // Отброс прямой цели — после реакций
     if (enemy && enemy.alive) push(s, enemy, norm(enemy.x - f.x, enemy.y - f.y).l > 1 ? norm(enemy.x - f.x, enemy.y - f.y) : dir, knockAmount(f, enemy, speed), events, f);
+    if (solo && f.alive && s.phase === 'play') {
+      s.pending = { kind: 'hop', frog: f.id, dir: dir, solo: true };
+      events.push({ t: 'hopReady', id: f.id, solo: true });
+      return true;
+    }
     return false;
   }
 

@@ -266,6 +266,22 @@
     ok(r2.ok); eq(s.turnSide, 1);
   });
 
+  test('Last frog standing: a puddle gives an extra hop (D-109)', function () {
+    var s = sandbox(['cling', 'spring'], ['bellows', 'spur']);
+    put(s, 0, 480, 2050); put(s, 2, 760, 1500); put(s, 3, 300, 1500);
+    var p = s.puddles[0]; p.active = true; p.x = 480; p.y = 1850;
+    var r0 = jumpTo(s, 0, 480, 1850);
+    ok(!r0.continues, 'two frogs alive: no extra hop'); eq(s.pending, null);
+    Sim.apply(s, { frog: 2, mode: 'skip' });
+    s.frogs[1].alive = false; s.frogs[1].hp = 0;
+    put(s, 0, 480, 2050); p.active = true; s.acted = {}; s.turnSide = 0;
+    var r = jumpTo(s, 0, 480, 1850);
+    ok(r.continues && ev(r, 'hopReady')[0].solo, 'alone: puddle → hop'); eq(s.pending.kind, 'hop');
+    var x0 = s.frogs[0].x, r2 = Sim.apply(s, { frog: 0, mode: 'end' });
+    ok(r2.ok && has(r2, 'autoHop'), 'turn ran out: auto bounce'); ok(s.frogs[0].x !== x0 || s.frogs[0].y !== 1850, 'moved');
+    eq(s.pending, null);
+  });
+
   test('Pinned Target: marked by one frog, smashed into a wall by the other', function () {
     var s = sandbox(['cling', 'spur'], ['bellows', 'spring']);
     put(s, 2, 430, 1900); put(s, 0, 430 + 200, 1900);

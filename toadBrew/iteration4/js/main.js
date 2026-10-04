@@ -232,10 +232,12 @@
       var pf = s.frogs[s.pending.frog];
       if (pf.side === 0 && !app.auto) {
         app.sel = pf.id;
-        // окно на доп. прыжок: зацеп за стену или отскок от союзника (D-077)
-        app.gripT = s.pending.kind === 'grip' ? T.gripWindow : T.allyWindow; app.gripMax = app.gripT;
-        $('gripbar').querySelector('span').textContent = s.pending.kind === 'grip' ? 'GRIP! Pull again' : 'BOUNCE! Aim anywhere';
-        $('gripbar').classList.remove('hidden');
+        // окно на доп. прыжок — только у зацепа за стену; отскок от союзника ждёт до конца общего таймера хода (D-110)
+        if (s.pending.kind === 'grip') {
+          app.gripT = T.gripWindow; app.gripMax = app.gripT;
+          $('gripbar').querySelector('span').textContent = 'GRIP! Pull again';
+          $('gripbar').classList.remove('hidden');
+        }
         refreshHud(true);
       } else botTurn();
       return;
@@ -348,8 +350,12 @@
       }
       case 'push': {
         var f0 = e.from, t0 = e.to; dur = 0.32;
-        upd = function (u) { var k = easeOut(u); d.x = f0.x + (t0.x - f0.x) * k; d.y = f0.y + (t0.y - f0.y) * k; };
-        end = function () { SF(e.id).x = t0.x; SF(e.id).y = t0.y; if (e.wall) { R.burst(t0.x, t0.y, ELC(SF(e.id).el), 14, 20); R.splat(t0.x, t0.y, ELC(SF(e.id).el), 70); R.shake(10); R.text(t0.x, t0.y, 'SLAM!', 'slam'); } };
+        var pd = Math.hypot(t0.x - f0.x, t0.y - f0.y), hop = Math.min(18, 4 + pd * 0.12);
+        upd = function (u) { var k = easeOut(u); d.x = f0.x + (t0.x - f0.x) * k; d.y = f0.y + (t0.y - f0.y) * k; d.z = Math.sin(Math.PI * u) * hop; };
+        // отброс виден: жабу сплющивает, она раскачивается и подлетает (D-108)
+        d.hitT = T.hitAnimSec; d.hitPow = Math.min(1, 0.45 + pd / 120); d.flash = Math.max(d.flash || 0, 0.6);
+        if (!d.hidden) R.burst(f0.x, f0.y, '#ffffff', 6, 12);
+        end = function () { d.z = 0; SF(e.id).x = t0.x; SF(e.id).y = t0.y; if (e.wall) { R.burst(t0.x, t0.y, ELC(SF(e.id).el), 14, 20); R.splat(t0.x, t0.y, ELC(SF(e.id).el), 70); R.shake(10); R.text(t0.x, t0.y, 'SLAM!', 'slam'); } };
         break;
       }
       case 'death': d.alive = false; setPose(d, 'dead'); SF(e.id).alive = false; R.burst(e.x, e.y, ELC(SF(e.id).el), 28, 30); R.splat(e.x, e.y, ELC(SF(e.id).el), 140, 30); R.text(e.x, e.y, 'KO!', 'ko'); R.shake(14); dur = 0.6; break;
@@ -389,7 +395,7 @@
       case 'round': app.shown.round = e.round; app.shown.acted = {}; app.roundActs = []; app.activeId = -1; banner('ROUND ' + e.round, e.side === 0 ? 'p' : 'b', e.side === 0 ? 'You start' : 'Enemy starts'); dur = 0.9; break;
       case 'turn': app.shown.turnSide = e.side; break;
       case 'label': R.text(d.x, d.y, e.text, 'gold'); dur = 0.3; break;
-      case 'hopReady': R.text(d.x, d.y, 'BOUNCE!', 'gold'); dur = 0.25; break;
+      case 'hopReady': R.text(d.x, d.y, e.solo ? 'PUDDLE BOUNCE!' : 'BOUNCE!', 'gold'); dur = 0.25; break;
       case 'autoHop': dur = 0.02; break;
       case 'skip': R.text(d.x, d.y, 'SKIP', 'dmg'); dur = 0.3; break;
       case 'over': dur = 0.3; break;
@@ -450,7 +456,7 @@
     if (pv.pending && pv.pending.kind === 'hop' && pv.pending.frog === f.id) {
       var ac = Sim.clone(pv.state), ar = Sim.apply(ac, { frog: f.id, mode: 'end' }, { noEnd: true });
       ar.events.forEach(function (e) { if (e.t === 'jump') a.autoSegs = e.segs; });
-      info.lines.push('Bounce: pull again in ' + T.allyWindow + ' s, or auto ' + Math.round(T.allyHopMul * 100) + '%');
+      info.lines.push('Bounce: jump again before the turn timer ends, or auto ' + Math.round(T.allyHopMul * 100) + '%');
     }
     if (!a.land && !a.grip && a.segs.length) { var ls = a.segs[a.segs.length - 1]; a.land = ls.to; }
     if (!a.land && !a.grip) return;
@@ -641,13 +647,13 @@
     });
     var mine = myTurn() && !app.playing && !app.busy;
     $('bottom').classList.toggle('wait', !mine);
-    $('tring').classList.toggle('off', !mine || !!app.s.pending);
+    $('tring').classList.toggle('off', !mine || !!(app.s.pending && app.s.pending.kind === 'grip')); // отскок идёт под общим таймером хода (D-110)
     if (!app.aimCmd) {
       if (!mine) setPv(app.s.phase === 'play' ? (app.s.turnSide === 1 ? 'Enemy turn' : 'Watching…') : 'Match over', app.s.turnSide === 1 ? 'The bot is thinking' : '');
       else {
         var f = app.s.frogs[app.sel], P = app.s.pending;
         if (P && P.kind === 'grip') setPv('GRIP!', 'Pull again before the bar runs out — 2nd jump ×' + T.gripRangeMul + ' range, ×' + T.gripImpactMul + ' impact');
-        else if (P && P.kind === 'hop') setPv('BOUNCE', 'Aim anywhere (up to ' + Math.round((app.s.traits[0] === 'catapult' ? T.catapultRangeMul : T.allyHopMax) * 100) + '%), or wait — auto bounce ' + Math.round(T.allyHopMul * 100) + '%');
+        else if (P && P.kind === 'hop') setPv('BOUNCE', 'Aim anywhere (up to ' + Math.round((app.s.traits[0] === 'catapult' ? T.catapultRangeMul : T.allyHopMax) * 100) + '%), or let the turn timer run out — auto bounce ' + Math.round(T.allyHopMul * 100) + '%');
         else if (f) setPv(FB.ELEMENTS[f.el].icon + ' ' + FB.FROGS[f.kind].name, f.charge ? 'Charged: ' + FB.REACTIONS[FB.reactionKey(f.charge[0], f.charge[1])].name + ' fires on landing' : 'Drag back from the frog to jump');
       }
     }
@@ -661,7 +667,7 @@
       if (!app.paused) stepPlayback(dt * app.speed);
       app.s.frogs.forEach(function (f) {
         var d = D(f.id); if (!d) return;
-        d.flash = Math.max(0, (d.flash || 0) - dt * 4); d.squash = Math.max(0, (d.squash || 0) - dt * 0.6);
+        d.flash = Math.max(0, (d.flash || 0) - dt * 4); d.hitT = Math.max(0, (d.hitT || 0) - dt * app.speed); d.squash = Math.max(0, (d.squash || 0) - dt * 0.6);
         d.poseT += dt; if (d.pose === 'land' && d.poseT > 0.35) setPose(d, 'idle');
         if (d.hop) { // вверх с вражеской спины и обратно на место приземления
           d.hop.t += dt * app.speed; var hk = Math.min(1, d.hop.t / d.hop.dur);
@@ -674,10 +680,10 @@
       });
       if (canAimNow() && !app.paused) {
         var P = app.s.pending;
-        if (P) {
-          app.gripT -= mode !== 'aim' ? dt : (P.kind === 'hop' ? dt * 0.5 : 0); // D-085
+        if (P && P.kind === 'grip') {
+          app.gripT -= mode !== 'aim' ? dt : 0;
           $('gripbar').querySelector('i').style.width = Math.max(0, 100 * app.gripT / (app.gripMax || 1)) + '%';
-          if (app.gripT <= 0) { cancelAim(); execute({ frog: P.frog, mode: P.kind === 'grip' ? 'drop' : 'end' }); } // не успел: падение со стены / автоотскок 25%
+          if (app.gripT <= 0) { cancelAim(); execute({ frog: P.frog, mode: 'drop' }); } // не успел: падение со стены
         } else {
           app.turnLeft -= dt;
           var tl = Math.max(0, app.turnLeft);
@@ -686,6 +692,7 @@
           $('tring-n').textContent = Math.ceil(tl); $('tring-fg').style.strokeDashoffset = (106.8 * (1 - tl / T.turnTimeSec)).toFixed(1); $('tring').classList.toggle('low', tl < 5);
           $('timer').classList.toggle('low', tl < 5);
           if (app.turnLeft <= 0) {
+            // спрыгнуть со спины не успела до конца хода — дефолт: автоотскок 25% по ходу прыжка (D-110)
             cancelAim(); mode = null;
             var f = app.s.frogs[app.sel]; if (!f || !Sim.canAct(app.s, f)) f = myActable()[0];
             if (P) execute({ frog: P.frog, mode: 'end' }); else if (f) execute({ frog: f.id, mode: 'skip' });
