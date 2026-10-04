@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '2.11.0';
+FB.VERSION = '2.12.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -26,8 +26,9 @@ FB.T = {
 
   // Урон и физика (§10)
   impactBase: 14, impactSpeed: 10,     // физический урон прямого попадания: base + speed × доля дальности
-  kbBase: 75, kbMin: 18, kbMax: 190, kbSpeedMin: 0.6,
+  kbBase: 150, kbMin: 36, kbMax: 380, kbSpeedMin: 0.6, // отброс прямого удара ×2 (D-097)
   slamDamage: 8,                       // удар о стену/колонну/кристалл после отброса
+  kbSplash: 35, kbArc: 35, kbShard: 45, kbOver: 55, kbSteam: 95, kbNeuro: 50, // отброс от урона и реакций, как в 1.0 (D-097)
   contactAssist: 14,                   // запас попадания в жабу (D-084)
   wallBonus: 0.1, wlzBonus: 0.3,       // прибавка остатка дальности после отскока от стены / Wall Launch Zone (§21)
   maxBounces: 2,
@@ -42,13 +43,13 @@ FB.T = {
 
   // Реакции (§12–§18)
   veilR: 273, veilTurns: 4, veilBounceMin: 81, veilSight: 150,     // радиусы и размеры эффектов +30% (D-067), ещё +40% (D-074)
-  detR: 263, detDamage: 28, detKnock: 85,
-  orbRange: 1729, orbR: 16, orbDamage: 26, orbKnock: 55,
-  crystalLen: 245, crystalThick: 36, crystalTurns: 4, crystalRiseDmg: 14, crystalRiseKnock: 50, // кристалл под жабой: урон и отброс (D-096)
-  shellMul: 0.4, shellKnockR: 210, shellKnock: 70,
+  detR: 263, detDamage: 28, detKnock: 170,
+  orbRange: 1729, orbR: 16, orbDamage: 26, orbKnock: 110,
+  crystalLen: 245, crystalThick: 36, crystalTurns: 4, crystalRiseDmg: 14, crystalRiseKnock: 100, // кристалл под жабой: урон и отброс (D-096)
+  shellMul: 0.4, shellKnockR: 210, shellKnock: 140,
   neuroR: 200, neuroTick: 9, neuroJumps: 2,
   sameChargeMul: 1.6,                  // заряд из двух одинаковых элементов — усиленный базовый эффект
-  surgeR: 110, surgePhys: 10, surgeKnock: 40, // ВСПЛЕСК: небольшая область — физ. 10 + полный элемент, отброс 40 (D-089, D-091)
+  surgeR: 110, surgePhys: 10, surgeKnock: 80, // ВСПЛЕСК: небольшая область — физ. 10 + полный элемент, отброс 40 (D-089, D-091)
   shardRange: 300, shardDmg: 8,              // 6 осколков всплеска: дальность 1.5 × прежние 200, урон 8 + элемент × 0.6 (D-091)
 
   // Лужи и Drain Nodes (§11, §25–§28)

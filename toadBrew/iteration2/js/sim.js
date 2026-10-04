@@ -241,6 +241,12 @@
   function knockAmount(a, e, speed) { return Math.max(T.kbMin, Math.min(T.kbMax, T.kbBase * (T.kbSpeedMin + (1 - T.kbSpeedMin) * Math.min(1, speed)) * a.mass / e.mass)); }
 
   // Базовый элемент (§9) по цели (full) или задетой (splash)
+  // Отброс от точки удара (D-097): у каждого урона по врагу есть отброс, как в версии 1.0
+  function knockFrom(s, e, from, amount, events, f, fallback) {
+    if (!e.alive || amount <= 0) return;
+    var d = norm(e.x - from.x, e.y - from.y); if (!d.l) d = fallback || { x: 0, y: f && f.side === 0 ? -1 : 1 };
+    push(s, e, d, amount, events, f);
+  }
   function elementHit(s, f, e, el, mul, events) {
     var m = mul * tierMul(f);
     if (el === 'fire') damage(s, e, T.fireDmg * m, events, 'fire');
@@ -249,7 +255,7 @@
     else if (el === 'lightning') {
       damage(s, e, T.lightDmg * m, events, 'lightning');
       var other = enemiesOf(s, f).filter(function (o) { return o.id !== e.id && dist(o.x, o.y, e.x, e.y) <= T.lightArcR; })[0];
-      if (other) { events.push({ t: 'arc', from: { x: e.x, y: e.y }, to: { x: other.x, y: other.y } }); damage(s, other, T.lightArc * m, events, 'lightning'); }
+      if (other) { events.push({ t: 'arc', from: { x: e.x, y: e.y }, to: { x: other.x, y: other.y } }); damage(s, other, T.lightArc * m, events, 'lightning'); knockFrom(s, other, e, T.kbArc, events, f); }
     }
   }
 
@@ -365,7 +371,7 @@
       }
     }
     if (res.kind === 'base' && !o.drop) // элемент по поверхности задевает врагов рядом
-      enemiesOf(s, f).forEach(function (e) { if (e !== enemy && dist(e.x, e.y, f.x, f.y) <= T.elemR + e.r * 0.5) elementHit(s, f, e, f.el, T.elemSplash, events); });
+      enemiesOf(s, f).forEach(function (e) { if (e !== enemy && dist(e.x, e.y, f.x, f.y) <= T.elemR + e.r * 0.5) { elementHit(s, f, e, f.el, T.elemSplash, events); knockFrom(s, e, f, T.kbSplash, events, f); } });
 
     // Drain Node (§26, §28): последний элемент определяет будущую лужу
     var nd = nodeAt(s, f.x, f.y, f.r);
@@ -398,10 +404,11 @@
           hitBy[e.id] = 1;
           damage(s, e, T.shardDmg * tierMul(f), events, 'shard', f);
           if (e.alive) elementHit(s, f, e, f.el, T.elemSplash, events);
+          knockFrom(s, e, f, T.kbShard, events, f);
         });
       } else if (res.kind === 'over') { // одинаковые элементы — усиленный базовый эффект
         events.push({ t: 'reaction', id: f.id, key: null, name: 'OVERCHARGE', x: f.x, y: f.y });
-        enemiesOf(s, f).forEach(function (e) { if (e === enemy || dist(e.x, e.y, f.x, f.y) <= T.elemR * 1.4 + e.r) elementHit(s, f, e, f.el, T.sameChargeMul, events); });
+        enemiesOf(s, f).forEach(function (e) { if (e === enemy || dist(e.x, e.y, f.x, f.y) <= T.elemR * 1.4 + e.r) { elementHit(s, f, e, f.el, T.sameChargeMul, events); if (e !== enemy) knockFrom(s, e, f, T.kbOver, events, f, dir); } });
       } else reaction(s, f, res.key, dir, enemy, events);
     }
 
@@ -439,6 +446,7 @@
       var v = { id: ++s.seq, x: f.x, y: f.y, r: T.veilR, turns: T.veilTurns, side: f.side };
       s.veils.push(v);
       events.push({ t: 'veil', veil: Object.assign({}, v) });
+      enemiesOf(s, f).forEach(function (e) { if (e !== enemy && dist(e.x, e.y, f.x, f.y) <= T.veilR * 0.7 + e.r) knockFrom(s, e, f, T.kbSteam, events, f, dir); }); // паровой удар (D-097)
       for (var tries = 0; tries < 24; tries++) { // случайный безопасный отскок внутри облака
         var a = rng(s) * Math.PI * 2, d = T.veilBounceMin + rng(s) * (v.r - T.veilBounceMin - f.r);
         var x = v.x + Math.cos(a) * d, y = v.y + Math.sin(a) * d;
@@ -471,10 +479,12 @@
       });
     } else if (key === 'ice+lightning') { // STATIC SHELL (§17)
       f.shell = 1; events.push({ t: 'status', id: f.id, s: 'shell' });
+      enemiesOf(s, f).forEach(function (e) { if (e !== enemy && dist(e.x, e.y, f.x, f.y) <= T.shellKnockR + e.r) knockFrom(s, e, f, T.shellKnock, events, f, dir); }); // D-097
     } else if (key === 'lightning+poison') { // NEUROSHOCK (§18)
       enemiesOf(s, f).forEach(function (e) {
         if (e !== enemy && dist(e.x, e.y, f.x, f.y) > T.neuroR + e.r) return;
         e.neuro = T.neuroJumps; events.push({ t: 'status', id: e.id, s: 'neuro' });
+        if (e !== enemy) knockFrom(s, e, f, T.kbNeuro, events, f, dir);
       });
     }
   }

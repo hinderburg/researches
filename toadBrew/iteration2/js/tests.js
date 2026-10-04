@@ -181,6 +181,13 @@
     eq(s.crystals.length, 0);
   });
 
+  test('knockback from every damage source: splash, Steam Veil, Neuroshock', function () {
+    function moved(setup) { var s = sandbox(); setup(s); var x = s.frogs[2].x, y = s.frogs[2].y; jumpTo(s, 0, 600, 1850); return Sim.dist(x, y, s.frogs[2].x, s.frogs[2].y); }
+    ok(moved(function (s) { put(s, 2, 600 + 70, 1850); }) > 20, 'element splash pushes');
+    ok(moved(function (s) { s.frogs[0].charge = ['fire', 'ice']; put(s, 2, 600 + 120, 1850); }) > 50, 'steam veil pushes');
+    ok(moved(function (s) { s.frogs[0].el = 'lightning'; s.frogs[0].charge = ['lightning', 'poison']; put(s, 2, 600 + 120, 1850); }) > 30, 'neuroshock pushes');
+  });
+
   test('Toxic Crystal rising on a frog hits it and throws it out (not stuck)', function () {
     var s = sandbox(); s.frogs[0].el = 'ice'; s.frogs[0].charge = ['ice', 'poison'];
     var c = Sim.crystalFor({ x: 600, y: 1850, r: s.frogs[0].r }, { x: 0, y: -1 }); put(s, 2, c.cx, c.cy); // враг ровно там, где встанет стена
