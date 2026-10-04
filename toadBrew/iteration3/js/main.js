@@ -171,7 +171,7 @@
     box.onclick = close; app.tipT = setTimeout(close, T.tipSec * 1000);
   }
 
-  function npcZ(f) { return T.colLowH + (f.caged ? 6 : 0); } // NPC — на колонне (в резервуаре чуть выше дна)
+  function npcZ(f) { return f.caged ? T.colLowH + 6 : 0; } // в резервуаре — на колонне; на поле — высоту площадки добавляет рендер (D-105)
   function myTurn() { return app.s && app.s.phase === 'play' && app.s.turnSide === 0 && !app.auto; }
   function canAimNow() { return myTurn() && !app.busy && !app.paused && !app.playing; }
 
@@ -342,8 +342,8 @@
       case 'npcRelease': {
         SF(e.id).caged = false; R.npcRelease(ELC(SF(e.id).res)); banner('THE WILD FROG BREAKS FREE!', 'b', 'Slay it to win'); R.focus(e.x, e.y);
         var zr = d.z; dur = 0.9; setPose(d, 'air');
-        upd = function (u) { d.z = zr * (1 - u) + T.colLowH * u + Math.sin(Math.PI * u) * 90; };
-        end = function () { d.z = T.colLowH; setPose(d, 'land'); d.squash = 0.3; R.shake(12); };
+        upd = function (u) { d.z = zr * (1 - u) + Math.sin(Math.PI * u) * 90; };
+        end = function () { d.z = 0; setPose(d, 'land'); d.squash = 0.3; R.shake(12); };
         break;
       }
       case 'impact': {
@@ -610,7 +610,7 @@
     s.frogs.forEach(function (f) { if (f.alive && !f.npc && acts.indexOf(f.id) < 0) rem[f.side].push(f.id); });
     var slots = acts.map(function (id) { return { id: id, side: s.frogs[id].side, done: id !== app.activeId, now: id === app.activeId }; });
     var cnt = { 0: rem[0].length, 1: rem[1].length }, cur;
-    if (app.activeId >= 0) { var as = s.frogs[app.activeId].side; cur = cnt[1 - as] ? 1 - as : as; } else cur = s.turnSide;
+    if (app.activeId >= 0 && !s.frogs[app.activeId].npc) { var as = s.frogs[app.activeId].side; cur = cnt[1 - as] ? 1 - as : as; } else cur = s.turnSide; // ход NPC — следующей ходит сторона хода
     var first = app.activeId < 0;
     while (cnt[0] + cnt[1] > 0) {
       if (!cnt[cur]) cur = 1 - cur;

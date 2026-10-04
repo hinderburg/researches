@@ -61,7 +61,7 @@
   function npcOut(s) { var n = s.frogs && s.frogs[s.npcId]; return !!(n && !n.caged); }
   Sim.npcOut = npcOut;
   function obstacles(s) {
-    var C = AR.column, list = [{ kind: 'column', low: npcOut(s), cx: (C.x0 + C.x1) / 2, cy: (C.y0 + C.y1) / 2, ux: 1, uy: 0, hl: (C.x1 - C.x0) / 2, ht: (C.y1 - C.y0) / 2 }];
+    var C = AR.column, list = npcOut(s) ? [] : [{ kind: 'column', cx: (C.x0 + C.x1) / 2, cy: (C.y0 + C.y1) / 2, ux: 1, uy: 0, hl: (C.x1 - C.x0) / 2, ht: (C.y1 - C.y0) / 2 }]; // после побега колонна — низкая площадка, не препятствие (D-105)
     (s.crystals || []).forEach(function (c) { list.push({ kind: 'crystal', id: c.id, cx: c.cx, cy: c.cy, ux: c.ux, uy: c.uy, hl: c.hl, ht: c.ht }); });
     return list;
   }
@@ -231,7 +231,6 @@
   // Отброс (§10): шагами, с ударом о стену / колонну / кристалл
   function push(s, e, dir, amount, events, attacker, gentle, ignoreId) { // gentle — без удара о стену; ignoreId — препятствие, из которого выталкиваем
     if (!e.alive || amount <= 0) return;
-    if (e.npc) return; // NPC вцепилась в колонну (D-103)
     var from = { x: e.x, y: e.y }, x = e.x, y = e.y, hit = null, obs = obstacles(s).filter(function (o) { return (ignoreId === undefined || o.id !== ignoreId) && !inObst(o, e.x, e.y, e.r * 0.8); }), step = 4;
     for (var t = step; t <= amount; t += step) {
       var nx = e.x + dir.x * t, ny = e.y + dir.y * t;
@@ -614,18 +613,14 @@
     if (!tg) return;
     var from = { x: n.x, y: n.y }, to = { x: tg.x, y: tg.y }, len = dist(from.x, from.y, to.x, to.y), dir = norm(to.x - from.x, to.y - from.y);
     n.facing = Math.atan2(dir.x, -dir.y);
-    events.push({ t: 'jump', id: n.id, segs: [{ from: from, to: to, len: len, H: T.npcJumpH, h0: T.colLowH }], mode: 'npc' });
+    events.push({ t: 'jump', id: n.id, segs: [{ from: from, to: to, len: len, H: T.npcJumpH, h0: 0 }], mode: 'npc' });
     n.x = to.x; n.y = to.y;
     events.push({ t: 'land', id: n.id, x: n.x, y: n.y, onEnemy: tg.id });
     events.push({ t: 'impact', id: tg.id, by: n.id, x: tg.x, y: tg.y });
     damage(s, tg, T.npcImpact * tierMul(n), events, 'impact', n);
     reaction(s, n, FB.reactionKey(n.eyes[0], n.eyes[1]), dir.l ? dir : { x: 0, y: 1 }, tg, events); // глаза задают комбинацию
     if (tg.alive) push(s, tg, norm(tg.x - n.x, tg.y - n.y).l > 1 ? norm(tg.x - n.x, tg.y - n.y) : dir, knockAmount(n, tg, 1), events, n);
-    // назад на колонну
-    var back = { x: n.x, y: n.y };
-    n.x = home.x; n.y = home.y; n.facing = Math.PI;
-    events.push({ t: 'jump', id: n.id, segs: [{ from: back, to: home, len: dist(back.x, back.y, home.x, home.y), H: T.npcJumpH, h0: 0 }], mode: 'npc' });
-    events.push({ t: 'land', id: n.id, x: n.x, y: n.y, onColumn: true });
+    // остаётся там, куда прыгнула — на поле (D-105)
     checkEnd(s, events);
   }
 

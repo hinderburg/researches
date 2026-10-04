@@ -311,18 +311,22 @@
 
   // ---------- дикая жаба-NPC (итерация 3) ----------
   function skipRound(s) { var r0 = s.round, g = 0; while (s.round === r0 && s.phase === 'play' && g++ < 10) { var sd = s.turnSide; var f = s.frogs.filter(function (x) { return x.side === sd && Sim.canAct(s, x); })[0]; if (!f) break; Sim.apply(s, { frog: f.id, mode: 'skip' }); } }
-  test('NPC: struggles in the tank, breaks out at round 3, attacks first from round 4', function () {
+  test('NPC: struggles in round 1, breaks out at round 2, attacks first from round 3 and stays on the field', function () {
     var s = sandbox(), n = s.frogs[4], C = AR.column;
     ok(n.caged, 'caged in round 1');
-    skipRound(s); eq(s.round, 2); ok(n.caged, 'still caged in round 2');
-    skipRound(s); eq(s.round, 3); ok(!n.caged, 'released in round 3');
+    skipRound(s); eq(s.round, 2); ok(!n.caged, 'released in round 2');
     near(n.x, (C.x0 + C.x1) / 2, 1, 'on the column');
     var hp = s.frogs.map(function (f) { return f.hp; });
-    var r0 = s.round; skipRound(s); eq(s.round, 4);
+    skipRound(s); eq(s.round, 3);
     ok(s.frogs.some(function (f, i) { return !f.npc && f.hp < hp[i]; }), 'NPC hit somebody at round start');
-    near(n.x, (C.x0 + C.x1) / 2, 1, 'back on the column');
+    ok(Math.abs(n.x - (C.x0 + C.x1) / 2) > 30 || Math.abs(n.y - (C.y0 + C.y1) / 2) > 30, 'stays on the field where it landed');
     FB.ELEMENT_ORDER.indexOf(n.res) >= 0 || ok(false, 'reservoir element');
     ok(n.eyes[0] !== n.eyes[1], 'two different eye colors → a combo');
+  });
+  test('after the breakout the column is a low platform: frogs land on it and jump off', function () {
+    var s = sandbox(), C = AR.column, cx = (C.x0 + C.x1) / 2, cy = (C.y0 + C.y1) / 2; s.frogs[4].caged = false; put(s, 4, 500, 300);
+    put(s, 0, cx, cy + 320);
+    jumpTo(s, 0, cx, cy); near(s.frogs[0].x, cx, 2); near(s.frogs[0].y, cy, 2, 'standing on the column');
   });
   test('NPC: caged frog takes no damage; on the column it can be stomped; weak spot x1.5', function () {
     function stompDmg(el) {

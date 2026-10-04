@@ -312,7 +312,10 @@
     F.grp.visible = !hidden;
     F.label.style.display = hidden || !d.alive ? 'none' : '';
     var hv = (d.z || 0) * T.visH;
-    F.grp.position.set(d.x, 0, d.y);
+    // колонна-площадка после побега NPC: жаба на ней стоит выше пола (D-105)
+    var C = AR.column, onPlat = FB.Sim.npcOut(app.shown) && d.x > C.x0 - 6 && d.x < C.x1 + 6 && d.y > C.y0 - 6 && d.y < C.y1 + 6 && !(f.npc && f.caged);
+    F.plat = (F.plat || 0) + ((onPlat ? T.colLowH * T.visH : 0) - (F.plat || 0)) * Math.min(1, dt * 12);
+    F.grp.position.set(d.x, F.plat, d.y);
     F.lift.position.y = hv + 4; // жаба всегда над лужами, пятнами и тенью (D-073)
     F.lift.rotation.y = -(d.facing || 0);
     F.pitch = (F.pitch || 0) + ((d.pitch || 0) - (F.pitch || 0)) * Math.min(1, dt * 12);
@@ -378,7 +381,7 @@
     if (F.stHtml !== st) { F.stHtml = st; F.label.firstChild.innerHTML = st; }
     var w = Math.max(0, f.hp / f.maxHp) * 100;
     if (F.hpW !== w) { F.hpW = w; F.label.lastChild.firstChild.style.width = w + '%'; }
-    var p = toScreen(d.x, hv + 30, d.y - f.r * 1.2);
+    var p = toScreen(d.x, hv + F.plat + 30, d.y - f.r * 1.2);
     F.label.style.transform = 'translate(' + (p.x | 0) + 'px,' + (p.y | 0) + 'px)';
   }
 
