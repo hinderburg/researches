@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Lilita+One&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?b=2.8.0-1791071788">
+<link rel="stylesheet" href="css/style.css?b=2.9.0-1791073521">
 </head>
 <body>
 <div id="app">
@@ -81,6 +81,18 @@
 
   <div id="banner" class="banner"></div>
 
+  <!-- Совет перед матчем: как выигрывать выбранной парой (D-088) -->
+  <section id="tip" class="tipbox hidden">
+    <div class="tip-card">
+      <div class="tip-h">YOUR TEAM PLAN</div>
+      <div class="tip-ic" id="tip-ic"></div>
+      <div class="tip-n" id="tip-n"></div>
+      <div class="tip-t" id="tip-t"></div>
+      <div class="tip-bar"><i></i></div>
+      <div class="tip-s">tap to start</div>
+    </div>
+  </section>
+
   <section id="result" class="screen hidden">
     <div class="res-title" id="res-title">VICTORY</div>
     <div class="res-teams">
@@ -110,6 +122,7 @@
       <p><b>Jump.</b> Drag back from your frog, aim, release. The arc, bounces, landing ring, knockback and damage show before you let go. Walls bounce you back with a bit of extra range; the glowing <b style="color:#ffb040">Wall Launch Zones</b> add more. The column and crystals block jumps.</p>
       <p><b>Elixir.</b> Each frog carries one element: <b style="color:#ff6a3a">FIRE</b> damage · <b style="color:#7fd4ff">ICE</b> shorter next jump · <b style="color:#7dff4a">POISON</b> damage over time · <b style="color:#ffe23a">LIGHTNING</b> chains to a second enemy.</p>
       <p><b>Reactions.</b> Land on a puddle of another element, or land on your ally to get a <b>Reaction Charge</b> (your element + the ally's) — the next jump fires it anywhere. Steam Veil, Toxic Detonation, Plasma Orb, Toxic Crystal, Static Shell, Neuroshock.</p>
+      <p><b>Surge.</b> Land in a puddle of your own element: an area hit on every enemy nearby — stronger than a normal landing, weaker than a reaction.</p>
       <p><b>Pipes and Drain Nodes.</b> At the start of every round each red pipe pours a puddle next to its grate. Land on a grate to choose the element of its next puddle — the last frog to land decides; otherwise the element is random.</p>
       <p><b>Turn order.</b> The column on the left shows who acts this round; ? means that side picks which frog.</p>
       <p><b>Team trait.</b> Each pair of frogs has its own trait — see the TEAM screen.</p>
@@ -119,11 +132,11 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>window.FB_BUILD = '2.8.0-1791071788'; // tools/deploy.sh ставит сюда метку сборки — браузер не берёт старые файлы из кэша</script>
-<script src="js/config.js?b=2.8.0-1791071788"></script>
-<script src="js/sim.js?b=2.8.0-1791071788"></script>
-<script src="js/ai.js?b=2.8.0-1791071788"></script>
-<script src="js/render3d.js?b=2.8.0-1791071788"></script>
-<script src="js/main.js?b=2.8.0-1791071788"></script>
+<script>window.FB_BUILD = '2.9.0-1791073521'; // tools/deploy.sh ставит сюда метку сборки — браузер не берёт старые файлы из кэша</script>
+<script src="js/config.js?b=2.9.0-1791073521"></script>
+<script src="js/sim.js?b=2.9.0-1791073521"></script>
+<script src="js/ai.js?b=2.9.0-1791073521"></script>
+<script src="js/render3d.js?b=2.9.0-1791073521"></script>
+<script src="js/main.js?b=2.9.0-1791073521"></script>
 </body>
 </html>

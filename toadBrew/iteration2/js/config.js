@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '2.8.0';
+FB.VERSION = '2.9.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -21,6 +21,7 @@ FB.T = {
   // Матч (§32, §33)
   roundCap: 15,
   turnTimeSec: 15,
+  tipSec: 5,                           // совет перед матчем (D-088)
   minPull: 0.1,
 
   // Урон и физика (§10)
@@ -47,6 +48,7 @@ FB.T = {
   shellMul: 0.4, shellKnockR: 210, shellKnock: 70,
   neuroR: 200, neuroTick: 9, neuroJumps: 2,
   sameChargeMul: 1.6,                  // заряд из двух одинаковых элементов — усиленный базовый эффект
+  surgeR: 200, surgePhys: 10, surgeKnock: 40, // ВСПЛЕСК: лужа своего цвета — физ. 10 + полный элемент всем в радиусе 200, отброс 40 (D-089)
 
   // Лужи и Drain Nodes (§11, §25–§28)
   puddleR: 116, nodeR: 34,             // лужи вдвое больше (D-075)
@@ -85,22 +87,23 @@ FB.REACTIONS = {
 FB.reactionKey = function (a, b) { return a < b ? a + '+' + b : b + '+' + a; };
 
 // Четыре стартовые жабы (§6). jump — в единицах U. mass — для отброса. r — радиус в мире.
+// HP подняты по автоплею для ровного винрейта пар (D-090): было 100 / 110 / 120 / 130
 FB.FROGS = {
-  spring:  { name: 'Springjack',   hp: 100, def: 8,  jump: 7.0, mass: 1.0, r: 34, trait: 'Spring Resonator', tdesc: 'Can store and pass on momentum.' },
-  cling:   { name: 'Clingfoot',    hp: 110, def: 10, jump: 6.2, mass: 1.2, r: 36, trait: 'Adhesive Pads',    tdesc: 'Can hold a contact, a surface or a target.' },
-  bellows: { name: 'Bellows Toad', hp: 120, def: 12, jump: 5.6, mass: 1.5, r: 40, trait: 'Alchemical Glands', tdesc: 'Can carry and spread reagents.' },
+  spring:  { name: 'Springjack',   hp: 155, def: 8,  jump: 7.0, mass: 1.0, r: 34, trait: 'Spring Resonator', tdesc: 'Can store and pass on momentum.' },
+  cling:   { name: 'Clingfoot',    hp: 160, def: 10, jump: 6.2, mass: 1.2, r: 36, trait: 'Adhesive Pads',    tdesc: 'Can hold a contact, a surface or a target.' },
+  bellows: { name: 'Bellows Toad', hp: 128, def: 12, jump: 5.6, mass: 1.5, r: 40, trait: 'Alchemical Glands', tdesc: 'Can carry and spread reagents.' },
   spur:    { name: 'Spur Knight',  hp: 130, def: 14, jump: 5.0, mass: 1.6, r: 38, trait: 'Impact Spurs',     tdesc: 'Turns motion and contact into a stronger physical hit.' }
 };
 FB.FROG_ORDER = ['spring', 'cling', 'bellows', 'spur'];
 
 // Командные свойства пар (§7)
 FB.TEAM_TRAITS = {
-  'spring+spur':   { id: 'diving', icon: '☄️',    name: 'DIVING STRIKE',       arche: 'Rushdown',           desc: 'The longer the flight (wall bounces count), the harder the direct hit.' },
-  'bellows+spring':{ id: 'momentum', icon: '🌀',  name: 'ALCHEMICAL MOMENTUM', arche: 'Element combo',      desc: 'Use a puddle with one frog — the other gets a Reaction Charge with that element.' },
-  'cling+spring':  { id: 'catapult', icon: '🏹',  name: 'LIVING CATAPULT',     arche: 'Route building',     desc: 'Your bounce off an ally reaches up to 80% of a jump instead of 50%.' },
-  'bellows+cling': { id: 'reservoir', icon: '⛲', name: 'RESERVOIR CONTROL',   arche: 'Zone control',       desc: 'Puddles you prepare through Drain Nodes spawn 50% larger.' },
-  'cling+spur':    { id: 'pinned', icon: '📌',    name: 'PINNED TARGET',       arche: 'Billiards',          desc: 'One frog marks a target; the other smashes it into a wall or the column for big damage.' },
-  'bellows+spur':  { id: 'grip', icon: '🪝',      name: 'REACTIVE GRIP',       arche: 'Trick shot',         desc: 'Hit a Wall Launch Zone to cling on and fire a second, stronger jump.' }
+  'spring+spur':   { id: 'diving', icon: '☄️',    name: 'DIVING STRIKE',       arche: 'Rushdown',           desc: 'The longer the flight (wall bounces count), the harder the direct hit.', tip: 'Go long. Bounce off walls before the hit: the longer the flight, the harder the direct hit lands. Line up direct hits from far away.' },
+  'bellows+spring':{ id: 'momentum', icon: '🌀',  name: 'ALCHEMICAL MOMENTUM', arche: 'Element combo',      desc: 'Use a puddle with one frog — the other gets a Reaction Charge with that element.', tip: 'Play the puddles. Use a puddle with one frog to hand the other a Reaction Charge, then fire it. Plan which element goes first.' },
+  'cling+spring':  { id: 'catapult', icon: '🏹',  name: 'LIVING CATAPULT',     arche: 'Route building',     desc: 'Your bounce off an ally reaches up to 80% of a jump instead of 50%.', tip: 'Your partner is a springboard. Land on your ally for a charge and a long bounce, and route your jumps through each other.' },
+  'bellows+cling': { id: 'reservoir', icon: '⛲', name: 'RESERVOIR CONTROL',   arche: 'Zone control',       desc: 'Puddles you prepare through Drain Nodes spawn 50% larger.', tip: 'Control the pipes. Land on the grates to choose next round’s puddles: yours spawn 50% larger. Own-color puddles SURGE.' },
+  'cling+spur':    { id: 'pinned', icon: '📌',    name: 'PINNED TARGET',       arche: 'Billiards',          desc: 'One frog marks a target; the other smashes it into a wall or the column for big damage.', tip: 'Billiards. Mark a target with one frog, then smash it into the column or a wall with the other. Watch the knockback arrows.' },
+  'bellows+spur':  { id: 'grip', icon: '🪝',      name: 'REACTIVE GRIP',       arche: 'Trick shot',         desc: 'Hit a Wall Launch Zone to cling on and fire a second, stronger jump.', tip: 'Wall tricks. Cling to the glowing zones on the flanks for a stronger second jump. Every bounce adds x1.2 to the hit.' }
 };
 FB.traitFor = function (a, b) { return FB.TEAM_TRAITS[FB.reactionKey(a, b)] || null; };
 

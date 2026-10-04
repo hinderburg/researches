@@ -280,3 +280,15 @@ button { font-family: inherit; cursor: pointer; }
 .nav { grid-template-columns: 1fr 1.35fr 1fr; gap: 8px; padding-left: max(10px, calc((100% - 520px) / 2)); padding-right: max(10px, calc((100% - 520px) / 2)); }
 .nav .tab { font-size: 13px; padding: 6px 0 7px; }
 .nav .tab .ti { font-size: 24px; }
+
+/* совет перед матчем (D-088) */
+.tipbox { position: absolute; inset: 0; z-index: 12; background: rgba(6,4,2,0.78); display: grid; place-items: center; padding: 20px; animation: tipin 0.3s ease-out; }
+@keyframes tipin { from { opacity: 0; } }
+.tip-card { max-width: 360px; text-align: center; background: linear-gradient(#2a2016, #17110b); border: 2px solid var(--brass); border-radius: 16px; padding: 18px 18px 14px; box-shadow: 0 0 40px rgba(255,200,100,0.25); }
+.tip-h { font-family: var(--font-h); font-weight: 700; font-size: 12px; color: var(--muted); letter-spacing: 2px; }
+.tip-ic { font-size: 44px; margin: 6px auto 2px; width: 72px; height: 72px; display: grid; place-items: center; border-radius: 50%; background: linear-gradient(#2c5ea8, #173564); border: 2px solid #7fc4ff; box-shadow: 0 0 18px rgba(80,160,255,0.6); }
+.tip-n { font-family: var(--font-b); font-size: 24px; color: var(--brass-l); margin-top: 6px; }
+.tip-t { font-size: 15px; font-weight: 800; line-height: 1.4; color: #efe3c8; margin-top: 8px; }
+.tip-bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,0.12); overflow: hidden; margin-top: 14px; }
+.tip-bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #3a8cff, #8fd0ff); }
+.tip-s { font-size: 11px; font-weight: 800; color: var(--muted); margin-top: 6px; }

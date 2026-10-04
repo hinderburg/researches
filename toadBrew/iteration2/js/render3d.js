@@ -639,6 +639,15 @@
       particle(sprite(solidTex(), 0xffffff, false), x, y, 40, { life: 0.5, s0: 30, s1: r * 2, ease: true });
     }
   };
+  // ВСПЛЕСК (D-089): лужа своего цвета взрывается гейзером — столб капель вверх и ударная волна цвета элемента
+  R.surgeFx = function (x, y, color, r) {
+    var i, a, sp;
+    for (i = 0; i < 30; i++) { a = Math.random() * 6.28; sp = 40 + Math.random() * 90; particle(sprite(i % 3 ? dropTex() : glowTex(), color, i % 3 === 0), x, y, 10, { life: 1.1, v: { x: Math.cos(a) * sp, y: 260 + Math.random() * 260, z: Math.sin(a) * sp }, drag: 1.6, s0: 30, s1: 12 }); }
+    particle(flatMesh(dotRingTex(), color, 10, 3, false), x, y, 3, { life: 0.6, s0: 20, s1: r * 2.1, ease: true });
+    particle(flatMesh(dotRingTex(), 0xffffff, 10, 3.3, true), x, y, 3.3, { life: 0.45, s0: 10, s1: r * 1.6, ease: true, a0: 0.7 });
+    particle(sprite(solidTex(), color, false), x, y, 30, { life: 0.4, s0: 30, s1: r * 0.9, ease: true, a0: 0.85 });
+    R.shake(10);
+  };
   // нервный разряд к цели Neuroshock
   R.zap = function (a, b) { R.bolt(a, b, '#c070ff', 30); R.bolt(a, b, '#c6ff00', 36); };
   function stepFx(dt) {

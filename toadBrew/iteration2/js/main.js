@@ -155,7 +155,19 @@
     log('battle', { seed: seed, me: app.picks, myEls: my, bot: botTeam, botEls: botEls });
     buildCards(); buildTraits(); orderKey = '';
     app.busy = true;
-    setTimeout(function () { if (app.s && app.screen === 'battle') { app.queue = ev; app.playing = true; } }, 400);
+    var go = function () { if (app.s && app.screen === 'battle') { app.queue = ev; app.playing = true; } };
+    if (app.auto) setTimeout(go, 400); else showTip(go);
+  }
+
+  // Совет перед матчем на затемнении, 5 с; тап — сразу в бой (D-088)
+  function showTip(done) {
+    var t = FB.traitFor(app.picks[0], app.picks[1]), box = $('tip'), fin = false;
+    $('tip-ic').textContent = t.icon; $('tip-n').textContent = t.name; $('tip-t').textContent = t.tip;
+    box.classList.remove('hidden');
+    var bar = box.querySelector('.tip-bar i'); bar.style.transition = 'none'; bar.style.width = '100%';
+    requestAnimationFrame(function () { bar.style.transition = 'width ' + T.tipSec + 's linear'; bar.style.width = '0%'; });
+    function close() { if (fin) return; fin = true; clearTimeout(app.tipT); box.classList.add('hidden'); box.onclick = null; done(); }
+    box.onclick = close; app.tipT = setTimeout(close, T.tipSec * 1000);
   }
 
   function myTurn() { return app.s && app.s.phase === 'play' && app.s.turnSide === 0 && !app.auto; }
@@ -341,6 +353,7 @@
       case 'reaction': // свой эффект у каждой реакции, без чернильных клякс (D-081)
         app.lastRx = { x: e.x, y: e.y };
         R.reactionFx(e.key, e.x, e.y, { 'fire+ice': T.veilR, 'fire+poison': T.detR, 'lightning+poison': T.neuroR, 'ice+poison': T.crystalLen * 0.6, 'ice+lightning': 110, 'fire+lightning': 160 }[e.key] || 150); R.text(e.x, e.y, e.name, 'rx'); R.shake(8); dur = 0.5; break;
+      case 'surge': R.surgeFx(e.x, e.y, ELC(e.el), e.r); R.text(e.x, e.y, FB.ELEMENTS[e.el].name + ' SURGE', 'rx'); dur = 0.45; break; // лужа своего цвета (D-089)
       case 'veil': app.shown.veils.push(e.veil); dur = 0.3; break;
       case 'veilBounce': {
         var vf = e.from, vt = e.to; dur = d.hidden ? 0.01 : 0.35;
@@ -405,7 +418,7 @@
   // ---------- прицел и превью ----------
   function showAim(f, cmd) {
     var pv = Sim.preview(app.s, cmd, f.side === 0 ? 0 : undefined), a = { segs: [], r: f.r, color: ELC(f.el), labels: [], pushes: [] };
-    var charge = null, allyId = -1;
+    var charge = null, allyId = -1, surged = null;
     var dmg = {}, deaths = {}, info ={ title: FB.ELEMENTS[f.el].icon + ' ' + FB.ELEMENTS[f.el].name, lines: [] }, reacted = null;
     var start = {}; app.s.frogs.forEach(function (x) { start[x.id] = { x: x.x, y: x.y }; });
     pv.events.forEach(function (e) {
@@ -420,6 +433,7 @@
       if (e.t === 'crystal') a.crystal = e.crystal;
       if (e.t === 'veil') a.veilR = T.veilR;
       if (e.t === 'reaction') { reacted = e; if (e.key === 'fire+poison') a.blastR = T.detR; }
+      if (e.t === 'surge') { surged = e; a.blastR = e.r; }
       if (e.t === 'land' && e.id === f.id && e.onAlly !== undefined) allyId = e.onAlly;
       if (e.t === 'charge') { if (e.id === f.id) charge = e; else info.lines.push('Ally gets a charge: ' + (FB.REACTIONS[e.key] ? FB.REACTIONS[e.key].name : 'OVERCHARGE')); }
       if (e.t === 'node') info.lines.push('Drain Node → next round ' + FB.ELEMENTS[e.el].icon + ' puddle');
@@ -432,6 +446,7 @@
     }
     if (!a.land && !a.grip && a.segs.length) { var ls = a.segs[a.segs.length - 1]; a.land = ls.to; }
     if (!a.land && !a.grip) return;
+    if (surged && !reacted) { info.title = FB.ELEMENTS[surged.el].icon + ' ' + FB.ELEMENTS[surged.el].name + ' SURGE'; a.color = ELC(surged.el); a.labels.push({ x: a.land.x, y: a.land.y, text: FB.ELEMENTS[surged.el].name + ' SURGE', cls: 'rx', h: 70 }); info.lines.push('Own-color puddle: area hit'); }
     if (reacted) { info.title = reacted.name; a.color = RXC[reacted.key] || '#ffe080'; a.labels.push({ x: a.land.x, y: a.land.y, text: reacted.name, cls: 'rx', h: 70 }); }
     else if (a.land && allyId < 0) a.elemR = T.elemR;
     // прыжок на свою жабу: дуга цвета будущей реакции, кольцо вокруг напарника, плашка «CHARGE COMBO» (D-072)

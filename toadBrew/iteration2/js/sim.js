@@ -171,6 +171,7 @@
     if (f.charge) return { kind: f.charge[0] === f.charge[1] ? 'over' : 'react', key: FB.reactionKey(f.charge[0], f.charge[1]), from: 'charge', els: f.charge };
     var pd = puddleAt(s, x, y);
     if (pd && pd.el !== f.el) return { kind: 'react', key: FB.reactionKey(f.el, pd.el), from: 'puddle', puddle: pd.id, els: [f.el, pd.el] };
+    if (pd && pd.el === f.el) return { kind: 'surge', el: f.el, from: 'puddle', puddle: pd.id }; // лужа своего цвета — всплеск (D-089)
     return { kind: 'base', el: f.el };
   };
   function puddleAt(s, x, y) { for (var i = 0; i < s.puddles.length; i++) { var p = s.puddles[i]; if (p.active && dist(x, y, p.x, p.y) <= p.r) return p; } return null; }
@@ -379,7 +380,15 @@
           if (pt && pt.alive && !pt.charge) { pt.charge = [pt.el, pd.el]; events.push({ t: 'charge', id: pt.id, els: pt.charge.slice(), key: FB.reactionKey(pt.el, pd.el), via: 'momentum' }); }
         }
       }
-      if (res.kind === 'over') { // одинаковые элементы — усиленный базовый эффект
+      if (res.kind === 'surge') { // ВСПЛЕСК (D-089): удар по площади — сильнее обычной атаки, слабее комбинации
+        events.push({ t: 'surge', id: f.id, el: f.el, x: f.x, y: f.y, r: T.surgeR });
+        enemiesOf(s, f).forEach(function (e) {
+          if (dist(e.x, e.y, f.x, f.y) > T.surgeR + e.r) return;
+          damage(s, e, T.surgePhys * tierMul(f), events, 'surge', f);
+          if (e.alive) elementHit(s, f, e, f.el, 1, events);
+          if (e.alive && e !== enemy) { var sd = norm(e.x - f.x, e.y - f.y); push(s, e, sd.l ? sd : dir, T.surgeKnock, events, f); }
+        });
+      } else if (res.kind === 'over') { // одинаковые элементы — усиленный базовый эффект
         events.push({ t: 'reaction', id: f.id, key: null, name: 'OVERCHARGE', x: f.x, y: f.y });
         enemiesOf(s, f).forEach(function (e) { if (e === enemy || dist(e.x, e.y, f.x, f.y) <= T.elemR * 1.4 + e.r) elementHit(s, f, e, f.el, T.sameChargeMul, events); });
       } else reaction(s, f, res.key, dir, enemy, events);

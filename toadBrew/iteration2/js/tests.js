@@ -124,11 +124,13 @@
     eq(s.round, 2); ok(p.active, 'back next round');
   });
 
-  test('same-element puddle does nothing', function () {
-    var s = sandbox(); var p = s.puddles[1]; p.active = true; eq(p.el, 'fire');
-    put(s, 0, p.x, p.y + 250);
-    var r = jumpTo(s, 0, p.x, p.y);
-    ok(!has(r, 'reaction')); ok(p.active);
+  test('own-color puddle SURGES: area hit, stronger than a splash, puddle used', function () {
+    var s = sandbox(); var p = s.puddles[1]; p.active = true; eq(p.el, 'fire'); p.x = 600; p.y = 1700;
+    put(s, 0, 600, 1950); put(s, 2, 600 + 150, 1700); put(s, 3, 600 - 120, 1760); // обе вражеские — в радиусе, не прямая цель
+    var hp2 = s.frogs[2].hp, r = jumpTo(s, 0, 600, 1700);
+    ok(has(r, 'surge') && !has(r, 'reaction'), 'surge, not a combo'); ok(!p.active, 'puddle used');
+    var d2 = hp2 - s.frogs[2].hp, splash = Math.round(T.fireDmg * T.elemSplash * (1 - FB.FROGS.bellows.def / 100));
+    ok(d2 > splash * 1.8, 'surge ' + d2 + ' vs splash ' + splash); ok(s.frogs[3].hp < s.frogs[3].maxHp, 'both enemies hit');
   });
 
   test('pipes: every round each pipe pours a puddle; uncharged pipes pick a random element', function () {
