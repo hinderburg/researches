@@ -96,7 +96,7 @@
     $('reactions').innerHTML = Object.keys(FB.REACTIONS).map(function (key) {
       var Rx = FB.REACTIONS[key], els = key.split('+'), on = key === charge || arena[key];
       return '<div class="rx' + (on ? ' on' : '') + '"><div class="rf">' + els.map(function (e) { return FB.ELEMENTS[e].icon; }).join(' + ') + '</div><div class="rn">' + Rx.name + '</div><div class="rd">' + Rx.desc + '</div>' +
-        (key === charge ? '<div class="rv">✔ Reaction Charge: land on your ally</div>' : '') + (arena[key] ? '<div class="rv">✔ Arena puddle</div>' : '') + '</div>';
+        (key === charge ? '<div class="rv">✔ Reaction Charge: land on your ally</div>' : '') + (arena[key] ? '<div class="rv">✔ Charge from an arena puddle</div>' : '') + '</div>';
     }).join('');
   }
   function elDesc(e) {
@@ -457,14 +457,15 @@
     if (reacted) { info.title = reacted.name; a.color = RXC[reacted.key] || '#ffe080'; a.labels.push({ x: a.land.x, y: a.land.y, text: reacted.name, cls: 'rx', h: 70 }); }
     else if (a.land && allyId < 0) a.elemR = T.elemR;
     // прыжок на свою жабу: дуга цвета будущей реакции, кольцо вокруг напарника, плашка «CHARGE COMBO» (D-072)
-    if (charge && allyId >= 0) {
+    if (charge && (allyId >= 0 || charge.via === 'puddle')) { // заряд — от союзника или из лужи (D-100)
+      var cpos = allyId >= 0 ? start[allyId] : a.land;
       var cn = FB.REACTIONS[charge.key] ? FB.REACTIONS[charge.key].name : 'OVERCHARGE';
       var ic = FB.ELEMENTS[charge.els[0]].icon + ' + ' + FB.ELEMENTS[charge.els[1]].icon;
       a.color = RXC[charge.key] || '#ffe080';
-      a.ally = { x: start[allyId].x, y: start[allyId].y, r: app.s.frogs[allyId].r, color: a.color };
-      a.labels.push({ x: start[allyId].x, y: start[allyId].y, text: 'CHARGE<br>' + ic + ' → ' + cn, cls: 'charge', h: 90 });
+      if (allyId >= 0) a.ally = { x: cpos.x, y: cpos.y, r: app.s.frogs[allyId].r, color: a.color };
+      a.labels.push({ x: cpos.x, y: cpos.y, text: 'CHARGE<br>' + ic + ' → ' + cn, cls: 'charge', h: 90 });
       info.title = '⚡ CHARGE COMBO'; info.lines.unshift(ic + ' → ' + cn + ' on the next turn, anywhere');
-      if (f.side === 0) notice('⚡ CHARGE COMBO', ic + ' → <b>' + cn + '</b>', "Fires on this frog's next turn, wherever it lands", a.color);
+      if (f.side === 0) notice('⚡ CHARGE COMBO', ic + ' → <b>' + cn + '</b>', allyId >= 0 ? "Fires on this frog's next turn, wherever it lands" : 'From the puddle: fires on the next jump, anywhere', a.color);
     } else notice(null);
     Object.keys(dmg).forEach(function (id) {
       var p = start[id]; a.labels.push({ x: p.x, y: p.y, text: (deaths[id] ? 'KO ' : '') + '−' + dmg[id], cls: +id === f.id ? 'self' : 'dmg' });

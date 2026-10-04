@@ -170,7 +170,7 @@
     if (skipCharge) return { kind: 'base', el: f.el }; // доп. прыжок от союзника: никаких реакций — ни заряда, ни лужи (D-080)
     if (f.charge) return { kind: f.charge[0] === f.charge[1] ? 'over' : 'react', key: FB.reactionKey(f.charge[0], f.charge[1]), from: 'charge', els: f.charge };
     var pd = puddleAt(s, x, y);
-    if (pd && pd.el !== f.el) return { kind: 'react', key: FB.reactionKey(f.el, pd.el), from: 'puddle', puddle: pd.id, els: [f.el, pd.el] };
+    if (pd && pd.el !== f.el) return { kind: 'charge', key: FB.reactionKey(f.el, pd.el), from: 'puddle', puddle: pd.id, els: [f.el, pd.el] }; // лужа другого цвета заряжает жабу (D-100)
     if (pd && pd.el === f.el) return { kind: 'surge', el: f.el, from: 'puddle', puddle: pd.id }; // лужа своего цвета — всплеск (D-089)
     return { kind: 'base', el: f.el };
   };
@@ -365,12 +365,12 @@
       if (s.traits[f.side] === 'grip' && o.bounces) imp *= Math.pow(T.gripImpactMul, o.bounces); // Reactive Grip: каждый отскок ×1.3 (D-082)
       events.push({ t: 'impact', id: enemy.id, by: f.id, x: enemy.x, y: enemy.y });
       damage(s, enemy, imp, events, 'impact', f);
-      if (enemy.alive && res.kind === 'base') elementHit(s, f, enemy, f.el, 1, events);
+      if (enemy.alive && (res.kind === 'base' || res.kind === 'charge')) elementHit(s, f, enemy, f.el, 1, events);
       if (enemy.alive && s.traits[f.side] === 'pinned') {
         if (enemy.pinnedBy < 0 || s.frogs[enemy.pinnedBy].side !== f.side) { enemy.pinnedBy = f.id; events.push({ t: 'status', id: enemy.id, s: 'pinned' }); }
       }
     }
-    if (res.kind === 'base' && !o.drop) // элемент по поверхности задевает врагов рядом
+    if ((res.kind === 'base' || res.kind === 'charge') && !o.drop) // элемент по поверхности задевает врагов рядом
       enemiesOf(s, f).forEach(function (e) { if (e !== enemy && dist(e.x, e.y, f.x, f.y) <= T.elemR + e.r * 0.5) { elementHit(s, f, e, f.el, T.elemSplash, events); knockFrom(s, e, f, T.kbSplash, events, f); } });
 
     // Drain Node (§26, §28): последний элемент определяет будущую лужу
@@ -388,7 +388,9 @@
           if (pt && pt.alive && !pt.charge) { pt.charge = [pt.el, pd.el]; events.push({ t: 'charge', id: pt.id, els: pt.charge.slice(), key: FB.reactionKey(pt.el, pd.el), via: 'momentum' }); }
         }
       }
-      if (res.kind === 'surge') { // ВСПЛЕСК (D-091): небольшая область + 6 осколков, траектория по элементу
+      if (res.kind === 'charge') { // заряд из лужи: реакция — следующим прыжком, где угодно (D-100)
+        f.charge = res.els.slice(); events.push({ t: 'charge', id: f.id, els: f.charge.slice(), key: res.key, via: 'puddle' });
+      } else if (res.kind === 'surge') { // ВСПЛЕСК (D-091): небольшая область + 6 осколков, траектория по элементу
         var hitBy = {}, shards = surgeShards(s, f, dir);
         events.push({ t: 'surge', id: f.id, el: f.el, x: f.x, y: f.y, r: T.surgeR, shards: shards });
         enemiesOf(s, f).forEach(function (e) {

@@ -114,14 +114,17 @@
     eq(s.veils.length, 1);
   });
 
-  test('puddle of another element → reaction, puddle used until next round', function () {
+  test('puddle of another element → Reaction Charge (no instant reaction); next jump fires it; puddle back next round', function () {
     var s = sandbox(); var p = s.puddles[0]; p.active = true; // poison
     put(s, 0, p.x, p.y + 250);
     var r = jumpTo(s, 0, p.x, p.y);
-    var re = ev(r, 'reaction')[0];
-    ok(re && re.key === 'fire+poison', 'toxic detonation'); ok(!p.active, 'used');
+    ok(!has(r, 'reaction'), 'no instant reaction'); ok(!p.active, 'used');
+    eq(s.frogs[0].charge.join('+'), 'fire+poison', 'charged from the puddle');
     for (var i = 0; i < 3; i++) { var side = s.turnSide; Sim.apply(s, { frog: s.frogs.filter(function (x) { return x.side === side && Sim.canAct(s, x); })[0].id, mode: 'skip' }); }
     eq(s.round, 2); ok(p.active, 'back next round');
+    while (!Sim.canAct(s, s.frogs[0])) { var sd = s.turnSide; Sim.apply(s, { frog: s.frogs.filter(function (x) { return x.side === sd && Sim.canAct(s, x); })[0].id, mode: 'skip' }); }
+    var r2 = jumpTo(s, 0, s.frogs[0].x + 250, s.frogs[0].y + 400); // в пустое место
+    var re = ev(r2, 'reaction')[0]; ok(re && re.key === 'fire+poison', 'charge fires on the next jump');
   });
 
   test('own-color puddle SURGES: area hit, stronger than a splash, puddle used', function () {
