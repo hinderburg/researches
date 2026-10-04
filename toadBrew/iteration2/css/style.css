@@ -306,3 +306,4 @@ button { font-family: inherit; cursor: pointer; }
 .tring.low .fg { stroke: #ff5a3a; filter: drop-shadow(0 0 4px rgba(255,90,58,0.9)); }
 .tring.low span { color: #ffb0a0; animation: tlow 0.5s ease-in-out infinite alternate; }
 @keyframes tlow { to { transform: scale(1.18); } }
+.ftext.big { font-size: 28px; color: #ffd0c0; }

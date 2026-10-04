@@ -228,7 +228,7 @@
     var r = jumpTo(s, 0, 160, (z.y0 + z.y1) / 2);
     ok(r.continues && has(r, 'grip'), 'gripped'); eq(s.pending.kind, 'grip'); eq(s.turnSide, 0);
     ok(!Sim.apply(s, { frog: 1, mode: 'jump', dx: 0, dy: -100 }).ok, 'other frog waits');
-    ok(Sim.rangeFor(s, s.frogs[0], 'grip') > s.frogs[0].jump * 1.2);
+    ok(Sim.rangeFor(s, s.frogs[0], 'grip') > s.frogs[0].jump * 1.05, 'longer 2nd jump');
     put(s, 2, s.frogs[0].x + 115, s.frogs[0].y); // колонна рядом — цель между стеной и колонной
     var r2 = jumpTo(s, 0, s.frogs[0].x + 115, s.frogs[0].y, "grip");
     ok(r2.ok && has(r2, 'impact')); eq(s.turnSide, 1, 'activation over');

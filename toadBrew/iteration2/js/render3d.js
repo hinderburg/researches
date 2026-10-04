@@ -580,7 +580,7 @@
   };
   R.text = function (x, y, txt, cls) {
     var el = document.createElement('div'); el.className = 'ftext ' + (cls || ''); el.innerHTML = txt; labels.appendChild(el);
-    fxList.push({ el: el, t: 0, life: 1.1, x: x, y: y });
+    var fx = { el: el, t: 0, life: 1.1, x: x, y: y }; fxList.push(fx); return fx;
   };
   // ---------- эффекты реакций (D-081): свой характер у каждой, без чернильных клякс — не путаются с лужами ----------
   var texCache = {};

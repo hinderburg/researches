@@ -202,6 +202,7 @@
   }
 
   function execute(cmd) {
+    app.dmgPop = {}; // сумма урона по жабе за эту команду (D-098)
     var res = Sim.apply(app.s, cmd);
     log('cmd', { cmd: { frog: cmd.frog, mode: cmd.mode || 'jump', dx: cmd.dx && Math.round(cmd.dx), dy: cmd.dy && Math.round(cmd.dy) }, ok: res.ok, why: res.why });
     app.aimCmd = null; R.setAim(null); $('gripbar').classList.add('hidden'); notice(null);
@@ -336,7 +337,13 @@
       case 'hit': {
         var hf = SF(e.id); hf.hp = Math.max(0, hf.hp - e.dmg); d.flash = 1;
         var cls = { fire: 'fire', ice: 'ice', poison: 'poison', lightning: 'light', slam: 'slam', neuro: 'light' }[e.src] || 'dmg';
-        if (!d.hidden) R.text(d.x, d.y, '−' + e.dmg, cls); dur = 0.06; break;
+        // одна растущая цифра на жабу за ход — итог совпадает с превью (D-098)
+        if (!d.hidden) {
+          var dp = (app.dmgPop = app.dmgPop || {})[e.id];
+          if (dp && dp.fx.t < dp.fx.life - 0.05) { dp.total += e.dmg; dp.fx.el.innerHTML = '−' + dp.total; dp.fx.el.className = 'ftext dmg big'; dp.fx.t = Math.min(dp.fx.t, 0.15); dp.fx.x = d.x; dp.fx.y = d.y; }
+          else app.dmgPop[e.id] = { fx: R.text(d.x, d.y, '−' + e.dmg, cls), total: e.dmg };
+        }
+        dur = 0.06; break;
       }
       case 'push': {
         var f0 = e.from, t0 = e.to; dur = 0.32;

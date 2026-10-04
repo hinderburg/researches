@@ -2,6 +2,12 @@
 
 Формат: [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). Версия — в `js/config.js` (`FB.VERSION`), она же видна в заголовке вкладки. Ссылки вида D-xxx ведут в [DECISIONS.md](DECISIONS.md), §N — в [GDD.md](GDD.md).
 
+## [2.13.0] — 2026-10-04 · баланс пар, урон в превью
+
+### Изменено
+- **Баланс пар**: Reactive Grip ×1.1, Diving Strike до ×1.7, лужи Reservoir ×2, HP Clingfoot 175 / Bellows 140 / Spur Knight 115 — все пары 40–60% (D-099).
+- **Одна растущая цифра урона** на жабу за ход — совпадает с превью (D-098).
+
 ## [2.12.0] — 2026-10-04 · отброс от любого урона
 
 ### Изменено
