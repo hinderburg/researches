@@ -323,7 +323,8 @@
         end = function () {
           d.z = zTop; d.pitch = 0; d.stretch = 0; setPose(d, e.perch ? 'perch' : 'land');
           if (e.perch) { var A = D(e.onAlly); A.pose = 'squash'; A.poseT = 0; A.dark = 1; } // нижняя поджимает лапы, на ней тень верхней
-          if (e.onEnemy !== undefined) d.landAt = { x: e.x, y: e.y }; // вернётся сюда после подскока d.squash = 0.28; R.shake(4); SF(e.id).x = e.x; SF(e.id).y = e.y;
+          if (e.onEnemy !== undefined) d.landAt = { x: e.x, y: e.y }; // вернётся сюда после подскока
+          d.squash = 0.28; R.shake(4); SF(e.id).x = e.x; SF(e.id).y = e.y;
           if (!d.hidden) { var c = ELC(SF(e.id).el); R.splat(e.x, e.y, c, SF(e.id).r * 3.4); R.burst(e.x, e.y, c, 10, 6); }
         };
         break;
