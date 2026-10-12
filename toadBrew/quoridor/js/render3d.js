@@ -960,6 +960,19 @@
     if (before) { var after = R.toWorld(sx, sy); if (after) { cam.tx += before.x - after.x; cam.ty += before.y - after.y; } }
     cam.user = true; clampCam();
   };
+  // Перелёт камеры к группе точек (D-131): все попадают в кадр с запасом под HUD сверху и снизу
+  R.frameAll = function (pts, hudTopPx, hudBotPx) {
+    if (!pts.length || !cv) return;
+    var x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9, pad = 110;
+    pts.forEach(function (p) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); });
+    var hpx = cv.clientHeight || 1, top = hudTopPx || 0, bot = hudBotPx || 0, frac = Math.max(0.3, (hpx - top - bot) / hpx);
+    var tf = Math.tan(cam.fov * Math.PI / 360), bw = x1 - x0 + pad * 2, bh = (y1 - y0 + pad * 2) / Math.cos(cam.tilt);
+    var fracW = Math.max(0.4, ((cv.clientWidth || 1) - 130) / (cv.clientWidth || 1)); // слева полоса последовательности, справа зум
+    var d = Math.max(bh / (2 * tf * frac), bw / (2 * tf * camera.aspect * fracW));
+    d = Math.max(cam.minD * 1.4, Math.min(cam.maxD, d));
+    var shift = (bot - top) / 2 * (2 * d * tf / hpx); // свободная середина экрана смещена — сдвигаем цель
+    cam.follow = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 + shift }; cam.td = d; cam.user = false;
+  };
   R.focus = function (x, y, zoomTo) { cam.follow = { x: x, y: y }; cam.user = false; if (zoomTo) cam.td = Math.max(cam.minD, Math.min(cam.maxD, cam.maxD * zoomTo)); };
   function clampCam() {
     var tf = Math.tan(cam.fov * Math.PI / 360), visH = 2 * cam.d * tf, visW = visH * camera.aspect;

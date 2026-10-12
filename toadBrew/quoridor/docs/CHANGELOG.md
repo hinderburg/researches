@@ -2,6 +2,11 @@
 
 Формат: [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). Версия — в `js/config.js` (`FB.VERSION`), она же видна в заголовке вкладки. Ссылки вида D-xxx ведут в [DECISIONS.md](DECISIONS.md), §N — в [GDD.md](GDD.md). Записи до 5.0.0 ссылаются на [DECISIONS-v3-arena2.md](DECISIONS-v3-arena2.md) и [GDD-v3-arena2.md](GDD-v3-arena2.md).
 
+## [5.3.1] — 2026-10-12
+
+### Изменено
+- На смене хода камера перелетает так, чтобы в кадре были все жабы стороны, которая ходит (D-131).
+
 ## [5.3.0] — 2026-10-12
 
 ### Добавлено

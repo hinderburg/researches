@@ -312,12 +312,19 @@
       case 'ret': SF(e.id).ret = e.ret; break;
       case 'tick': { var tf = SF(e.id); tf.ch = e.ch; tf.el = e.el; tf.empty = false; if (e.fresh) { R.ring(d.x, d.y, 60, ELC(e.el)); if (!d.hidden && tf.side === 0) R.text(d.x, d.y, FB.ELEMENTS[e.el].icon + ' NEW TANK', 'charge'); } dur = e.fresh ? 0.12 : 0.03; break; }
       case 'flask': { var fk = AR.flasks[1 - e.side]; R.reactionFx('fire+poison', fk.x, fk.y, 220); R.text(fk.x, fk.y, 'FLASK!', 'ko'); R.shake(20); dur = 0.9; break; }
-      case 'turn': app.shown.turnSide = e.side; app.shown.turn = e.turn; app.shown.recalls = 0; banner(e.side === 0 ? 'YOUR TURN' : 'ENEMY TURN', e.side === 0 ? 'p' : 'b', 'Turn ' + e.turn); dur = 0.55; break;
+      case 'turn': app.shown.turnSide = e.side; app.shown.turn = e.turn; app.shown.recalls = 0; frameSide(e.side); banner(e.side === 0 ? 'YOUR TURN' : 'ENEMY TURN', e.side === 0 ? 'p' : 'b', 'Turn ' + e.turn); dur = 0.55; break;
       case 'label': if (d) R.text(d.x, d.y, e.text, 'gold'); dur = 0.25; break;
       case 'skip': if (d) R.text(d.x, d.y, 'PASS', 'dmg'); dur = 0.25; break;
       case 'over': dur = 0.3; break;
     }
     return dur > 0 ? { e: e, t: 0, dur: dur, upd: upd, end: end } : (end && end(), null);
+  }
+
+  // Перелёт камеры на новый ход (D-131): в кадре все жабы стороны, которая ходит (итоговые позиции — после возвратов домой)
+  function frameSide(side) {
+    var pts = app.s.frogs.filter(function (f) { return f.side === side && f.alive; }).map(function (f) { return { x: f.x, y: f.y }; });
+    var top = document.querySelector('#hud .top'), bot = $('bottom');
+    R.frameAll(pts, top ? top.getBoundingClientRect().bottom + 30 : 120, bot ? bot.offsetHeight + 10 : 200);
   }
 
   function stepPlayback(dt) {
