@@ -367,6 +367,12 @@
     var ring = new THREE.Mesh(new THREE.RingGeometry(f.r * 0.92, f.r * 1.12, 40), new THREE.MeshBasicMaterial({ color: f.side === 0 ? 0x4aa3ff : 0xff5a4a, transparent: true, opacity: 0.85, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2; ring.position.y = 2.6; ring.renderOrder = 4;
     grp.add(ring);
+    // шкала зарядов (D-132): три дуги цвета элемента вокруг жабы — сколько осталось, видно сверху с любого зума
+    var segs = [];
+    for (var sk = 0; sk < T.tank; sk++) {
+      var gap = 0.16, th = Math.PI * 2 / T.tank, sm = new THREE.Mesh(new THREE.RingGeometry(f.r * 1.42, f.r * 1.72, 20, 1, Math.PI / 2 + sk * th + gap, th - gap * 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false }));
+      sm.rotation.x = -Math.PI / 2; sm.position.y = 2.9; sm.renderOrder = 5; grp.add(sm); segs.push(sm);
+    }
     var glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(f.el ? FB.ELEMENTS[f.el].color : '#888888'), transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
     glow.scale.set(f.r * 2.2, f.r * 2.2, 1); glow.position.y = 14; lift.add(glow);
     var shell = new THREE.Mesh(new THREE.IcosahedronGeometry(f.r * 1.5, 0), new THREE.MeshLambertMaterial({ color: 0xd8f6ff, emissive: new THREE.Color(0x3a8aa8), transparent: true, opacity: 0.55, depthWrite: false }));
@@ -375,7 +381,7 @@
     label.innerHTML = '<div class="fl-st"></div><div class="fl-hp"><i></i></div>';
     labels.appendChild(label);
     scene.add(grp);
-    return { grp: grp, lift: lift, root: root, mat: mat, limbs: limbs, order: order, rootA: rig.flip ? Math.PI : 0, blob: blob, ring: ring, glow: glow, shell: shell, label: label, el: '?', pose: 'idle', kind: f.kind, r: f.r };
+    return { grp: grp, lift: lift, root: root, mat: mat, limbs: limbs, order: order, rootA: rig.flip ? Math.PI : 0, blob: blob, ring: ring, segs: segs, glow: glow, shell: shell, label: label, el: '?', pose: 'idle', kind: f.kind, r: f.r };
   }
   var _glow = null;
   function glowTex() {
@@ -432,6 +438,13 @@
     F.lift.rotation.y = -(d.facing || 0) + 0.55 * hw * Math.sin(hp * Math.PI * 5);
     F.lift.scale.set(F.sc * (1 - F.st * 0.45) * (1 + jel) * pop, F.sc * pop, F.sc * (1 + F.st) * (1 - jel) * pop); // вытягивается вдоль тела в полёте
     F.ring.visible = d.alive; F.ring.material.opacity = d.sel ? 1 : 0.6;
+    var sc2 = f.el && !f.empty ? FB.ELEMENTS[f.el].color : '#6a645c', fk = d.fillT > 0 ? d.fillK : -1;
+    F.segs.forEach(function (sm, k) {
+      var on = k < f.ch;
+      sm.material.color.set(sc2); sm.material.opacity = on ? 0.95 : 0.22;
+      var pul = k === fk ? 1 + 0.45 * d.fillT : (on ? 1 + 0.04 * Math.sin(t * 4 + k) : 1); sm.scale.set(pul, pul, 1); // новый заряд вспыхивает
+      sm.visible = d.alive && !hidden;
+    });
     F.ring.scale.setScalar(d.sel ? 1.12 + Math.sin(t * 6) * 0.05 : 1);
     if (!d.alive) { F.mat.color.setRGB(0.35, 0.33, 0.32); F.glow.visible = false; }
     else {
@@ -440,6 +453,7 @@
       F.mat.color.setRGB((1 + fl * 2) * sh * iz[0], (1 + fl * 1.2) * sh * iz[1], (1 + fl * 1.2) * sh * iz[2]);
       F.mat.emissive && F.mat.emissive.setRGB(fl * 0.6, fl * 0.2, fl * 0.2);
       F.glow.visible = !!F.el; F.glow.material.opacity = (0.25 + 0.2 * Math.sin(t * 3 + f.id * 1.7)) * (0.5 + 0.5 * f.ch / T.tank);
+      if (d.fillT > 0) { F.glow.material.opacity += d.fillT * 0.7; F.glow.scale.setScalar(f.r * (2.2 + d.fillT * 1.6)); } else F.glow.scale.setScalar(f.r * 2.2); // резервуар наполняется (D-132)
     }
     F.shell.visible = !!f.frozen && d.alive; // закованная в лёд — ледяная глыба (D-125)
     if (F.shell.visible) { F.shell.material.opacity = 0.55 + 0.08 * Math.sin(t * 2 + f.id); F.shell.position.y = f.r * 0.9; F.shell.rotation.y = 0.4; }
@@ -447,7 +461,7 @@
     var st = '';
     if (f.frozen) st = '<span class="emp ice">🧊 FROZEN</span>';
     else if (f.empty) st = '<span class="emp">EMPTY ⟲' + f.ret + '</span>';
-    else if (f.el) { st = '<span class="eli" style="color:' + FB.ELEMENTS[f.el].color + '">' + FB.ELEMENTS[f.el].icon + '</span><span class="pips">'; for (var pi = 0; pi < T.tank; pi++) st += '<i class="' + (pi < f.ch ? 'on' : '') + '" style="--c:' + FB.ELEMENTS[f.el].color + '"></i>'; st += '</span>'; }
+    else if (f.el) { st = '<span class="elb" style="--c:' + FB.ELEMENTS[f.el].color + '">' + FB.ELEMENTS[f.el].icon + '</span><span class="pips">'; for (var pi = 0; pi < T.tank; pi++) st += '<i class="' + (pi < f.ch ? 'on' : '') + '" style="--c:' + FB.ELEMENTS[f.el].color + '"></i>'; st += '</span>'; } // крупный бейдж элемента и точки зарядов (D-132)
     else st = '<span class="emp">⏳</span>';
     if (f.chill && !f.frozen) st += '<span class="emp ice">❄</span>';
     if (F.stHtml !== st) { F.stHtml = st; F.label.firstChild.innerHTML = st; }

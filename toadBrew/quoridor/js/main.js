@@ -310,7 +310,17 @@
       case 'spend': SF(e.id).ch = e.ch; break;
       case 'empty': SF(e.id).empty = true; SF(e.id).ret = e.ret; R.text(d.x, d.y, 'EMPTY', 'dmg'); dur = 0.2; break;
       case 'ret': SF(e.id).ret = e.ret; break;
-      case 'tick': { var tf = SF(e.id); tf.ch = e.ch; tf.el = e.el; tf.empty = false; if (e.fresh) { R.ring(d.x, d.y, 60, ELC(e.el)); if (!d.hidden && tf.side === 0) R.text(d.x, d.y, FB.ELEMENTS[e.el].icon + ' NEW TANK', 'charge'); } dur = e.fresh ? 0.12 : 0.03; break; }
+      case 'tick': { // зарядка на базе (D-132): струйка эликсира из своей фляги в резервуар, заряд добавляется, когда долетит
+        var tf = SF(e.id), fk2 = AR.flasks[tf.side], col = ELC(e.el), dd = d;
+        tf.el = e.el; tf.empty = false;
+        if (e.fresh) tf.ch = 0;
+        R.pour({ x: fk2.x, y: fk2.y }, { x: d.x, y: d.y }, col, 0.28, function () {
+          tf.ch = e.ch; dd.fillT = 1; dd.fillK = e.ch - 1; dd.squash = 0.25; dd.flash = Math.max(dd.flash || 0, 0.3);
+          R.ring(dd.x, dd.y, 70, col, 0.5);
+          if (!dd.hidden) R.text(dd.x, dd.y, e.fresh ? FB.ELEMENTS[e.el].icon + ' NEW TANK' : '+1 ' + FB.ELEMENTS[e.el].icon, 'charge');
+        });
+        dur = 0.36; break;
+      }
       case 'flask': { var fk = AR.flasks[1 - e.side]; R.reactionFx('fire+poison', fk.x, fk.y, 220); R.text(fk.x, fk.y, 'FLASK!', 'ko'); R.shake(20); dur = 0.9; break; }
       case 'turn': app.shown.turnSide = e.side; app.shown.turn = e.turn; app.shown.recalls = 0; frameSide(e.side); banner(e.side === 0 ? 'YOUR TURN' : 'ENEMY TURN', e.side === 0 ? 'p' : 'b', 'Turn ' + e.turn); dur = 0.55; break;
       case 'label': if (d) R.text(d.x, d.y, e.text, 'gold'); dur = 0.25; break;
@@ -610,7 +620,7 @@
       if (!app.paused) stepPlayback(dt * app.speed);
       app.s.frogs.forEach(function (f) {
         var d = D(f.id); if (!d) return;
-        d.flash = Math.max(0, (d.flash || 0) - dt * 4); d.hitT = Math.max(0, (d.hitT || 0) - dt * app.speed); d.squash = Math.max(0, (d.squash || 0) - dt * 0.6);
+        d.flash = Math.max(0, (d.flash || 0) - dt * 4); d.hitT = Math.max(0, (d.hitT || 0) - dt * app.speed); d.fillT = Math.max(0, (d.fillT || 0) - dt * 1.6); d.squash = Math.max(0, (d.squash || 0) - dt * 0.6);
         d.poseT += dt; if (d.pose === 'land' && d.poseT > 0.35) setPose(d, 'idle');
         if (d.hop) {
           d.hop.t += dt * app.speed; var hk = Math.min(1, d.hop.t / d.hop.dur);

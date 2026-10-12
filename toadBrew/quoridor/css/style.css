@@ -367,3 +367,11 @@ button { font-family: inherit; cursor: pointer; }
 .tbadges.enemy .tb { padding: 1px; } .tbadges.enemy .tb b { display: none; }
 .flabel .emp.ice, .fcard .emp.ice { color: #bfefff; }
 .ftext.ice, .alabel.ice { color: #bfefff; }
+/* подпись над жабой: крупный бейдж элемента и точки зарядов (D-132) */
+.flabel { width: 64px; margin-left: -32px; margin-top: -30px; }
+.flabel .fl-st { display: flex; align-items: center; justify-content: center; gap: 3px; margin-bottom: 2px; }
+.flabel .elb { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; background: rgba(12,8,4,0.85); border: 2px solid var(--c); box-shadow: 0 0 8px var(--c); }
+.flabel .pips { gap: 3px; background: rgba(12,8,4,0.7); border-radius: 8px; padding: 2px 4px; }
+.flabel .pips i { width: 10px; height: 10px; border-width: 2px; }
+.flabel .pips i.on { box-shadow: 0 0 6px var(--c), inset 0 -2px 0 rgba(0,0,0,0.25); }
+.flabel .emp { font-size: 10px; padding: 1px 4px; }
