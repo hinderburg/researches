@@ -338,7 +338,7 @@
     grp.add(ring);
     var glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(f.el ? FB.ELEMENTS[f.el].color : '#888888'), transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
     glow.scale.set(f.r * 2.2, f.r * 2.2, 1); glow.position.y = 14; lift.add(glow);
-    var shell = new THREE.Mesh(new THREE.SphereGeometry(f.r * 1.45, 24, 16), new THREE.MeshBasicMaterial({ color: 0x9fe0ff, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending }));
+    var shell = new THREE.Mesh(new THREE.IcosahedronGeometry(f.r * 1.5, 0), new THREE.MeshLambertMaterial({ color: 0xd8f6ff, emissive: new THREE.Color(0x3a8aa8), transparent: true, opacity: 0.55, depthWrite: false }));
     shell.visible = false; lift.add(shell);
     var label = document.createElement('div'); label.className = 'flabel ' + (f.side === 0 ? 'mine' : 'enemy');
     label.innerHTML = '<div class="fl-st"></div><div class="fl-hp"><i></i></div>';
@@ -405,16 +405,20 @@
     if (!d.alive) { F.mat.color.setRGB(0.35, 0.33, 0.32); F.glow.visible = false; }
     else {
       var fl = d.flash || 0; F.dk = (F.dk || 0) + ((d.dark ? 1 : 0) - (F.dk || 0)) * Math.min(1, dt * 8); var sh = 1 - F.dk * 0.5; // тень от жабы сверху (D-083)
-      F.mat.color.setRGB((1 + fl * 2) * sh, (1 + fl * 1.2) * sh, (1 + fl * 1.2) * sh);
+      var iz = f.frozen ? [0.6, 0.85, 1.25] : [1, 1, 1]; // во льду — голубая (D-125)
+      F.mat.color.setRGB((1 + fl * 2) * sh * iz[0], (1 + fl * 1.2) * sh * iz[1], (1 + fl * 1.2) * sh * iz[2]);
       F.mat.emissive && F.mat.emissive.setRGB(fl * 0.6, fl * 0.2, fl * 0.2);
       F.glow.visible = !!F.el; F.glow.material.opacity = (0.25 + 0.2 * Math.sin(t * 3 + f.id * 1.7)) * (0.5 + 0.5 * f.ch / T.tank);
     }
-    F.shell.visible = false;
+    F.shell.visible = !!f.frozen && d.alive; // закованная в лёд — ледяная глыба (D-125)
+    if (F.shell.visible) { F.shell.material.opacity = 0.55 + 0.08 * Math.sin(t * 2 + f.id); F.shell.position.y = f.r * 0.9; F.shell.rotation.y = 0.4; }
     // подпись над жабой (§37): элемент и заряды ●●○, пустая — EMPTY и отсчёт возврата
     var st = '';
-    if (f.empty) st = '<span class="emp">EMPTY ⟲' + f.ret + '</span>';
+    if (f.frozen) st = '<span class="emp ice">🧊 FROZEN</span>';
+    else if (f.empty) st = '<span class="emp">EMPTY ⟲' + f.ret + '</span>';
     else if (f.el) { st = '<span class="eli" style="color:' + FB.ELEMENTS[f.el].color + '">' + FB.ELEMENTS[f.el].icon + '</span><span class="pips">'; for (var pi = 0; pi < T.tank; pi++) st += '<i class="' + (pi < f.ch ? 'on' : '') + '" style="--c:' + FB.ELEMENTS[f.el].color + '"></i>'; st += '</span>'; }
     else st = '<span class="emp">⏳</span>';
+    if (f.chill && !f.frozen) st += '<span class="emp ice">❄</span>';
     if (F.stHtml !== st) { F.stHtml = st; F.label.firstChild.innerHTML = st; }
     var w = Math.max(0, f.hp / f.maxHp) * 100;
     if (F.hpW !== w) { F.hpW = w; F.label.lastChild.firstChild.style.width = w + '%'; }
@@ -435,7 +439,7 @@
       x.fillStyle = g; x.fill();
       x.save(); rrect(x, 7, 7, 114, 114, 16); x.clip();
       if (t === 'toxic') { x.strokeStyle = 'rgba(30,60,0,0.45)'; x.lineWidth = 9; for (var i = -128; i < 256; i += 26) { x.beginPath(); x.moveTo(i, 128); x.lineTo(i + 128, 0); x.stroke(); } }
-      if (t === 'ward') { x.strokeStyle = 'rgba(230,250,255,0.9)'; x.lineWidth = 4; for (var k = 0; k < 3; k++) { x.beginPath(); var yy = 30 + k * 34; x.moveTo(12, yy); for (var j = 1; j <= 7; j++) x.lineTo(12 + j * 15, yy + (j % 2 ? -10 : 10)); x.stroke(); } }
+      if (t === 'frost') { x.strokeStyle = 'rgba(255,255,255,0.9)'; x.lineWidth = 3.5; [[34, 36, 16], [92, 44, 13], [60, 94, 18]].forEach(function (q) { for (var a = 0; a < 3; a++) { var an = a * Math.PI / 3; x.beginPath(); x.moveTo(q[0] - Math.cos(an) * q[2], q[1] - Math.sin(an) * q[2]); x.lineTo(q[0] + Math.cos(an) * q[2], q[1] + Math.sin(an) * q[2]); x.stroke(); } }); } // снежинки (D-125)
       if (t === 'jet') { x.save(); x.translate(64, 64); if (side === 1) x.rotate(Math.PI); x.strokeStyle = 'rgba(255,255,255,0.95)'; x.lineWidth = 9; x.lineJoin = 'round'; x.lineCap = 'round'; [-30, -2, 26].forEach(function (yy) { x.beginPath(); x.moveTo(-30, yy + 18); x.lineTo(0, yy - 6); x.lineTo(30, yy + 18); x.stroke(); }); x.restore(); } // шевроны — куда бросает струя (D-123)
       x.fillStyle = 'rgba(255,255,255,0.22)'; x.fillRect(7, 7, 114, 18); // блик сверху — «глянец краски»
       x.restore();
@@ -457,7 +461,7 @@
       var ring = new THREE.Mesh(new THREE.RingGeometry(cs * 0.44, cs * 0.5, 6), discMat(cl.side === 0 ? 0x4aa3ff : 0xff5a4a, 0.9)); ring.rotation.x = -Math.PI / 2; ring.position.y = 1.6; g.add(ring);
       D.col = m; D.tip = tip; D.hgt = hgt;
     }
-    if (cl.t === 'ward' || cl.t === 'toxic' || cl.t === 'jet') { // свечение над клеткой
+    if (cl.t === 'frost' || cl.t === 'jet') { // свечение над клеткой
       var gl = new THREE.Mesh(new THREE.PlaneGeometry(cs * 1.2, cs * 1.2), new THREE.MeshBasicMaterial({ map: glowTex(), color: new THREE.Color(FB.TERRAIN[cl.t].color), transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending }));
       gl.rotation.x = -Math.PI / 2; gl.position.y = 2; g.add(gl); D.gl = gl;
     }
@@ -474,7 +478,7 @@
       var a = Math.min(1, (t - D.born) * 4), pop = a < 1 ? 0.5 + a * 0.6 : 1;
       D.tile.scale.set(pop, pop, 1);
       if (D.col) { var rise = Math.min(1, (t - D.born) * 2.5); D.col.scale.y = Math.max(0.02, rise); D.col.position.y = D.hgt / 2 * rise; D.tip.position.y = D.hgt * rise + 17; D.tip.visible = rise > 0.9; }
-      if (D.gl) D.gl.material.opacity = (D.t === 'jet' ? 0.2 + 0.25 * Math.max(0, Math.sin(t * 5 - (i % T.cols) * 0.7)) : D.t === 'ward' ? 0.3 + 0.25 * Math.abs(Math.sin(t * 7 + i)) : 0.25 + 0.12 * Math.sin(t * 2.2 + i));
+      if (D.gl) D.gl.material.opacity = (D.t === 'jet' ? 0.2 + 0.25 * Math.max(0, Math.sin(t * 5 - (i % T.cols) * 0.7)) : D.t === 'frost' ? 0.3 + 0.25 * Math.abs(Math.sin(t * 7 + i)) : 0.25 + 0.12 * Math.sin(t * 2.2 + i));
       D.puffs.forEach(function (sp) { sp.position.y = 40 + Math.sin(t * 0.8 + sp.userData.ph) * 10; sp.material.opacity = (cl.side === 0 ? 0.32 : 0.6) * a; });
     });
   }

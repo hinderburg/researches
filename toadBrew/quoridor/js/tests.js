@@ -48,7 +48,7 @@
   });
 
   test('relay: landing on an ally continues the activation; relay contact paints nothing; one charge for the chain', function () {
-    var s = match(); put(s, 1, 2, 10); put(s, 2, 2, 7);
+    var s = match(); put(s, 1, 2, 10); put(s, 2, 2, 7); s.frogs[1].ch = 0; s.frogs[2].ch = 0; // без эликсира — без комбо (D-127)
     var r1 = jumpTo(s, 0, s.frogs[1].x, s.frogs[1].y);
     ok(r1.continues && has(r1, 'relay')); eq(s.pending.kind, 'relay'); eq(s.frogs[0].ch, 1, 'not spent yet');
     var r2 = jumpTo(s, 0, s.frogs[2].x, s.frogs[2].y);
@@ -101,23 +101,20 @@
     ok(fl.segs[0].hit === 'column', 'short jump bounces off the column');
     for (var i = 0; i < 6; i++) skip(s); eq(cell(s, 2, 10).t, 'column', 'still there');
   });
-  test('Plasma Burst (fire + lightning): damage on 3×3 and wipes terrain there', function () {
+  test('Plasma Burst (fire + lightning): damage on 3×3 and a light knockback; terrain stays', function () {
     var x = reactWith('fire', 'lightning', function (s) { put(s, 4, 3, 9); cell(s, 1, 11).t = 'column'; });
-    ok(x.s.frogs[4].hp < x.s.frogs[4].maxHp, 'enemy in 3×3 hit'); ok(!cell(x.s, 1, 11).t, 'column wiped');
+    ok(x.s.frogs[4].hp < x.s.frogs[4].maxHp, 'enemy in 3×3 hit'); eq(cell(x.s, 1, 11).t, 'column', 'terrain stays');
   });
-  test('Detonation (fire + poison): enemies around thrown far', function () {
-    var x = reactWith('fire', 'poison', function (s) { put(s, 4, 3, 10); });
-    var e = x.s.frogs[4]; ok(Math.abs(e.x - cx(3)) > 120, 'knocked away');
+  test('Detonation (fire + poison): no damage, enemies thrown far, cells around cleansed (columns too)', function () {
+    var x = reactWith('fire', 'poison', function (s) { put(s, 4, 3, 10); cell(s, 1, 11).t = 'column'; cell(s, 3, 9).el = 'ice'; });
+    var e = x.s.frogs[4]; ok(!ev(x.r, 'hit').some(function (h) { return h.src !== 'slam'; }), 'no reaction damage (only a wall slam)'); ok(Math.abs(e.x - cx(3)) > 150, 'knocked far');
+    ok(!cell(x.s, 1, 11).t && !cell(x.s, 3, 9).el, 'cleansed');
   });
-  test('Toxic Field (lightning + poison): plus of toxic cells; enemy landing in it is burned and erupted out toward its base; turn start burns', function () {
-    var x = reactWith('lightning', 'poison', function (s) { put(s, 4, 3, 10); });
-    eq(cell(x.s, 2, 10).t, 'toxic'); eq(cell(x.s, 3, 10).t, 'toxic'); eq(cell(x.s, 2, 9).t, 'toxic'); eq(cell(x.s, 3, 9).t, null);
-    ok(x.s.frogs[4].hp < x.s.frogs[4].maxHp, 'toxic at turn start');
-    var s = x.s; put(s, 0, 5, 5); put(s, 3, 1, 7); s.frogs[3].ch = 1; // Clingfoot: без Breach
-    var hp = s.frogs[3].hp, r = jumpCell(s, 3, 1, 10);
-    ok(ev(r, 'toxic').length && s.frogs[3].hp < hp, 'burned');
-    var c3 = Sim.cellIdx(s.frogs[3].x, s.frogs[3].y); ok(cell(s, c3 % T.cols, Math.floor(c3 / T.cols)).t !== 'toxic', 'erupted out of the field');
-    ok(s.frogs[3].y < cy(10) - C, 'thrown toward its own base');
+  test('Toxic Vortex (lightning + poison): pulls enemies around toward the landing cell', function () {
+    var x = reactWith('lightning', 'poison', function (s) { put(s, 4, 4, 9); put(s, 5, 0, 10); });
+    var p = Sim.cellCenter(10 * T.cols + 2), e4 = x.s.frogs[4], e5 = x.s.frogs[5];
+    ok(Sim.dist(e4.x, e4.y, p.x, p.y) < C * 1.2 && Sim.dist(e5.x, e5.y, p.x, p.y) < C * 1.2, 'pulled in');
+    ok(Sim.dist(e4.x, e4.y, e5.x, e5.y) >= e4.r + e5.r, 'no overlap');
   });
   test('Steam Jet (fire + ice): plus of jets; landing launches own frog 2 cells forward and blows an enemy back', function () {
     var x = reactWith('fire', 'ice'), s = x.s; eq(cell(s, 2, 10).t, 'jet'); eq(cell(s, 2, 9).t, 'jet');
@@ -128,15 +125,24 @@
     r = jumpCell(s, 1, 2, 11); // своя: на (2,11) → струя → (2,9) — тоже струя → (2,7)
     eq(ev(r, 'jet').length, 2, 'jets chain'); ok(Math.abs(s.frogs[1].y - cy(7)) < 30, 'launched forward 4 cells');
   });
-  test('Static Ward (ice + lightning): line of 3 across the jump; enemy landing there is thrown back; own frog not knocked', function () {
-    var x = reactWith('ice', 'lightning'), s = x.s;
-    eq(cell(s, 1, 10).t, 'ward'); eq(cell(s, 2, 10).t, 'ward'); eq(cell(s, 3, 10).t, 'ward');
-    put(s, 3, 3, 7); s.frogs[3].ch = 1; // Clingfoot: у Bellows и Spur этой команды Breach — они стирают рельеф
-    var r = jumpCell(s, 3, 3, 10);
-    ok(has(r, 'wardZap')); ok(Sim.cellIdx(s.frogs[3].x, s.frogs[3].y) !== 10 * T.cols + 3, 'thrown out'); eq(cell(s, 3, 10).t, 'ward', 'ward stays');
-    eq(Sim.immovable(s, s.frogs[0]), 'ward');
+  test('Frost Ward (ice + lightning): nearest enemy frozen (skips its turn); frost line slows an enemy landing in it', function () {
+    var x = reactWith('ice', 'lightning', function (s) { put(s, 3, 3, 8); s.frogs[3].ch = 1; }), s = x.s;
+    eq(cell(s, 1, 10).t, 'frost'); eq(cell(s, 2, 10).t, 'frost'); eq(cell(s, 3, 10).t, 'frost');
+    ok(s.frogs[3].frozen, 'frozen'); ok(!Sim.canAct(s, s.frogs[3]), 'cannot act this turn');
+    skip(s); ok(!s.frogs[3].frozen, 'thawed after its turn');
+    put(s, 3, 3, 7); s.frogs[3].ch = 1; skip(s); // Clingfoot: у Bellows и Spur этой команды Breach — они стирают чужой рельеф
+    eq(s.turnSide, 1); jumpCell(s, 3, 3, 10);
+    ok(s.frogs[3].chill, 'slowed'); ok(Math.abs(Sim.rangeFor(s, s.frogs[3], 'jump') - T.jumpR * T.chillMul) < 1, 'short next jump');
   });
-
+  test('Relay combo: ally with elixir of another element → the chain end fires their reaction', function () {
+    var s = match(); put(s, 1, 2, 10); s.frogs[0].el = 'ice'; s.frogs[1].el = 'poison'; s.frogs[1].ch = 2;
+    var r1 = jumpTo(s, 0, s.frogs[1].x, s.frogs[1].y);
+    eq(ev(r1, 'relay')[0].combo, 'ice+poison'); eq(s.frogs[1].ch, 2, 'ally keeps its charges');
+    var r2 = jumpCell(s, 0, 2, 7);
+    var rx = ev(r2, 'reaction')[0]; ok(rx && rx.key === 'ice+poison' && rx.combo, 'combo fired on a neutral cell'); eq(cell(s, 2, 7).t, 'column');
+    s = match(); put(s, 1, 2, 10); s.frogs[0].el = 'ice'; s.frogs[1].el = 'ice'; s.frogs[1].ch = 2;
+    eq(ev(jumpTo(s, 0, s.frogs[1].x, s.frogs[1].y), 'relay')[0].combo, null, 'same element — no combo');
+  });
   test('Recall: free, once per turn, empties the tank; new element next turn', function () {
     var s = match(); put(s, 0, 2, 9);
     var r = Sim.apply(s, { frog: 0, mode: 'recall' });
@@ -167,7 +173,7 @@
     ok(s.frogs[1].y < y1 - 100, 'cling flung forward');
   });
   test('Territory (cling+bellows relay): final landing paints the 4 neutral cells around', function () {
-    var s = match(['cling', 'bellows', 'spur']); put(s, 1, 2, 10);
+    var s = match(['cling', 'bellows', 'spur']); put(s, 1, 2, 10); s.frogs[1].ch = 0;
     jumpTo(s, 0, s.frogs[1].x, s.frogs[1].y); jumpCell(s, 0, 2, 7);
     eq(s.cells.filter(function (cl) { return cl.el; }).length, 5);
   });

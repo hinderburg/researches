@@ -365,3 +365,5 @@ button { font-family: inherit; cursor: pointer; }
 .res-team .rt-f { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .res-team .rt-f canvas { width: 100%; max-width: 110px; margin: 0 auto; display: block; }
 .tbadges.enemy .tb { padding: 1px; } .tbadges.enemy .tb b { display: none; }
+.flabel .emp.ice, .fcard .emp.ice { color: #bfefff; }
+.ftext.ice, .alabel.ice { color: #bfefff; }

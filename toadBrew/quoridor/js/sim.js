@@ -168,10 +168,13 @@
   Sim.canAct = function (s, f) {
     if (s.phase !== 'play' || !f.alive || f.side !== s.turnSide) return false;
     if (s.pending) return s.pending.frog === f.id;
-    return f.ch > 0;
+    return f.ch > 0 && !f.frozen; // закованная в лёд пропускает ход (D-125)
   };
   Sim.canRecall = function (s, f) { return s.phase === 'play' && !s.pending && !s.act && f.side === s.turnSide && s.recalls < T.recallsPerTurn && !(Sim.onBase(f) && !f.el && !f.ch); };
-  Sim.rangeFor = function (s, f, mode) { return mode === 'end' ? T.jumpR * T.relayAuto : T.jumpR; };
+  Sim.rangeFor = function (s, f, mode) { // Frost Ward: замедленная жаба прыгает короче всю следующую активацию (D-125)
+    var r = mode === 'end' ? T.jumpR * T.relayAuto : T.jumpR, slow = s.act && s.act.frog === f.id ? s.act.slow : f.chill;
+    return slow ? r * T.chillMul : r;
+  };
   function enemiesOf(s, f) { return s.frogs.filter(function (e) { return e.alive && e.side !== f.side; }); }
   function mates(s, f) { return s.frogs.filter(function (e) { return e.alive && e.side === f.side && e.id !== f.id; }); }
 
@@ -194,14 +197,14 @@
   }
   function sendHome(s, f, events, why) {
     var from = { x: f.x, y: f.y }, p = freeSpot(s, f.side, f);
-    f.x = p.x; f.y = p.y; f.ch = 0; f.el = null; f.empty = false; f.ret = 0;
+    f.x = p.x; f.y = p.y; f.ch = 0; f.el = null; f.empty = false; f.ret = 0; f.frozen = 0; f.chill = 0;
     events.push({ t: 'home', id: f.id, from: from, to: { x: p.x, y: p.y }, why: why });
   }
 
   // ---------- урон, смерть, отброс ----------
   function damage(s, f, amount, events, src) {
     if (!f.alive || amount <= 0) return 0;
-    if (src !== 'slam' && src !== 'toxic') amount *= (1 - f.def / 100); // Defense
+    if (src !== 'slam') amount *= (1 - f.def / 100); // Defense
     amount = Math.max(1, Math.round(amount));
     f.hp -= amount;
     events.push({ t: 'hit', id: f.id, dmg: amount, src: src || 'hit' });
@@ -212,10 +215,9 @@
     }
     return amount;
   }
-  // Не сдвинуть (§29, §36): Anchor — Clingfoot и Spur Knight рядом друг с другом; Static Ward своей стороны под ногами
+  // Не сдвинуть (§29): Anchor — Clingfoot и Spur Knight рядом друг с другом; закованная в лёд жаба (D-125)
   function immovable(s, e) {
-    var cl = s.cells[cellIdx(e.x, e.y)];
-    if (cl.t === 'ward' && cl.side === e.side) return 'ward';
+    if (e.frozen) return 'ice';
     if ((e.kind === 'cling' || e.kind === 'spur') && Sim.traitOn(s, e.side, 'anchor')) {
       var other = e.kind === 'cling' ? 'spur' : 'cling';
       if (s.frogs.some(function (o) { return o.alive && o.side === e.side && o.kind === other && dist(o.x, o.y, e.x, e.y) <= T.anchorR; })) return 'anchor';
@@ -269,7 +271,11 @@
     if (!Sim.canAct(s, f)) return { ok: false, events: events, why: 'cannot act' };
     var P = s.pending;
     if (mode === 'end' && !P) return { ok: false, events: events, why: 'nothing pending' };
-    if (!P) { s.act = { frog: f.id, used: {}, relays: 0, tr: {}, last: null }; events.push({ t: 'act', id: f.id, side: f.side }); }
+    if (!P) {
+      s.act = { frog: f.id, used: {}, relays: 0, tr: {}, last: null, slow: !!f.chill, combo: null };
+      events.push({ t: 'act', id: f.id, side: f.side });
+      if (f.chill) { f.chill = 0; events.push({ t: 'thaw', id: f.id, slow: true }); }
+    }
     s.pending = null;
     var A = s.act, v;
     if (P) { // прыжок со спины союзника
@@ -278,7 +284,7 @@
       // Living Catapult: точка эстафеты подаётся вперёд по ходу прыжка (§29, D-117)
       if (A.last && A.last.trait === 'catapult') { var al = s.frogs[A.last.ally]; push(s, al, norm(v.x, v.y), T.catapultShove, events, true); events.push({ t: 'label', id: al.id, text: '🏹 CATAPULT' }); }
     }
-    var len = mode === 'end' ? T.jumpR * T.relayAuto : Math.min(norm(cmd.dx || 0, cmd.dy || 0).l, T.jumpR);
+    var len = mode === 'end' ? Sim.rangeFor(s, f, 'end') : Math.min(norm(cmd.dx || 0, cmd.dy || 0).l, Sim.rangeFor(s, f, 'jump'));
     if (mode !== 'end' && len < 1) { len = T.jumpR * T.minPull; }
     var cont = jump(s, f, mode === 'end' ? v : { x: cmd.dx || 0, y: cmd.dy || 0 }, len, events, !!P);
     if (cont && s.phase === 'play') return { ok: true, events: events, continues: true, pending: s.pending };
@@ -316,9 +322,12 @@
       var tr = FB.traitFor(f.kind, ally.kind);
       A.last = { ally: ally.id, trait: tr ? tr.id : null };
       if (tr && tr.when === 'relay') A.tr[tr.id] = (A.tr[tr.id] || 0) + 1;
+      // комбо-заряд (D-127): у союзника есть эликсир другого элемента — финал цепочки даст реакцию двух элементов (заряд союзника не тратится)
+      var comboKey = null;
+      if (!A.combo && ally.ch > 0 && ally.el && f.el && ally.el !== f.el) A.combo = comboKey = FB.reactionKey(f.el, ally.el);
       f.x = ally.x; f.y = ally.y;
       events.push({ t: 'land', id: f.id, x: f.x, y: f.y, onAlly: ally.id, perch: true });
-      events.push({ t: 'relay', id: f.id, ally: ally.id, n: A.relays, trait: tr && tr.when === 'relay' ? tr.id : null });
+      events.push({ t: 'relay', id: f.id, ally: ally.id, n: A.relays, trait: tr && tr.when === 'relay' ? tr.id : null, combo: comboKey, els: comboKey ? [f.el, ally.el] : null });
       s.pending = { kind: 'relay', frog: f.id, dir: { x: dir.x, y: dir.y }, onAlly: ally.id };
       return true;
     }
@@ -349,7 +358,7 @@
     return finalLanding(s, f, dir, events, A);
   }
 
-  // Финальное приземление (§8, §18, §19): фляга врага, Static Ward, Toxic Field, элемент в клетку, заряд
+  // Финальное приземление (§8, §18, §19): фляга врага, струя, Frost Ward, комбо-заряд или элемент в клетку, заряд
   function finalLanding(s, f, dir, events, A) {
     var fk = AR.flasks[1 - f.side];
     if (dist(f.x, f.y, fk.x, fk.y) <= T.flaskR + f.r * 0.5) { // победа (§3)
@@ -367,34 +376,22 @@
     }
     var i = cellIdx(f.x, f.y), cl = s.cells[i];
     var breach = Sim.traitOn(s, f.side, 'breach') && (f.kind === 'bellows' || f.kind === 'spur');
-    if (cl.t && cl.t !== 'column' && cl.side !== f.side && breach) { setCell(s, i, null, null, -1, events); events.push({ t: 'label', id: f.id, text: '⛏ BREACH' }); } // чужой рельеф; свой не трогает (D-123)
+    if (cl.t && cl.t !== 'column' && cl.side !== f.side && breach && T.breachWipe) { setCell(s, i, null, null, -1, events); events.push({ t: 'label', id: f.id, text: '⛏ BREACH' }); } // чужой рельеф; свой не трогает (D-123)
     if (cl.t === 'jet' && (A.jets || 0) < T.jetChain) { // Steam Jet (D-123): струя подбрасывает жабу на jetLen по стрелке стороны-создателя
       A.jets = (A.jets || 0) + 1;
       var jd = { x: 0, y: cl.side === 0 ? -1 : 1 };
       events.push({ t: 'jet', id: f.id, i: i, side: cl.side, dir: jd });
       return jump(s, f, jd, T.jetLen, events, false);
     }
-    if (cl.t === 'ward' && cl.side !== f.side) { // Static Ward: враг отбит назад, элемент не ложится
-      events.push({ t: 'wardZap', id: f.id, i: i });
-      damage(s, f, T.wardDmg, events, 'ward');
-      var back = norm(-dir.x, -dir.y); if (!back.l) back = { x: 0, y: f.side === 0 ? 1 : -1 };
-      if (s.frogs[f.id].x === f.x && cellIdx(f.x, f.y) === i) push(s, f, back, T.wardKnock, events, true);
-      spendCharge(s, f, events);
-      return false;
-    }
-    if (cl.t === 'toxic' && cl.side !== f.side) { // Toxic Field (D-122): урон и выброс из поля к своей базе, элемент не ложится
-      events.push({ t: 'toxic', id: f.id, i: i, erupt: true });
-      damage(s, f, T.toxicDmg, events, 'toxic');
-      if (f.alive && cellIdx(f.x, f.y) === i) {
-        var home = { x: 0, y: f.side === 0 ? 1 : -1 }, tt = 16;
-        while (tt < C * 5) { var q = s.cells[cellIdx(f.x, f.y + home.y * tt)]; if (!(q.t === 'toxic' && q.side !== f.side)) break; tt += 16; }
-        push(s, f, home, tt + f.r * 0.6 + T.toxicKnock, events, true);
-      }
+    if (cl.t === 'frost' && cl.side !== f.side) { // Frost Ward (D-125): враг замедлен на следующую активацию, элемент в клетку не ложится
+      f.chill = 1; events.push({ t: 'chill', id: f.id, i: i });
+      if (A.combo) fireCombo(s, f, i, dir, events, A);
       spendCharge(s, f, events);
       return false;
     }
     if (!f.alive || cellIdx(f.x, f.y) !== i) { spendCharge(s, f, events); return false; } // погибла — уже дома
-    if (baseOf(i) < 0) resolveCell(s, f, i, dir, events, A);
+    if (A.combo) fireCombo(s, f, i, dir, events, A); // заряд от союзника — реакция там, где кончилась цепочка (D-127)
+    else if (baseOf(i) < 0) resolveCell(s, f, i, dir, events, A);
     spendCharge(s, f, events);
     return false;
   }
@@ -403,6 +400,10 @@
     if (f.ch > 0) f.ch--;
     events.push({ t: 'spend', id: f.id, ch: f.ch });
     if (!f.ch && f.el && !Sim.onBase(f)) { f.empty = true; f.ret = T.emptyReturn; events.push({ t: 'empty', id: f.id, ret: f.ret }); }
+  }
+  function fireCombo(s, f, i, dir, events, A) {
+    if (baseOf(i) < 0 && s.cells[i].t !== 'column' && (s.cells[i].el || s.cells[i].t)) setCell(s, i, null, null, -1, events);
+    react(s, f, A.combo, i, dir, events, !!A.tr.alchemy, true);
   }
 
   // Элемент в клетку (§18): нейтральная — красится, такой же — ничего, другой — реакция; рельеф — заменяется элементом
@@ -423,29 +424,53 @@
     }
   }
 
-  // Реакции на сетке (§20, §36, D-116)
-  function react(s, f, key, i, dir, events, amp) {
+  // Реакции на сетке (§20, §36, D-116, D-124…D-126): у каждой своё действие —
+  // урон / расталкивание с очисткой / стягивание / бросок / стена / замедление и лёд
+  function react(s, f, key, i, dir, events, amp, combo) {
     var Rx = FB.REACTIONS[key], m = amp ? T.ampMul : 1, p = center(i);
-    events.push({ t: 'reaction', id: f.id, key: key, name: Rx.name, x: p.x, y: p.y, i: i, amp: amp });
+    events.push({ t: 'reaction', id: f.id, key: key, name: Rx.name, x: p.x, y: p.y, i: i, amp: amp, combo: !!combo });
     var cellsOk = function (j) { return baseOf(j) < 0 && s.cells[j].t !== 'column'; };
-    if (key === 'fire+lightning') { // PLASMA BURST: мгновенный урон по 3×3, рельеф стирается
+    if (key === 'fire+lightning') { // PLASMA BURST: урон по 3×3 и лёгкий отброс
       var area = square(i, amp ? 2 : 1);
       enemiesOf(s, f).forEach(function (e) { if (area.indexOf(cellIdx(e.x, e.y)) >= 0) { damage(s, e, T.plasmaDmg * m, events, 'plasma'); knockFrom(s, e, p, T.plasmaKnock, events, dir); } });
-      area.forEach(function (j) { if (baseOf(j) < 0 && (s.cells[j].t || s.cells[j].el)) setCell(s, j, null, null, -1, events); });
-    } else if (key === 'fire+poison') { // DETONATION: отброс
-      enemiesOf(s, f).forEach(function (e) {
+    } else if (key === 'fire+poison') { // DETONATION (D-124): без урона — сильный разброс врагов и очистка поверхности
+      square(i, amp ? 2 : 1).forEach(function (j) { if (baseOf(j) < 0 && (s.cells[j].t || s.cells[j].el)) setCell(s, j, null, null, -1, events); });
+      enemiesOf(s, f).slice().sort(function (a, b) { return dist(a.x, a.y, p.x, p.y) - dist(b.x, b.y, p.x, p.y); }).forEach(function (e) {
         if (dist(e.x, e.y, p.x, p.y) > T.detR * (amp ? 1.3 : 1) + e.r) return;
-        damage(s, e, T.detDmg * m, events, 'det');
-        if (e.alive) knockFrom(s, e, p, T.detKnock * m, events, dir);
+        knockFrom(s, e, p, T.detKnock * m, events, dir);
       });
-    } else if (key === 'lightning+poison' || key === 'fire+ice') { // TOXIC FIELD / STEAM JET: крест (усиленная — 3×3)
-      var t = key === 'fire+ice' ? 'jet' : 'toxic';
-      (amp ? square(i, 1) : [i].concat(neighbors4(i))).filter(cellsOk).forEach(function (j) { setCell(s, j, null, t, f.side, events); });
-    } else if (key === 'ice+lightning' || key === 'ice+poison') { // STATIC WARD / CRYSTAL COLUMN: линия поперёк прыжка
-      var t2 = key === 'ice+lightning' ? 'ward' : 'column', n = key === 'ice+lightning' ? (amp ? 5 : 3) : (amp ? 3 : 1);
-      lineAcross(i, dir, n).filter(cellsOk).forEach(function (j) { setCell(s, j, null, t2, f.side, events); });
-      if (t2 === 'column') ejectFromColumns(s, f, dir, events);
+    } else if (key === 'lightning+poison') { // TOXIC VORTEX (D-126): стягивает врагов вокруг к центру
+      enemiesOf(s, f).slice().sort(function (a, b) { return dist(a.x, a.y, p.x, p.y) - dist(b.x, b.y, p.x, p.y); }).forEach(function (e) {
+        if (dist(e.x, e.y, p.x, p.y) > T.vortexR * (amp ? 1.3 : 1) + e.r) return;
+        pullTo(s, e, p, events);
+        if (T.vortexDmg) damage(s, e, T.vortexDmg * m, events, 'vortex');
+      });
+    } else if (key === 'fire+ice') { // STEAM JET: крест струй (усиленная — 3×3)
+      (amp ? square(i, 1) : [i].concat(neighbors4(i))).filter(cellsOk).forEach(function (j) { setCell(s, j, null, 'jet', f.side, events); });
+    } else if (key === 'ice+lightning') { // FROST WARD (D-125): линия поперёк прыжка; ближайший враг рядом закован в лёд
+      lineAcross(i, dir, amp ? 5 : 3).filter(cellsOk).forEach(function (j) { setCell(s, j, null, 'frost', f.side, events); });
+      enemiesOf(s, f).filter(function (e) { return !e.frozen && dist(e.x, e.y, p.x, p.y) <= T.freezeR + e.r; })
+        .sort(function (a, b) { return dist(a.x, a.y, p.x, p.y) - dist(b.x, b.y, p.x, p.y); }).slice(0, amp ? 2 : 1)
+        .forEach(function (e) { e.frozen = 1; events.push({ t: 'frozen', id: e.id }); });
+    } else if (key === 'ice+poison') { // CRYSTAL COLUMN
+      lineAcross(i, dir, amp ? 3 : 1).filter(cellsOk).forEach(function (j) { setCell(s, j, null, 'column', f.side, events); });
+      ejectFromColumns(s, f, dir, events);
     }
+  }
+  // Стягивание к точке: до кольца вокруг центра, стоп у стены, колонны и другой жабы
+  function pullTo(s, e, p, events) {
+    var why = immovable(s, e);
+    if (why) { events.push({ t: 'anchored', id: e.id, why: why }); return; }
+    var d = norm(p.x - e.x, p.y - e.y), want = d.l - (e.r + 34), x = e.x, y = e.y, obs = obstacles(s);
+    for (var t = 4; t <= want; t += 4) {
+      var nx = e.x + d.x * t, ny = e.y + d.y * t;
+      if (!wallClear(nx, ny, e.r * 0.9) || obs.some(function (o) { return inObst(o, nx, ny, e.r * 0.8); })) break;
+      if (s.frogs.some(function (z) { return z.alive && z.id !== e.id && dist(z.x, z.y, nx, ny) < z.r + e.r + 2; })) break;
+      x = nx; y = ny;
+    }
+    if (x === e.x && y === e.y) return;
+    events.push({ t: 'push', id: e.id, from: { x: e.x, y: e.y }, to: { x: x, y: y }, pull: true });
+    e.x = x; e.y = y;
   }
   function lineAcross(i, dir, n) {
     var c = i % NC, r = Math.floor(i / NC), out = [i], h = Math.abs(dir.y) >= Math.abs(dir.x); // прыжок по длине поля → линия поперёк (по ширине)
@@ -474,6 +499,7 @@
   // ---------- ход (§28) ----------
   function endTurn(s, events) {
     s.played[s.turnSide]++;
+    s.frogs.forEach(function (f) { if (f.side === s.turnSide && f.frozen) { f.frozen = 0; events.push({ t: 'thaw', id: f.id }); } }); // лёд держит один свой ход (D-125)
     s.act = null; s.pending = null; s.recalls = 0;
     if (s.phase !== 'play') return;
     s.turnSide = 1 - s.turnSide; s.turn++;
@@ -486,18 +512,13 @@
     s.frogs.forEach(function (f) { if (f.side === side && f.alive) b = Math.min(b, dist(f.x, f.y, fk.x, fk.y)); });
     return b;
   };
-  // Начало хода: пустые жабы считают возврат, Toxic Field жжёт, база заряжает (§14, §16, §25)
+  // Начало хода: пустые жабы считают возврат, база заряжает (§14, §16, §25)
   function startTurn(s, events) {
     var side = s.turnSide;
     s.frogs.forEach(function (f) {
       if (f.side !== side || !f.alive || !f.empty) return;
       f.ret--;
       if (f.ret <= 0) sendHome(s, f, events, 'auto'); else events.push({ t: 'ret', id: f.id, ret: f.ret });
-    });
-    s.frogs.forEach(function (f) {
-      if (f.side !== side || !f.alive) return;
-      var cl = s.cells[cellIdx(f.x, f.y)];
-      if (cl.t === 'toxic' && cl.side !== side) { events.push({ t: 'toxic', id: f.id }); damage(s, f, T.toxicDmg, events, 'toxic'); }
     });
     if (s.played[side] === 0) return; // первый ход стороны — стартовый заряд уже есть (§17)
     s.frogs.forEach(function (f) {

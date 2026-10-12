@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Lilita+One&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?b=5.1.0-1791831343">
+<link rel="stylesheet" href="css/style.css?b=5.2.0-1791833363">
 </head>
 <body>
 <div id="app">
@@ -116,10 +116,10 @@
       <h2>How to play</h2>
       <p><b>Goal.</b> Land any of your frogs on the <b>enemy Base Flask</b> at the far end. 3 vs 3; each turn you activate one frog.</p>
       <p><b>Jump.</b> Drag back from a frog, aim, release. Every frog has the same range. The arc, bounces, the cell you land in and what happens there show before you let go.</p>
-      <p><b>Relay.</b> Land on your own frog — the same frog jumps again in the same activation. Each ally once per activation. A whole chain costs one charge. Landing on an enemy hits and knocks it back; no relay.</p>
+      <p><b>Relay.</b> Land on your own frog — the same frog jumps again in the same activation. Each ally once per activation. A whole chain costs one charge. Relay off an ally that still has elixir of <b>another element</b> — the end of the chain fires the reaction of both elements. Landing on an enemy hits and knocks it back; no relay.</p>
       <p><b>Elixir.</b> Frogs charge only on your base: +1 per turn, up to 3 (●●●). Starting a new tank, a frog takes the next element from the <b>shared sequence</b> on the left — you see your pointer and the enemy's. Out of charges in the field, a frog is <b>EMPTY</b>: it can't act but still works as a relay point, and returns home after 2 of your turns.</p>
       <p><b>Recall.</b> Once per turn, free: send a frog home now. Its elixir is lost; next turn it starts a new tank.</p>
-      <p><b>Cells.</b> The final landing paints its cell with your element. Land in a cell of another element — a reaction: <b>Plasma Burst</b>, <b>Detonation</b>, <b>Toxic Field</b>, <b>Steam Jet</b>, <b>Crystal Column</b>, <b>Static Ward</b> (see ALCHEMY). Terrain stays for the rest of the match until something replaces it.</p>
+      <p><b>Cells.</b> The final landing paints its cell with your element. Land in a cell of another element — a reaction: <b>Plasma Burst</b>, <b>Detonation</b>, <b>Toxic Vortex</b>, <b>Steam Jet</b>, <b>Crystal Column</b>, <b>Frost Ward</b> (see ALCHEMY). Terrain stays for the rest of the match until something replaces it.</p>
       <p><b>Death.</b> At 0 HP a frog goes home with an empty tank.</p>
       <p><b>Camera.</b> Drag the floor to scroll, pinch / wheel / ＋－ to zoom, ▦ to see the whole board.</p>
       <button id="h-close" class="big-btn">Got it</button>
@@ -128,11 +128,11 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>window.FB_BUILD = '5.1.0-1791831343'; // tools/deploy.sh ставит сюда метку сборки — браузер не берёт старые файлы из кэша</script>
-<script src="js/config.js?b=5.1.0-1791831343"></script>
-<script src="js/sim.js?b=5.1.0-1791831343"></script>
-<script src="js/ai.js?b=5.1.0-1791831343"></script>
-<script src="js/render3d.js?b=5.1.0-1791831343"></script>
-<script src="js/main.js?b=5.1.0-1791831343"></script>
+<script>window.FB_BUILD = '5.2.0-1791833363'; // tools/deploy.sh ставит сюда метку сборки — браузер не берёт старые файлы из кэша</script>
+<script src="js/config.js?b=5.2.0-1791833363"></script>
+<script src="js/sim.js?b=5.2.0-1791833363"></script>
+<script src="js/ai.js?b=5.2.0-1791833363"></script>
+<script src="js/render3d.js?b=5.2.0-1791833363"></script>
+<script src="js/main.js?b=5.2.0-1791833363"></script>
 </body>
 </html>

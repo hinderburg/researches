@@ -15,7 +15,7 @@
   if (!Array.isArray(app.picks) || app.picks.length !== 3 || app.picks.some(function (k) { return !FB.FROGS[k]; }) || app.picks[0] === app.picks[1] || app.picks[1] === app.picks[2] || app.picks[0] === app.picks[2]) app.picks = ['spring', 'cling', 'bellows'];
   var SIDE_C = ['#4aa3ff', '#ff5a4a'];
   var ELC = function (el) { return FB.ELEMENTS[el] ? FB.ELEMENTS[el].color : '#d8c8a8'; };
-  var RXC = { 'fire+ice': '#eefaff', 'fire+poison': '#ff6a00', 'fire+lightning': '#ff9800', 'ice+poison': '#46ffb0', 'ice+lightning': '#18d4ff', 'lightning+poison': '#9dff3a' };
+  var RXC = { 'fire+ice': '#eefaff', 'fire+poison': '#ff6a00', 'fire+lightning': '#ff9800', 'ice+poison': '#46ffb0', 'ice+lightning': '#bfefff', 'lightning+poison': '#9dff3a' };
 
   // ---------- портреты ----------
   function pic(kind, el, size) {
@@ -257,7 +257,9 @@
         };
         break;
       }
-      case 'relay': R.text(d.x, d.y, 'RELAY ' + e.n + (e.trait ? '<br><small>' + FB.traitById(e.trait).icon + ' ' + FB.traitById(e.trait).name + '</small>' : ''), 'charge'); R.ring(d.x, d.y, 70, SIDE_C[SF(e.id).side]); dur = 0.3; break;
+      case 'relay':
+        if (e.combo) { var al = D(e.ally); if (!d.hidden) R.chargeFx({ x: al.x, y: al.y }, { x: d.x, y: d.y }, ELC(e.els[0]), ELC(e.els[1])); } // комбо-заряд от союзника (D-127)
+        R.text(d.x, d.y, (e.combo ? '⚗ COMBO: ' + FB.REACTIONS[e.combo].name + '<br>' : '') + 'RELAY ' + e.n +(e.trait ? '<br><small>' + FB.traitById(e.trait).icon + ' ' + FB.traitById(e.trait).name + '</small>' : ''), 'charge'); R.ring(d.x, d.y, 70, SIDE_C[SF(e.id).side]); dur = 0.3; break;
       case 'impact': {
         var atk = D(e.by);
         if (atk.landAt) atk.hop = { t: 0, dur: 0.42, z0: atk.z, from: { x: atk.x, y: atk.y }, to: atk.landAt };
@@ -298,10 +300,11 @@
       case 'recall': dur = 0.05; break;
       case 'cell': { var cl = app.shown.cells[e.i]; cl.el = e.el; cl.t = e.tt; cl.side = e.side; var cp = Sim.cellCenter(e.i); if (e.el || e.tt) R.ring(cp.x, cp.y, 60, e.tt ? FB.TERRAIN[e.tt].color : ELC(e.el), 0.4); dur = 0.04; break; }
       case 'reaction':
-        R.reactionFx(e.key, e.x, e.y, { 'fire+lightning': T.cell * (e.amp ? 2.5 : 1.5), 'fire+poison': T.detR, 'lightning+poison': T.cell * 1.4, 'fire+ice': T.cell * 1.4, 'ice+poison': T.cell * 0.8, 'ice+lightning': T.cell }[e.key] || 150);
-        R.text(e.x, e.y, e.name + (e.amp ? '<br><small>🌀 ×' + T.ampMul + '</small>' : ''), 'rx'); R.shake(8); dur = 0.5; break;
-      case 'wardZap': { var wp = Sim.cellCenter(e.i); R.reactionFx('ice+lightning', wp.x, wp.y, 90); R.zap({ x: wp.x - 50, y: wp.y }, { x: wp.x + 50, y: wp.y }); R.text(d.x, d.y, 'ϟ WARD!', 'light'); dur = 0.25; break; }
-      case 'toxic': if (e.erupt) { var tp = Sim.cellCenter(e.i); R.reactionFx('lightning+poison', tp.x, tp.y, 90); R.text(d.x, d.y, '☣ ERUPTION', 'poison'); R.shake(8); } else R.text(d.x, d.y, '☣ TOXIC', 'poison'); dur = e.erupt ? 0.3 : 0.15; break;
+        R.reactionFx(e.key, e.x, e.y, { 'fire+lightning': T.cell * (e.amp ? 2.5 : 1.5), 'fire+poison': T.detR, 'lightning+poison': T.vortexR, 'fire+ice': T.cell * 1.4, 'ice+poison': T.cell * 0.8, 'ice+lightning': T.cell * 1.3 }[e.key] || 150);
+        R.text(e.x, e.y, (e.combo ? '⚗ ' : '') + e.name + (e.amp ? '<br><small>🌀 ×' + T.ampMul + '</small>' : ''), 'rx'); R.shake(8); dur = 0.5; break;
+      case 'frozen': SF(e.id).frozen = 1; R.reactionFx('ice+poison', d.x, d.y, 70); R.text(d.x, d.y, '🧊 FROZEN', 'ice'); R.shake(6); dur = 0.3; break; // Frost Ward (D-125)
+      case 'chill': SF(e.id).chill = 1; R.ring(d.x, d.y, 60, '#bfefff'); R.text(d.x, d.y, '❄ SLOWED', 'ice'); dur = 0.25; break;
+      case 'thaw': if (e.slow) SF(e.id).chill = 0; else { SF(e.id).frozen = 0; R.text(d.x, d.y, 'THAW', 'ice'); } dur = 0.05; break;
       case 'jet': { var jp = Sim.cellCenter(e.i); R.reactionFx('fire+ice', jp.x, jp.y, 70); R.text(jp.x, jp.y, e.side === SF(e.id).side ? '⇧ JET' : '⇩ BLOWN BACK', 'gold'); dur = 0.2; break; } // Steam Jet (D-123)
       case 'spend': SF(e.id).ch = e.ch; break;
       case 'empty': SF(e.id).empty = true; SF(e.id).ret = e.ret; R.text(d.x, d.y, 'EMPTY', 'dmg'); dur = 0.2; break;
@@ -335,7 +338,7 @@
   // ---------- прицел и превью (§19: всё видно по траектории) ----------
   function showAim(f, cmd) {
     var pv = Sim.preview(app.s, cmd, f.side === 0 ? 0 : undefined), a = { segs: [], r: f.r, color: ELC(f.el), labels: [], pushes: [], cells: [] };
-    var dmg = {}, deaths = {}, info = { title: (f.el ? FB.ELEMENTS[f.el].icon + ' ' : '') + FB.FROGS[f.kind].name, lines: [] }, reacted = null, relayTo = -1, won = false, zap = false, painted = [];
+    var frozen = [], combo = null, dmg = {}, deaths = {}, info = { title: (f.el ? FB.ELEMENTS[f.el].icon + ' ' : '') + FB.FROGS[f.kind].name, lines: [] }, reacted = null, relayTo = -1, won = false, painted = [];
     var start = {}; app.s.frogs.forEach(function (x) { start[x.id] = { x: x.x, y: x.y }; });
     pv.events.forEach(function (e) {
       if (e.t === 'jump') a.segs = a.segs.concat(e.segs);
@@ -347,11 +350,13 @@
       if (e.t === 'reaction') reacted = e;
       if (e.t === 'cell') painted.push(e);
       if (e.t === 'flask') won = true;
-      if (e.t === 'wardZap') zap = true;
+
       if (e.t === 'anchored') info.lines.push(e.why === 'ward' ? 'Ward holds it in place' : 'Anchored — no knockback');
       if (e.t === 'smash') info.lines.push('Breach: smashes the column');
       if (e.t === 'jet') info.lines.push(e.side === f.side ? '⇧ Jet: launched 2 cells forward' : '⇩ Enemy jet: blown back');
-      if (e.t === 'toxic' && e.erupt) info.lines.push('☣ Toxic Field: burned and erupted out');
+      if (e.t === 'frozen') frozen.push(e.id);
+      if (e.t === 'chill') info.lines.push('❄ Enemy frost: next jump ×' + T.chillMul);
+      if (e.t === 'relay' && e.combo) combo = e;
     });
     if (!a.land && a.segs.length) { var ls = a.segs[a.segs.length - 1]; a.land = ls.to; }
     if (!a.land) return;
@@ -362,12 +367,16 @@
       a.color = '#7fd0ff';
       a.labels.push({ x: ap.x, y: ap.y, text: 'RELAY → jump again', cls: 'charge', h: 90 });
       info.title = '↗ RELAY'; info.lines.unshift('Same activation: jump again from ' + FB.FROGS[app.s.frogs[relayTo].kind].name);
-      if (f.side === 0) notice('↗ RELAY', 'Land on <b>' + FB.FROGS[app.s.frogs[relayTo].kind].name + '</b> → jump again', 'One charge for the whole chain · each ally once', a.color);
+      if (combo) { // комбо-заряд (D-127): реакция двух элементов там, где кончится цепочка
+        var cn = FB.REACTIONS[combo.combo].name, ci2 = FB.ELEMENTS[combo.els[0]].icon + ' + ' + FB.ELEMENTS[combo.els[1]].icon;
+        a.color = RXC[combo.combo] || a.color; a.ally.color = a.color; a.labels[a.labels.length - 1].text = '⚗ COMBO ' + ci2 + '<br>' + cn;
+        info.title = '⚗ COMBO'; info.lines.unshift(ci2 + ' → ' + cn + ' where the chain ends');
+        if (f.side === 0) notice('⚗ RELAY + COMBO', ci2 + ' → <b>' + cn + '</b>', 'Fires where this chain ends', a.color);
+      } else if (f.side === 0) notice('↗ RELAY', 'Land on <b>' + FB.FROGS[app.s.frogs[relayTo].kind].name + '</b> → jump again', 'One charge for the chain · each ally once · an ally with another element adds a combo', a.color);
     } else {
       notice(null);
       var ci = Sim.cellIdx(fin.x, fin.y);
       if (won) { a.color = '#ffd040'; a.labels.push({ x: a.land.x, y: a.land.y, text: '★ FLASK — WIN!', cls: 'rx', h: 80 }); info.title = '★ VICTORY'; info.lines.unshift('Lands on the enemy Base Flask'); }
-      else if (zap) { a.color = '#7ad8ff'; a.labels.push({ x: a.land.x, y: a.land.y, text: 'ϟ WARD — thrown back', cls: 'light', h: 70 }); info.lines.unshift('Enemy Static Ward: zapped and thrown back, no paint'); }
       else if (reacted) {
         a.color = RXC[reacted.key] || '#ffe080';
         a.labels.push({ x: a.land.x, y: a.land.y, text: reacted.name, cls: 'rx', h: 70 });
@@ -391,6 +400,7 @@
       var ac = Sim.clone(pv.state), ar = Sim.apply(ac, { frog: f.id, mode: 'end' }, { noEnd: true });
       ar.events.forEach(function (e) { if (e.t === 'jump') a.autoSegs = e.segs; });
     }
+    frozen.forEach(function (id) { var p = start[id]; a.labels.push({ x: p.x, y: p.y, text: '🧊 FREEZE — skips a turn', cls: 'ice', h: 80 }); });
     Object.keys(dmg).forEach(function (id) {
       var p = start[id]; a.labels.push({ x: p.x, y: p.y, text: (deaths[id] ? 'KO ' : '') + '−' + dmg[id], cls: +id === f.id ? 'self' : 'dmg' });
     });
@@ -470,7 +480,7 @@
     var L = Math.hypot(p.x - sp.x, p.y - sp.y), pull = Math.min(cv.clientWidth, cv.clientHeight) * 0.3, pow = Math.min(1, L / pull);
     var w = R.toWorld(p.x, p.y, (d.z || 0) * T.visH);
     if (!w || pow < T.minPull) { app.aimCmd = null; R.setAim(null); notice(null); setPv('Pull back', 'Drag away from the frog and release'); return; }
-    var dx = f.x - w.x, dy = f.y - w.y, l = Math.hypot(dx, dy) || 1, range = T.jumpR;
+    var dx = f.x - w.x, dy = f.y - w.y, l = Math.hypot(dx, dy) || 1, range = Sim.rangeFor(app.s, f, 'jump');
     app.aimCmd = { frog: f.id, dx: dx / l * range * pow, dy: dy / l * range * pow, mode: 'jump' };
     // доводка: на жабу (эстафета/удар) или на центр фляги врага, если прицел рядом
     var tx = f.x + app.aimCmd.dx, ty = f.y + app.aimCmd.dy, snap = null, sd = 1e9, act = app.s.act;
@@ -556,9 +566,11 @@
       c.querySelector('.hpb i').style.width = (100 * hp / f.maxHp) + '%';
       c.querySelector('.hpb em').textContent = hp + ' / ' + f.maxHp;
       var home = Sim.onBase(f), st;
-      if (f.empty) st = '<span class="emp">EMPTY ⟲' + f.ret + '</span>';
+      if (f.frozen) st = '<span class="emp ice">🧊 FROZEN — skips a turn</span>';
+      else if (f.empty) st = '<span class="emp">EMPTY ⟲' + f.ret + '</span>';
       else if (f.el) st = '<span class="eli" style="color:' + ELC(f.el) + '">' + FB.ELEMENTS[f.el].icon + '</span>' + pips(f.ch, f.el);
       else st = '<span class="emp">⏳ new tank next turn</span>';
+      if (f.chill && !f.frozen) st += '<span class="emp ice">❄ slow</span>';
       if (home && !f.empty) st += '<span class="hm">BASE</span>';
       c.querySelector('.ffl').innerHTML = st;
       c.classList.toggle('done', f.side === s.turnSide && !Sim.canAct(app.s, app.s.frogs[f.id]) && !app.s.pending);

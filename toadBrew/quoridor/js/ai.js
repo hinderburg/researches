@@ -6,7 +6,7 @@
   FB.AI = AI;
 
   // Может ли жаба ходить в следующий ход своей стороны (база зарядит, пустая не может)
-  function willAct(s, f) { return f.alive && !f.hidden && (f.ch > 0 || (Sim.onBase(f) && (s.played[f.side] > 0 || f.ch > 0))); }
+  function willAct(s, f) { return f.alive && !f.hidden && !f.frozen && (f.ch > 0 || (Sim.onBase(f) && (s.played[f.side] > 0 || f.ch > 0))); }
   // Сколько не хватит до фляги врага за одну активацию: эстафета через своих (каждая — один раз), последний прыжок — R
   function remaining(s, side) {
     var fk = AR.flasks[1 - side], R = T.jumpR * 0.95, best = 1e9, mates = s.frogs.filter(function (f) { return f.side === side && f.alive && !f.hidden; });
@@ -36,7 +36,7 @@
       if (!f.alive || f.hidden) return;
       var my = f.side === side, k = my ? 1 : -1;
       v += k * 22 * f.hp / f.maxHp;
-      v += k * (f.ch * 7 + (f.empty ? -4 : 0));
+      v += k * (f.ch * 7 + (f.empty ? -4 : 0) - (f.frozen ? 22 : 0) - (f.chill ? 6 : 0)); // лёд и мороз (D-125)
       // жаба впереди без своих в досягаемости — легко срезать и некому её подхватить
       var near = s.frogs.some(function (o) { return o !== f && o.alive && o.side === f.side && Sim.dist(o.x, o.y, f.x, f.y) <= R; });
       v += k * (near ? 10 : 0);
@@ -58,7 +58,7 @@
 
   // Кандидаты прыжка: на своих (эстафета), во врагов, к фляге, в клетки с другим элементом, веер направлений
   function candidates(s, f, P) {
-    var out = [], R = T.jumpR, side = f.side, fk = AR.flasks[1 - side];
+    var out = [], R = Sim.rangeFor(s, f, 'jump'), side = f.side, fk = AR.flasks[1 - side];
     function add(tx, ty, tag) { var dx = tx - f.x, dy = ty - f.y, l = Math.hypot(dx, dy); if (l < 20) return; var k = Math.min(1, R / l); out.push({ frog: f.id, dx: dx * k, dy: dy * k, mode: 'jump', tag: tag }); }
     s.frogs.forEach(function (o) {
       if (!o.alive || o.id === f.id || o.hidden) return;

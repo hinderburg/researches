@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '5.1.0';
+FB.VERSION = '5.2.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -45,15 +45,16 @@ FB.T = {
   hitAnimSec: 0.6,                     // анимация отброса (D-108)
 
   // Реакции на сетке (§36, D-116)
-  plasmaDmg: 30, plasmaKnock: 80,                  // Plasma Burst: 3×3 клетки — урон врагам, рельеф стирается
-  detR: 290, detDmg: 12, detKnock: 240,            // Detonation: отброс всех врагов вокруг
-  toxicDmg: 14, toxicKnock: 90,                   // Toxic Field: враг, приземлившийся в поле, получает урон и выброшен из поля к своей базе (D-122); начал ход в поле — урон
-  wardDmg: 10, wardKnock: 170,                     // Static Ward: враг, приземлившийся в линию, отбит назад; свои в ней не отбрасываются
+  plasmaDmg: 30, plasmaKnock: 80,                  // Plasma Burst: 3×3 клетки — урон врагам и лёгкий отброс
+  detR: 300, detKnock: 300,                        // Detonation: без урона — сильный разброс врагов вокруг и очистка 3×3 (D-124)
+  vortexR: 340, vortexDmg: 0,                      // Toxic Vortex: стягивает врагов в этом радиусе к центру (D-126)
+  freezeR: 340, chillMul: 0.55,                    // Frost Ward: ближайший враг в радиусе — во льду на свой ход; приземлился в мороз — следующая активация ×0.55 дальности (D-125)
   jetLen: 256, jetChain: 3,                        // Steam Jet: приземление на струю подбрасывает жабу на 2 клетки по стрелке стороны-создателя, до 3 струй подряд (D-123)
   ampMul: 1.5,                                     // Alchemical Relay: реакция сильнее и шире
 
   // Командные свойства (§29, D-117)
   catapultShove: 128,                  // Living Catapult: точка эстафеты подаётся на клетку вперёд
+  breachWipe: 0,                       // Breach: стирать чужой рельеф при приземлении — выключено балансом (D-128); колонны пробивает в полёте
   momentumPerRelay: 0.35,              // Momentum Strike: удар ×(1 + 0.35 × эстафеты)
   momentumKb: 1.4,
   anchorR: 400,                        // Anchor: Clingfoot и Spur Knight не отбрасываются, пока напарник в радиусе прыжка
@@ -84,25 +85,24 @@ FB.ELEMENT_ORDER = ['fire', 'ice', 'poison', 'lightning'];
 
 // Шесть реакций на сетке (§36, D-116): категории GDD — мгновенный урон, отброс, опасная клетка, сокрытие, рельеф, контроль
 FB.REACTIONS = {
-  'fire+lightning':  { name: 'PLASMA BURST',   type: 'Instant damage',      terrain: null,     desc: 'Blast on the 3×3 cells around: damage to enemies, all terrain there is wiped back to neutral.' },
-  'fire+poison':     { name: 'DETONATION',     type: 'Knockback',           terrain: null,     desc: 'Shockwave: enemies around are thrown far away. Breaks relay routes.' },
-  'lightning+poison':{ name: 'TOXIC FIELD',    type: 'Hazard · persistent', terrain: 'toxic',  desc: 'A plus of toxic cells. An enemy landing in it is burned and erupted out toward its base; starting a turn inside burns too.' },
+  'fire+lightning':  { name: 'PLASMA BURST',   type: 'Instant damage',      terrain: null,     desc: 'Blast on the 3×3 cells around: damage to enemies and a light knockback.' },
+  'fire+poison':     { name: 'DETONATION',     type: 'Push · cleanse',      terrain: null,     desc: 'No damage: a shockwave throws enemies around far away and wipes all cells around back to neutral — columns too.' },
+  'lightning+poison':{ name: 'TOXIC VORTEX',   type: 'Pull',                terrain: null,     desc: 'A toxic whirl pulls the enemies around into a tight knot by the landing cell.' },
   'fire+ice':        { name: 'STEAM JET',      type: 'Movement · persistent',terrain: 'jet',    desc: 'A plus of steam jets pointing at the enemy flask. Land on one and it launches you 2 cells forward; enemies are blown back toward their base.' },
   'ice+poison':      { name: 'CRYSTAL COLUMN', type: 'Terrain · persistent',terrain: 'column', desc: 'A crystal pillar rises in the cell: blocks short and low jumps and knockback.' },
-  'ice+lightning':   { name: 'STATIC WARD',    type: 'Control · persistent',terrain: 'ward',   desc: 'A line of 3 charged cells across your jump. Enemies landing in it are zapped and thrown back; your frogs in it cannot be knocked back.' }
+  'ice+lightning':   { name: 'FROST WARD',     type: 'Slow · freeze',       terrain: 'frost',  desc: 'Freezes the nearest enemy in ice — it skips its next turn — and lays a line of 3 frost cells across your jump: an enemy landing in it jumps short next time.' },
 };
 FB.TERRAIN = { // как выглядит и что значит клетка рельефа
-  toxic:  { name: 'TOXIC',  icon: '☣', color: '#9dff3a' },
   jet:    { name: 'JET',    icon: '⇧', color: '#ffd9a0' },
   column: { name: 'COLUMN', icon: '▮', color: '#5cffb0' },
-  ward:   { name: 'WARD',   icon: 'ϟ', color: '#7ad8ff' }
+  frost:  { name: 'FROST',  icon: '❄', color: '#bfefff' }
 };
 FB.reactionKey = function (a, b) { return a < b ? a + '+' + b : b + '+' + a; };
 
 // Четыре жабы (§6, §7, §30). Дальность прыжка у всех одна (jumpR); отличие — HP, Defense, сила удара, масса.
 FB.FROGS = {
-  spring:  { name: 'Springjack',   hp: 100, def: 8,  impact: 1.05, mass: 1.0, r: 34, role: 'Momentum',      tdesc: 'Light and springy: the best relay runner.' },
-  cling:   { name: 'Clingfoot',    hp: 115, def: 10, impact: 0.9,  mass: 1.35, r: 36, role: 'Anchor',       tdesc: 'Hard to move: a stable relay point.' },
+  spring:  { name: 'Springjack',   hp: 115, def: 8,  impact: 1.05, mass: 1.0, r: 34, role: 'Momentum',      tdesc: 'Light and springy: the best relay runner.' },
+  cling:   { name: 'Clingfoot',    hp: 125, def: 10, impact: 0.9,  mass: 1.35, r: 36, role: 'Anchor',       tdesc: 'Hard to move: a stable relay point.' },
   bellows: { name: 'Bellows Toad', hp: 120, def: 12, impact: 0.9,  mass: 1.5, r: 40, role: 'Alchemy',       tdesc: 'Reagent pumps: terrain and reaction support.' },
   spur:    { name: 'Spur Knight',  hp: 110, def: 14, impact: 1.3,  mass: 1.6, r: 38, role: 'Impact',        tdesc: 'Heavy spurs: the hardest hit, breaks formations.' }
 };
@@ -116,7 +116,7 @@ FB.TEAM_TRAITS = {
   'spring+spur':   { id: 'momentum', icon: '☄️', name: 'MOMENTUM STRIKE',   when: 'relay',  desc: 'After a relay between them, a direct hit lands ×1.35 harder per relay and knocks back further.' },
   'bellows+cling': { id: 'territory',icon: '⛲', name: 'TERRITORY',         when: 'relay',  desc: 'After a relay between them, the final landing also paints the 4 neutral cells around.' },
   'cling+spur':    { id: 'anchor',   icon: '⚓', name: 'ANCHOR',            when: 'always', desc: 'Clingfoot and Spur Knight cannot be knocked back while the other is within jump range.' },
-  'bellows+spur':  { id: 'breach',   icon: '⛏', name: 'BREACH',            when: 'always', desc: 'Bellows Toad and Spur Knight smash through Crystal Columns and wipe the terrain they land on.' }
+  'bellows+spur':  { id: 'breach',   icon: '⛏', name: 'BREACH',            when: 'always', desc: 'Bellows Toad and Spur Knight smash straight through Crystal Columns in flight.' }
 };
 FB.traitFor = function (a, b) { return FB.TEAM_TRAITS[FB.reactionKey(a, b)] || null; };
 FB.teamTraits = function (team) { // три пары команды → id свойств
