@@ -1,0 +1,515 @@
+// Симуляция TOADBREW — Relay Alchemy (GDD v3, ветка Quoridor, D-111). Без DOM и WebGL: состояние — простой объект, ход — команда.
+// apply(state, cmd) меняет состояние и возвращает события для анимации. Случайность — только от сида.
+// Жабы прыгают свободно; клетки сетки под полем хранят элементы и рельеф (§4, §5).
+(function () {
+  var T = FB.T, AR = FB.ARENA;
+  var Sim = {};
+  FB.Sim = Sim;
+
+  // ---------- утилиты ----------
+  function rng(s) {
+    var t = (s.rng = (s.rng + 0x6D2B79F5) | 0);
+    t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  function dist(ax, ay, bx, by) { var dx = ax - bx, dy = ay - by; return Math.sqrt(dx * dx + dy * dy); }
+  function norm(x, y) { var l = Math.sqrt(x * x + y * y); return l > 1e-6 ? { x: x / l, y: y / l, l: l } : { x: 0, y: 0, l: 0 }; }
+  Sim.dist = dist; Sim.norm = norm;
+  Sim.clone = function (s) { return JSON.parse(JSON.stringify(s)); };
+
+  // ---------- геометрия арены: прямоугольник поля ----------
+  var EDGES = [];
+  (function () {
+    var P = AR.floor;
+    for (var i = 0; i < P.length; i++) {
+      var a = P[i], b = P[(i + 1) % P.length], d = norm(b.x - a.x, b.y - a.y);
+      EDGES.push({ a: a, b: b, d: d, n: { x: -d.y, y: d.x } }); // по часовой в экранных координатах → внутренняя нормаль
+    }
+  })();
+  Sim.EDGES = EDGES;
+  function insidePoly(x, y) { return x > AR.x0 && x < AR.x0 + AR.w && y > AR.y0 && y < AR.y0 + AR.h; }
+  function segDist(px, py, e) {
+    var vx = e.b.x - e.a.x, vy = e.b.y - e.a.y, L2 = vx * vx + vy * vy, t = Math.max(0, Math.min(1, ((px - e.a.x) * vx + (py - e.a.y) * vy) / L2));
+    return dist(px, py, e.a.x + vx * t, e.a.y + vy * t);
+  }
+  function nearestEdge(x, y) {
+    var best = null, bd = 1e9;
+    EDGES.forEach(function (e) { var d = segDist(x, y, e); if (d < bd) { bd = d; best = { e: e, d: d }; } });
+    return best;
+  }
+  function wallClear(x, y, r) { return insidePoly(x, y) && nearestEdge(x, y).d >= r; }
+  Sim.insideArena = function (x, y, r) { return wallClear(x, y, r || 0); };
+
+  // ---------- сетка (§4, §5, D-112) ----------
+  var C = T.cell, NC = T.cols, NR = T.rows;
+  function cellOf(x, y) {
+    var c = Math.floor((x - AR.x0) / C), r = Math.floor((y - AR.y0) / C);
+    return { c: Math.max(0, Math.min(NC - 1, c)), r: Math.max(0, Math.min(NR - 1, r)) };
+  }
+  function idx(c, r) { return r * NC + c; }
+  function cellIdx(x, y) { var q = cellOf(x, y); return idx(q.c, q.r); }
+  function center(i) { return { x: AR.x0 + (i % NC + 0.5) * C, y: AR.y0 + (Math.floor(i / NC) + 0.5) * C }; }
+  function baseSideOfRow(r) { return r >= NR - T.baseRows ? 0 : (r < T.baseRows ? 1 : -1); }
+  function baseOf(i) { return baseSideOfRow(Math.floor(i / NC)); }
+  Sim.cellIdx = cellIdx; Sim.cellCenter = center; Sim.cellBase = baseOf;
+  Sim.onBase = function (f) { return baseSideOfRow(cellOf(f.x, f.y).r) === f.side; };
+  function inGrid(c, r) { return c >= 0 && c < NC && r >= 0 && r < NR; }
+  function neighbors4(i) {
+    var c = i % NC, r = Math.floor(i / NC), out = [];
+    [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(function (d) { if (inGrid(c + d[0], r + d[1])) out.push(idx(c + d[0], r + d[1])); });
+    return out;
+  }
+  function square(i, rad) {
+    var c = i % NC, r = Math.floor(i / NC), out = [];
+    for (var dy = -rad; dy <= rad; dy++) for (var dx = -rad; dx <= rad; dx++) if (inGrid(c + dx, r + dy)) out.push(idx(c + dx, r + dy));
+    return out;
+  }
+  function isNeutral(cell) { return !cell.el && !cell.t; }
+  function setCell(s, i, el, t, side, events) {
+    var cl = s.cells[i];
+    cl.el = el || null; cl.t = t || null; cl.side = t ? side : -1;
+    events.push({ t: 'cell', i: i, el: cl.el, tt: cl.t, side: cl.side });
+  }
+
+  // Колонны — препятствия на всю клетку (§21)
+  function obstacles(s) {
+    var list = [];
+    s.cells.forEach(function (cl, i) { if (cl.t === 'column') { var p = center(i); list.push({ kind: 'column', cell: i, cx: p.x, cy: p.y, ux: 1, uy: 0, hl: C / 2 - 8, ht: C / 2 - 8 }); } });
+    return list;
+  }
+  Sim.obstacles = obstacles;
+  function inObst(o, x, y, m) {
+    var dx = x - o.cx, dy = y - o.cy, lu = dx * o.ux + dy * o.uy, lv = -dx * o.uy + dy * o.ux;
+    var pu = o.hl + m - Math.abs(lu), pv = o.ht + m - Math.abs(lv);
+    if (pu <= 0 || pv <= 0) return null;
+    if (pu < pv) return { n: { x: o.ux * Math.sign(lu || 1), y: o.uy * Math.sign(lu || 1) }, pen: pu };
+    return { n: { x: -o.uy * Math.sign(lv || 1), y: o.ux * Math.sign(lv || 1) }, pen: pv };
+  }
+  function reflect(d, n) { var k = 2 * (d.x * n.x + d.y * n.y); return norm(d.x - k * n.x, d.y - k * n.y); }
+
+  Sim.arcHeight = function (len) { return T.arcBase + len * T.arcPerLen; };
+  Sim.arcAt = function (h0, H, u) { return h0 * (1 - u) + 4 * H * u * (1 - u); };
+
+  // Полёт с отскоками: стены выше любой дуги; Crystal Column — только низкой части дуги (ниже colH).
+  // opts.breach — жаба пробивает колонны (Breach): колонна разрушается, полёт идёт дальше
+  Sim.flight = function (s, f, from, dir, len, opts) {
+    opts = opts || {};
+    var segs = [], pos = { x: from.x, y: from.y }, d = norm(dir.x, dir.y), remaining = len, h0 = opts.h0 || 0, air = 0, bounces = 0, step = 6, smashed = [];
+    var obs = obstacles(s).filter(function (o) { return !inObst(o, from.x, from.y, f.r * 0.75); });
+    while (true) {
+      var segLen = Math.max(1, remaining), H = Sim.arcHeight(segLen), hit = null, t;
+      for (t = step; t <= segLen + 0.01; t += step) {
+        var tt = Math.min(t, segLen), x = pos.x + d.x * tt, y = pos.y + d.y * tt, u = tt / segLen, h = Sim.arcAt(h0, H, u);
+        if (!wallClear(x, y, f.r * 0.8)) { hit = { kind: 'wall', n: nearestEdge(x, y).e.n, t: tt - step, h: h }; break; }
+        for (var k = 0; k < obs.length; k++) {
+          if (h >= T.colH) continue;
+          var r = inObst(obs[k], x, y, f.r * 0.75);
+          if (!r) continue;
+          if (opts.breach) { smashed.push(obs[k].cell); obs.splice(k, 1); k--; continue; }
+          hit = { kind: 'column', n: r.n, t: tt - step, h: h, cell: obs[k].cell }; break;
+        }
+        if (hit) break;
+      }
+      if (!hit) {
+        var end = { x: pos.x + d.x * segLen, y: pos.y + d.y * segLen };
+        segs.push({ from: pos, to: end, len: segLen, H: H, h0: h0 });
+        air += segLen;
+        return { segs: segs, land: end, dir: d, air: air, bounces: bounces, smashed: smashed };
+      }
+      var ht = Math.max(0, hit.t), c = { x: pos.x + d.x * ht, y: pos.y + d.y * ht };
+      segs.push({ from: pos, to: c, len: ht, H: H, h0: h0, hit: hit.kind });
+      air += ht;
+      if (bounces >= T.maxBounces || segLen - ht < 8) return { segs: segs, land: c, dir: d, air: air, bounces: bounces, smashed: smashed, stopped: true };
+      bounces++;
+      remaining = (segLen - ht) * (1 + T.wallBonus);
+      d = reflect(d, hit.n); pos = c; h0 = Math.max(0, hit.h);
+    }
+  };
+
+  // ---------- создание ----------
+  // Общая последовательность элементов (§15): мешки по 4 — в каждых четырёх подряд все элементы, порядок от сида
+  function makeSequence(s) {
+    var out = [];
+    while (out.length < T.seqLen) {
+      var bag = FB.ELEMENT_ORDER.slice();
+      for (var i = bag.length - 1; i > 0; i--) { var j = Math.floor(rng(s) * (i + 1)), x = bag[i]; bag[i] = bag[j]; bag[j] = x; }
+      if (out.length && bag[0] === out[out.length - 1]) { bag.push(bag.shift()); } // без двух одинаковых подряд на стыке мешков
+      out = out.concat(bag);
+    }
+    return out;
+  }
+  Sim.nextEl = function (s, side, k) { return s.seq[(s.ptr[side] + (k || 0)) % s.seq.length]; };
+  function takeEl(s, side) { var e = Sim.nextEl(s, side); s.ptr[side]++; return e; }
+
+  // teams: [[k, k, k], [k, k, k]] — по три жабы (§6)
+  Sim.createMatch = function (teamA, teamB, seed) {
+    var s = { seed: seed >>> 0, rng: seed >>> 0, teams: [teamA.slice(), teamB.slice()], traits: [FB.teamTraits(teamA), FB.teamTraits(teamB)],
+      turn: 0, turnSide: 0, phase: 'init', frogs: [], cells: [], seq: [], ptr: [0, 0], played: [0, 0], recalls: 0, act: null, pending: null };
+    s.seq = makeSequence(s);
+    return s;
+  };
+
+  Sim.startMatch = function (s) {
+    s.frogs = []; s.cells = [];
+    for (var i = 0; i < NC * NR; i++) s.cells.push({ el: null, t: null, side: -1 });
+    for (var side = 0; side < 2; side++) for (var slot = 0; slot < s.teams[side].length; slot++) {
+      var k = s.teams[side][slot], d = FB.FROGS[k], p = AR.slots[side][slot];
+      s.frogs.push({ id: s.frogs.length, side: side, slot: slot, kind: k, x: p.x, y: p.y, r: d.r, hp: d.hp, maxHp: d.hp, def: d.def, mass: d.mass, imp: d.impact,
+        alive: true, facing: side === 0 ? 0 : Math.PI, el: null, ch: 0, empty: false, ret: 0 });
+    }
+    // старт (§17): каждая жаба на базе с одним зарядом; элементы — из общей последовательности по порядку слотов
+    for (side = 0; side < 2; side++) s.frogs.forEach(function (f) { if (f.side === side) { f.el = takeEl(s, side); f.ch = T.startCharges; } });
+    s.turn = 1; s.turnSide = 0; s.phase = 'play'; s.winner = null; s.recalls = 0; s.act = null; s.pending = null;
+    return [{ t: 'turn', side: 0, turn: 1 }];
+  };
+
+  // ---------- запросы ----------
+  Sim.traitOn = function (s, side, id) { return s.traits[side].indexOf(id) >= 0; };
+  Sim.canAct = function (s, f) {
+    if (s.phase !== 'play' || !f.alive || f.side !== s.turnSide) return false;
+    if (s.pending) return s.pending.frog === f.id;
+    return f.ch > 0;
+  };
+  Sim.canRecall = function (s, f) { return s.phase === 'play' && !s.pending && !s.act && f.side === s.turnSide && s.recalls < T.recallsPerTurn && !(Sim.onBase(f) && !f.el && !f.ch); };
+  Sim.rangeFor = function (s, f, mode) { return mode === 'end' ? T.jumpR * T.relayAuto : T.jumpR; };
+  function enemiesOf(s, f) { return s.frogs.filter(function (e) { return e.alive && e.side !== f.side; }); }
+  function mates(s, f) { return s.frogs.filter(function (e) { return e.alive && e.side === f.side && e.id !== f.id; }); }
+
+  // Steam (§36): жаба в паре своей стороны не видна врагу, если рядом нет его жабы
+  Sim.hiddenFrom = function (s, viewer, f) {
+    if (f.side === viewer || !f.alive) return false;
+    var cl = s.cells[cellIdx(f.x, f.y)];
+    if (cl.t !== 'steam' || cl.side !== f.side) return false;
+    return !s.frogs.some(function (o) { return o.side === viewer && o.alive && dist(o.x, o.y, f.x, f.y) <= T.steamSight; });
+  };
+  Sim.perceived = function (s, viewer) {
+    var c = Sim.clone(s);
+    c.frogs.forEach(function (f) { if (Sim.hiddenFrom(s, viewer, s.frogs[f.id])) { f.hidden = true; f.x = -5000; f.y = -5000; } });
+    return c;
+  };
+
+  // ---------- база: места, возврат, смерть ----------
+  function freeSpot(s, side, f) {
+    var occupied = function (p) { return s.frogs.some(function (o) { return o.alive && o.id !== f.id && dist(o.x, o.y, p.x, p.y) < o.r + f.r + 6; }); };
+    var pref = AR.slots[side][f.slot];
+    if (!occupied(pref)) return pref;
+    var cand = AR.slots[side].concat(s.cells.map(function (cl, i) { return i; }).filter(function (i) { return baseOf(i) === side; }).map(center));
+    for (var k = 0; k < cand.length; k++) if (!occupied(cand[k])) return cand[k];
+    return pref;
+  }
+  function sendHome(s, f, events, why) {
+    var from = { x: f.x, y: f.y }, p = freeSpot(s, f.side, f);
+    f.x = p.x; f.y = p.y; f.ch = 0; f.el = null; f.empty = false; f.ret = 0;
+    events.push({ t: 'home', id: f.id, from: from, to: { x: p.x, y: p.y }, why: why });
+  }
+
+  // ---------- урон, смерть, отброс ----------
+  function damage(s, f, amount, events, src) {
+    if (!f.alive || amount <= 0) return 0;
+    if (src !== 'slam' && src !== 'toxic') amount *= (1 - f.def / 100); // Defense
+    amount = Math.max(1, Math.round(amount));
+    f.hp -= amount;
+    events.push({ t: 'hit', id: f.id, dmg: amount, src: src || 'hit' });
+    if (f.hp <= 0) { // смерть (§26): жаба возвращается на базу с пустым баком и полным здоровьем
+      events.push({ t: 'death', id: f.id, x: f.x, y: f.y });
+      f.hp = f.maxHp; sendHome(s, f, events, 'death');
+      if (s.pending && s.pending.frog === f.id) s.pending = null;
+    }
+    return amount;
+  }
+  // Не сдвинуть (§29, §36): Anchor — Clingfoot и Spur Knight рядом друг с другом; Static Ward своей стороны под ногами
+  function immovable(s, e) {
+    var cl = s.cells[cellIdx(e.x, e.y)];
+    if (cl.t === 'ward' && cl.side === e.side) return 'ward';
+    if ((e.kind === 'cling' || e.kind === 'spur') && Sim.traitOn(s, e.side, 'anchor')) {
+      var other = e.kind === 'cling' ? 'spur' : 'cling';
+      if (s.frogs.some(function (o) { return o.alive && o.side === e.side && o.kind === other && dist(o.x, o.y, e.x, e.y) <= T.anchorR; })) return 'anchor';
+    }
+    return null;
+  }
+  Sim.immovable = immovable;
+  function push(s, e, dir, amount, events, gentle) {
+    if (!e.alive || amount <= 0) return;
+    var why = !gentle && immovable(s, e);
+    if (why) { events.push({ t: 'anchored', id: e.id, why: why }); return; }
+    var from = { x: e.x, y: e.y }, x = e.x, y = e.y, hit = null, obs = obstacles(s).filter(function (o) { return !inObst(o, e.x, e.y, e.r * 0.8); }), step = 4;
+    for (var t = step; t <= amount; t += step) {
+      var nx = e.x + dir.x * t, ny = e.y + dir.y * t;
+      if (!wallClear(nx, ny, e.r * 0.9)) { hit = 'wall'; break; }
+      for (var k = 0; k < obs.length; k++) if (inObst(obs[k], nx, ny, e.r * 0.8)) { hit = 'column'; break; }
+      if (hit) break;
+      x = nx; y = ny;
+    }
+    e.x = x; e.y = y;
+    events.push({ t: 'push', id: e.id, from: from, to: { x: x, y: y }, wall: hit });
+    if (hit && !gentle) damage(s, e, T.slamDamage, events, 'slam');
+  }
+  function knockFrom(s, e, from, amount, events, fallback) {
+    var d = norm(e.x - from.x, e.y - from.y); if (!d.l) d = fallback || { x: 0, y: 1 };
+    push(s, e, d, amount, events);
+  }
+  function knockAmount(a, e, speed, mul) { return Math.max(T.kbMin, Math.min(T.kbMax * (mul || 1), T.kbBase * (mul || 1) * (T.kbSpeedMin + (1 - T.kbSpeedMin) * Math.min(1, speed)) * a.mass / e.mass)); }
+
+  // ---------- команды ----------
+  // cmd: { frog, dx, dy, mode: 'jump'|'end'|'recall'|'skip' }
+  Sim.apply = function (s, cmd, opts) {
+    opts = opts || {};
+    var events = [], mode = cmd.mode || 'jump', f = s.frogs[cmd.frog];
+    if (s.phase !== 'play') return { ok: false, events: events, why: 'over' };
+    if (mode === 'skip') {
+      if (s.pending) return { ok: false, events: events, why: 'mid-relay' };
+      events.push({ t: 'skip', id: f ? f.id : undefined, side: s.turnSide });
+      if (!opts.noEnd) endTurn(s, events);
+      return { ok: true, events: events };
+    }
+    if (!f) return { ok: false, events: events, why: 'no frog' };
+    if (mode === 'recall') { // отзыв (§23): бесплатно, 1 за ход, до активации
+      if (!Sim.canRecall(s, f)) return { ok: false, events: events, why: 'cannot recall' };
+      s.recalls++;
+      events.push({ t: 'recall', id: f.id });
+      sendHome(s, f, events, 'recall');
+      return { ok: true, events: events, free: true };
+    }
+    if (!Sim.canAct(s, f)) return { ok: false, events: events, why: 'cannot act' };
+    var P = s.pending;
+    if (mode === 'end' && !P) return { ok: false, events: events, why: 'nothing pending' };
+    if (!P) { s.act = { frog: f.id, used: {}, relays: 0, tr: {}, last: null }; events.push({ t: 'act', id: f.id, side: f.side }); }
+    s.pending = null;
+    var A = s.act, v;
+    if (P) { // прыжок со спины союзника
+      v = mode === 'end' ? { x: P.dir.x, y: P.dir.y } : norm(cmd.dx || 0, cmd.dy || 0);
+      if (!v.x && !v.y) v = { x: P.dir.x, y: P.dir.y };
+      // Living Catapult: точка эстафеты подаётся вперёд по ходу прыжка (§29, D-117)
+      if (A.last && A.last.trait === 'catapult') { var al = s.frogs[A.last.ally]; push(s, al, norm(v.x, v.y), T.catapultShove, events, true); events.push({ t: 'label', id: al.id, text: '🏹 CATAPULT' }); }
+    }
+    var len = mode === 'end' ? T.jumpR * T.relayAuto : Math.min(norm(cmd.dx || 0, cmd.dy || 0).l, T.jumpR);
+    if (mode !== 'end' && len < 1) { len = T.jumpR * T.minPull; }
+    var cont = jump(s, f, mode === 'end' ? v : { x: cmd.dx || 0, y: cmd.dy || 0 }, len, events, !!P);
+    if (cont && s.phase === 'play') return { ok: true, events: events, continues: true, pending: s.pending };
+    s.pending = null;
+    if (!opts.noEnd && s.phase === 'play') endTurn(s, events);
+    return { ok: true, events: events };
+  };
+
+  function jump(s, f, dirv, len, events, fromAlly) {
+    var v = norm(dirv.x, dirv.y);
+    if (v.l < 1e-6) v = { x: 0, y: f.side === 0 ? -1 : 1, l: 1 };
+    var from = { x: f.x, y: f.y }, A = s.act;
+    var breach = Sim.traitOn(s, f.side, 'breach') && (f.kind === 'bellows' || f.kind === 'spur');
+    var fl = Sim.flight(s, f, from, v, len, { h0: fromAlly ? T.perchH : 0, breach: breach });
+    f.facing = Math.atan2(fl.dir.x, -fl.dir.y);
+    events.push({ t: 'jump', id: f.id, segs: fl.segs, relay: fromAlly });
+    fl.segs.forEach(function (sg) { if (sg.hit) events.push({ t: 'bounce', id: f.id, x: sg.to.x, y: sg.to.y, kind: sg.hit }); });
+    fl.smashed.forEach(function (i) { setCell(s, i, null, null, -1, events); events.push({ t: 'smash', id: f.id, i: i }); }); // Breach
+    return land(s, f, fl.land, fl.dir, len / T.jumpR, events, A);
+  }
+
+  // Приземление: союзник — эстафета (§9), враг — бой (§10), иначе — финальное приземление
+  function land(s, f, L, dir, speed, events, A) {
+    obstacles(s).forEach(function (ob) { var r = inObst(ob, L.x, L.y, f.r); if (r) L = { x: L.x + r.n.x * (r.pen + 1), y: L.y + r.n.y * (r.pen + 1) }; });
+    if (!wallClear(L.x, L.y, f.r * 0.8)) { var ne = nearestEdge(L.x, L.y); L = { x: L.x + ne.e.n.x * (f.r - ne.d + 1), y: L.y + ne.e.n.y * (f.r - ne.d + 1) }; }
+    var enemy = null, ally = null, best = 1e9;
+    s.frogs.forEach(function (e) {
+      if (!e.alive || e.id === f.id) return;
+      var d = dist(L.x, L.y, e.x, e.y);
+      if (d <= f.r + e.r + T.contactAssist && d < best) { best = d; if (e.side === f.side) { ally = e; enemy = null; } else { enemy = e; ally = null; } }
+    });
+
+    if (ally && !A.used[ally.id]) { // эстафета: активация продолжается, клетку не красим (§9)
+      A.used[ally.id] = true; A.relays++;
+      var tr = FB.traitFor(f.kind, ally.kind);
+      A.last = { ally: ally.id, trait: tr ? tr.id : null };
+      if (tr && tr.when === 'relay') A.tr[tr.id] = (A.tr[tr.id] || 0) + 1;
+      f.x = ally.x; f.y = ally.y;
+      events.push({ t: 'land', id: f.id, x: f.x, y: f.y, onAlly: ally.id, perch: true });
+      events.push({ t: 'relay', id: f.id, ally: ally.id, n: A.relays, trait: tr && tr.when === 'relay' ? tr.id : null });
+      s.pending = { kind: 'relay', frog: f.id, dir: { x: dir.x, y: dir.y }, onAlly: ally.id };
+      return true;
+    }
+    if (ally) { // этот союзник уже был точкой эстафеты — соскакивает рядом
+      var bk = norm(dir.x, dir.y); if (bk.l < 1e-6) bk = norm(L.x - ally.x, L.y - ally.y);
+      L = { x: ally.x + bk.x * (f.r + ally.r + 10), y: ally.y + bk.y * (f.r + ally.r + 10) };
+      if (!wallClear(L.x, L.y, f.r * 0.8)) L = { x: ally.x - bk.x * (f.r + ally.r + 10), y: ally.y - bk.y * (f.r + ally.r + 10) };
+    }
+    f.x = L.x; f.y = L.y;
+    events.push({ t: 'land', id: f.id, x: f.x, y: f.y, onEnemy: enemy ? enemy.id : undefined });
+
+    if (enemy) { // бой (§10): урон и отброс, эстафеты нет
+      var mom = A.tr.momentum ? 1 + T.momentumPerRelay * A.relays : 1;
+      var imp = (T.impactBase + T.impactSpeed * Math.min(1, speed)) * f.imp * mom;
+      events.push({ t: 'impact', id: enemy.id, by: f.id, x: enemy.x, y: enemy.y, mom: mom > 1 ? mom : undefined });
+      var eid = enemy.id, ex = enemy.x, ey = enemy.y;
+      damage(s, enemy, imp, events, 'impact');
+      if (enemy.x === ex && enemy.y === ey) { var kd = norm(enemy.x - f.x, enemy.y - f.y); push(s, enemy, kd.l > 1 ? kd : dir, knockAmount(f, enemy, speed, A.tr.momentum ? T.momentumKb : 1), events); }
+      // враг не сдвинулся (якорь, стена) — атакующая соскакивает назад, чтобы не стоять внутри
+      var e2 = s.frogs[eid];
+      if (dist(e2.x, e2.y, f.x, f.y) < e2.r + f.r) {
+        var back = norm(f.x - e2.x, f.y - e2.y); if (!back.l) back = { x: -dir.x, y: -dir.y };
+        var nx = e2.x + back.x * (e2.r + f.r + 4), ny = e2.y + back.y * (e2.r + f.r + 4);
+        if (!wallClear(nx, ny, f.r * 0.8)) { nx = e2.x - back.x * (e2.r + f.r + 4); ny = e2.y - back.y * (e2.r + f.r + 4); }
+        events.push({ t: 'push', id: f.id, from: { x: f.x, y: f.y }, to: { x: nx, y: ny }, soft: true }); f.x = nx; f.y = ny;
+      }
+    }
+    finalLanding(s, f, dir, events, A);
+    return false;
+  }
+
+  // Финальное приземление (§8, §18, §19): фляга врага, Static Ward, Toxic Field, элемент в клетку, заряд
+  function finalLanding(s, f, dir, events, A) {
+    var fk = AR.flasks[1 - f.side];
+    if (dist(f.x, f.y, fk.x, fk.y) <= T.flaskR + f.r * 0.5) { // победа (§3)
+      events.push({ t: 'flask', id: f.id, side: f.side });
+      spendCharge(s, f, events);
+      finish(s, f.side, events, 'flask');
+      return;
+    }
+    var own = AR.flasks[f.side], od = norm(f.x - own.x, f.y - own.y);
+    if (od.l < T.flaskR + f.r) { // на свою флягу не встать — иначе её можно закрыть телом; соскальзывает к краю (D-112)
+      if (!od.l) od = { x: 0, y: f.side === 0 ? -1 : 1, l: 1 };
+      var to = { x: own.x + od.x * (T.flaskR + f.r + 4), y: own.y + od.y * (T.flaskR + f.r + 4) };
+      if (!wallClear(to.x, to.y, f.r)) to = { x: own.x + (od.x >= 0 ? 1 : -1) * (T.flaskR + f.r + 4), y: own.y };
+      events.push({ t: 'push', id: f.id, from: { x: f.x, y: f.y }, to: to, soft: true }); f.x = to.x; f.y = to.y;
+    }
+    var i = cellIdx(f.x, f.y), cl = s.cells[i];
+    var breach = Sim.traitOn(s, f.side, 'breach') && (f.kind === 'bellows' || f.kind === 'spur');
+    if (cl.t && cl.t !== 'column' && breach) { setCell(s, i, null, null, -1, events); events.push({ t: 'label', id: f.id, text: '⛏ BREACH' }); }
+    if (cl.t === 'ward' && cl.side !== f.side) { // Static Ward: враг отбит назад, элемент не ложится
+      events.push({ t: 'wardZap', id: f.id, i: i });
+      damage(s, f, T.wardDmg, events, 'ward');
+      var back = norm(-dir.x, -dir.y); if (!back.l) back = { x: 0, y: f.side === 0 ? 1 : -1 };
+      if (s.frogs[f.id].x === f.x && cellIdx(f.x, f.y) === i) push(s, f, back, T.wardKnock, events, true);
+      spendCharge(s, f, events);
+      return;
+    }
+    if (cl.t === 'toxic' && cl.side !== f.side) { events.push({ t: 'toxic', id: f.id }); damage(s, f, T.toxicDmg, events, 'toxic'); }
+    if (!f.alive || cellIdx(f.x, f.y) !== i) { spendCharge(s, f, events); return; } // погибла — уже дома
+    if (baseOf(i) < 0) resolveCell(s, f, i, dir, events, A);
+    spendCharge(s, f, events);
+  }
+
+  function spendCharge(s, f, events) {
+    if (f.ch > 0) f.ch--;
+    events.push({ t: 'spend', id: f.id, ch: f.ch });
+    if (!f.ch && f.el && !Sim.onBase(f)) { f.empty = true; f.ret = T.emptyReturn; events.push({ t: 'empty', id: f.id, ret: f.ret }); }
+  }
+
+  // Элемент в клетку (§18): нейтральная — красится, такой же — ничего, другой — реакция; рельеф — заменяется элементом
+  function resolveCell(s, f, i, dir, events, A) {
+    var cl = s.cells[i], el = f.el;
+    if (!el) return;
+    if (cl.el && cl.el !== el && !cl.t) {
+      var key = FB.reactionKey(cl.el, el);
+      setCell(s, i, null, null, -1, events);
+      react(s, f, key, i, dir, events, !!A.tr.alchemy);
+      return;
+    }
+    if (cl.t || !cl.el) setCell(s, i, el, null, -1, events);
+    if (A.tr.territory) { // Territory: ещё 4 нейтральные клетки вокруг
+      var spread = neighbors4(i).filter(function (j) { return baseOf(j) < 0 && isNeutral(s.cells[j]); });
+      spread.forEach(function (j) { setCell(s, j, el, null, -1, events); });
+      if (spread.length) events.push({ t: 'label', id: f.id, text: '⛲ TERRITORY' });
+    }
+  }
+
+  // Реакции на сетке (§20, §36, D-116)
+  function react(s, f, key, i, dir, events, amp) {
+    var Rx = FB.REACTIONS[key], m = amp ? T.ampMul : 1, p = center(i);
+    events.push({ t: 'reaction', id: f.id, key: key, name: Rx.name, x: p.x, y: p.y, i: i, amp: amp });
+    var cellsOk = function (j) { return baseOf(j) < 0 && s.cells[j].t !== 'column'; };
+    if (key === 'fire+lightning') { // PLASMA BURST: мгновенный урон по 3×3, рельеф стирается
+      var area = square(i, amp ? 2 : 1);
+      enemiesOf(s, f).forEach(function (e) { if (area.indexOf(cellIdx(e.x, e.y)) >= 0) { damage(s, e, T.plasmaDmg * m, events, 'plasma'); knockFrom(s, e, p, T.plasmaKnock, events, dir); } });
+      area.forEach(function (j) { if (baseOf(j) < 0 && (s.cells[j].t || s.cells[j].el)) setCell(s, j, null, null, -1, events); });
+    } else if (key === 'fire+poison') { // DETONATION: отброс
+      enemiesOf(s, f).forEach(function (e) {
+        if (dist(e.x, e.y, p.x, p.y) > T.detR * (amp ? 1.3 : 1) + e.r) return;
+        damage(s, e, T.detDmg * m, events, 'det');
+        if (e.alive) knockFrom(s, e, p, T.detKnock * m, events, dir);
+      });
+    } else if (key === 'lightning+poison' || key === 'fire+ice') { // TOXIC FIELD / STEAM: крест (усиленная — 3×3)
+      var t = key === 'fire+ice' ? 'steam' : 'toxic';
+      (amp ? square(i, 1) : [i].concat(neighbors4(i))).filter(cellsOk).forEach(function (j) { setCell(s, j, null, t, f.side, events); });
+    } else if (key === 'ice+lightning' || key === 'ice+poison') { // STATIC WARD / CRYSTAL COLUMN: линия поперёк прыжка
+      var t2 = key === 'ice+lightning' ? 'ward' : 'column', n = key === 'ice+lightning' ? (amp ? 5 : 3) : (amp ? 3 : 1);
+      lineAcross(i, dir, n).filter(cellsOk).forEach(function (j) { setCell(s, j, null, t2, f.side, events); });
+      if (t2 === 'column') ejectFromColumns(s, f, dir, events);
+    }
+  }
+  function lineAcross(i, dir, n) {
+    var c = i % NC, r = Math.floor(i / NC), out = [i], h = Math.abs(dir.y) >= Math.abs(dir.x); // прыжок по длине поля → линия поперёк (по ширине)
+    for (var k = 1; out.length < n && k < 8; k++) [k, -k].forEach(function (o) { if (out.length >= n) return; var cc = h ? c + o : c, rr = h ? r : r + o; if (inGrid(cc, rr)) out.push(idx(cc, rr)); });
+    return out;
+  }
+  // Колонна поднялась под жабой — жаба выталкивается в ближайшую свободную клетку (назад по ходу прыжка, если можно)
+  function ejectFromColumns(s, f, dir, events) {
+    s.frogs.forEach(function (o) {
+      if (!o.alive) return;
+      var i = cellIdx(o.x, o.y); if (s.cells[i].t !== 'column') return;
+      var opts = square(i, 1).concat(square(i, 2)).filter(function (j) { return s.cells[j].t !== 'column'; });
+      var want = { x: o.x - dir.x * C, y: o.y - dir.y * C };
+      opts.sort(function (a, b) { var pa = center(a), pb = center(b); return dist(pa.x, pa.y, want.x, want.y) - dist(pb.x, pb.y, want.x, want.y); });
+      var to = null;
+      for (var k = 0; k < opts.length && !to; k++) {
+        var q = center(opts[k]);
+        if (wallClear(q.x, q.y, o.r) && !s.frogs.some(function (z) { return z.alive && z.id !== o.id && dist(z.x, z.y, q.x, q.y) < z.r + o.r; })) to = q;
+      }
+      if (!to) to = center(opts[0]);
+      events.push({ t: 'push', id: o.id, from: { x: o.x, y: o.y }, to: { x: to.x, y: to.y }, soft: true });
+      o.x = to.x; o.y = to.y;
+    });
+  }
+
+  // ---------- ход (§28) ----------
+  function endTurn(s, events) {
+    s.played[s.turnSide]++;
+    s.act = null; s.pending = null; s.recalls = 0;
+    if (s.phase !== 'play') return;
+    s.turnSide = 1 - s.turnSide; s.turn++;
+    if (s.turn > T.turnCap) return decideByProgress(s, events);
+    events.push({ t: 'turn', side: s.turnSide, turn: s.turn });
+    startTurn(s, events);
+  }
+  Sim.progress = function (s, side) { // насколько близко ближайшая жаба стороны к фляге врага (меньше — ближе)
+    var fk = AR.flasks[1 - side], b = 1e9;
+    s.frogs.forEach(function (f) { if (f.side === side && f.alive) b = Math.min(b, dist(f.x, f.y, fk.x, fk.y)); });
+    return b;
+  };
+  // Начало хода: пустые жабы считают возврат, Toxic Field жжёт, база заряжает (§14, §16, §25)
+  function startTurn(s, events) {
+    var side = s.turnSide;
+    s.frogs.forEach(function (f) {
+      if (f.side !== side || !f.alive || !f.empty) return;
+      f.ret--;
+      if (f.ret <= 0) sendHome(s, f, events, 'auto'); else events.push({ t: 'ret', id: f.id, ret: f.ret });
+    });
+    s.frogs.forEach(function (f) {
+      if (f.side !== side || !f.alive) return;
+      var cl = s.cells[cellIdx(f.x, f.y)];
+      if (cl.t === 'toxic' && cl.side !== side) { events.push({ t: 'toxic', id: f.id }); damage(s, f, T.toxicDmg, events, 'toxic'); }
+    });
+    if (s.played[side] === 0) return; // первый ход стороны — стартовый заряд уже есть (§17)
+    s.frogs.forEach(function (f) {
+      if (f.side !== side || !f.alive || !Sim.onBase(f)) return;
+      var fresh = !f.ch;
+      if (fresh) { f.el = takeEl(s, side); f.ch = 1; f.empty = false; f.ret = 0; }
+      else if (f.ch < T.tank) f.ch++;
+      else return;
+      events.push({ t: 'tick', id: f.id, ch: f.ch, el: f.el, fresh: fresh });
+    });
+  }
+  function decideByProgress(s, events) {
+    var a = Sim.progress(s, 0), b = Sim.progress(s, 1);
+    finish(s, Math.abs(a - b) < 1 ? -1 : (a < b ? 0 : 1), events, 'cap');
+  }
+  function finish(s, w, events, why) {
+    s.phase = 'over'; s.why = why; s.winner = w;
+    events.push({ t: 'over', winner: w, why: why });
+  }
+
+  // Превью (§19: всё видно по траектории): та же функция на копии того, что видит сторона
+  Sim.preview = function (s, cmd, viewer) {
+    var c = viewer === undefined ? Sim.clone(s) : Sim.perceived(s, viewer);
+    var r = Sim.apply(c, cmd, { noEnd: true });
+    return { state: c, events: r.events, ok: r.ok, pending: c.pending };
+  };
+})();

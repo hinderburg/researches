@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1c140e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>TOADBREW — Relay Alchemy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Lilita+One&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css?b=5.0.0-1791829766">
+</head>
+<body>
+<div id="app">
+  <canvas id="gl"></canvas>
+  <div id="labels"></div>
+  <div id="loading" class="loading">Brewing…</div>
+
+  <header id="topbar" class="topbar">
+    <div class="logo"><div class="logo-a">T<span class="flask-o">⚗</span>ADBREW</div><div class="logo-b">RELAY ALCHEMY · QUORIDOR</div></div>
+    <button id="btn-help" class="chip">How to play</button>
+  </header>
+
+  <!-- TEAM (§6, §29): три жабы из четырёх, три пары — три свойства -->
+  <section id="team" class="screen meta">
+    <div class="sec-head"><div class="plaque">TEAM</div><div class="counter">🐸 PICK 3 OF 4</div></div>
+    <div id="roster" class="roster r4"></div>
+    <div class="sec-head small"><div class="plaque sm">⚔ TEAM TRAITS · 3 PAIRS</div></div>
+    <div id="traits" class="traits"></div>
+  </section>
+
+  <!-- ALCHEMY (§15, §18, §36): общая последовательность и реакции на сетке -->
+  <section id="alchemy" class="screen meta hidden">
+    <div class="sec-head"><div class="plaque">⚗ ALCHEMY</div><div class="counter">REACTIONS ON THE GRID</div></div>
+    <div class="panel-box">
+      <div class="box-head">⚗ HOW ELIXIR WORKS <span>Frogs charge only on your base, one charge per turn, up to 3. An empty frog takes the next element from the shared sequence — both sides see it. One activation (a whole relay chain) costs one charge.</span></div>
+      <div class="box-head">▦ CELLS <span>The final landing of an activation paints its cell. Land in a cell of <b>another</b> element — a reaction. Terrain stays until a reaction or a landing replaces it. Base cells never change.</span></div>
+      <div id="reactions" class="reactions"></div>
+    </div>
+  </section>
+
+  <nav id="nav" class="nav">
+    <button class="tab" data-tab="alchemy"><span class="ti">⚗</span>ALCHEMY</button>
+    <button id="btn-battle" class="battle-btn"><span>⚔</span> BATTLE</button>
+    <button class="tab on" data-tab="team"><span class="ti">👥</span>TEAM</button>
+  </nav>
+
+  <!-- Боевой HUD (§37) -->
+  <div id="hud" class="hidden">
+    <div class="top">
+      <div class="cards3" id="cards-1"></div>
+      <div class="turnbox" id="turnbox">
+        <div class="tb-l" id="tb-l">TURN</div><div class="tb-n" id="turn-n">1</div>
+        <div class="tring off" id="tring"><svg viewBox="0 0 40 40"><circle class="bg" cx="20" cy="20" r="17"/><circle class="fg" id="tring-fg" cx="20" cy="20" r="17"/></svg><span id="tring-n">20</span></div>
+      </div>
+    </div>
+    <div id="traits-1" class="tbadges enemy"></div>
+    <div id="seq" class="seq"></div>
+    <div id="notice" class="notice hidden"></div>
+    <div class="zoomer"><button id="z-in">＋</button><button id="z-out">－</button><button id="z-all" title="Whole board">▦</button></div>
+    <div class="bottom" id="bottom">
+      <div id="traits-0" class="tbadges mine"></div>
+      <div class="cards3 mine" id="cards-0"></div>
+      <div class="actbar">
+        <button id="btn-menu" class="gear" aria-label="Menu">⚙</button>
+        <div class="pvcard" id="pvcard"></div>
+        <div class="acts">
+          <button id="btn-recall" class="skip recall">RECALL</button>
+          <button id="btn-skip" class="skip">PASS</button>
+        </div>
+      </div>
+      <div class="timer" id="timer"><b><i></i></b><span>20</span></div>
+    </div>
+  </div>
+
+  <div id="banner" class="banner"></div>
+
+  <!-- Совет перед матчем (D-088): главное правило режима -->
+  <section id="tip" class="tipbox hidden">
+    <div class="tip-card">
+      <div class="tip-h">RELAY ALCHEMY</div>
+      <div class="tip-ic" id="tip-ic">⚗</div>
+      <div class="tip-n" id="tip-n">LAND ON THE ENEMY FLASK</div>
+      <div class="tip-t" id="tip-t"></div>
+      <div class="tip-bar"><i></i></div>
+      <div class="tip-s">tap to start</div>
+    </div>
+  </section>
+
+  <section id="result" class="screen hidden">
+    <div class="res-title" id="res-title">VICTORY</div>
+    <div class="res-teams">
+      <div class="res-team mine"><div class="rt-h">⚔ YOUR TEAM</div><div class="rt-f" id="res-0"></div></div>
+      <div class="res-team enemy"><div class="rt-h">⚔ ENEMY TEAM</div><div class="rt-f" id="res-1"></div></div>
+    </div>
+    <div class="res-sub" id="res-sub"></div>
+    <button id="btn-continue" class="big-btn">⚔ CONTINUE</button>
+    <button id="btn-rematch" class="chip">Rematch</button>
+  </section>
+
+  <section id="menu" class="modal hidden">
+    <div class="panel">
+      <h2>Paused</h2>
+      <button id="m-resume" class="big-btn">Resume</button>
+      <button id="m-speed" class="chip wide">Animation speed: x1</button>
+      <button id="m-help" class="chip wide">How to play</button>
+      <button id="m-quit" class="chip wide danger">Quit match</button>
+    </div>
+  </section>
+
+  <section id="help" class="modal hidden">
+    <div class="panel help">
+      <h2>How to play</h2>
+      <p><b>Goal.</b> Land any of your frogs on the <b>enemy Base Flask</b> at the far end. 3 vs 3; each turn you activate one frog.</p>
+      <p><b>Jump.</b> Drag back from a frog, aim, release. Every frog has the same range. The arc, bounces, the cell you land in and what happens there show before you let go.</p>
+      <p><b>Relay.</b> Land on your own frog — the same frog jumps again in the same activation. Each ally once per activation. A whole chain costs one charge. Landing on an enemy hits and knocks it back; no relay.</p>
+      <p><b>Elixir.</b> Frogs charge only on your base: +1 per turn, up to 3 (●●●). Starting a new tank, a frog takes the next element from the <b>shared sequence</b> on the left — you see your pointer and the enemy's. Out of charges in the field, a frog is <b>EMPTY</b>: it can't act but still works as a relay point, and returns home after 2 of your turns.</p>
+      <p><b>Recall.</b> Once per turn, free: send a frog home now. Its elixir is lost; next turn it starts a new tank.</p>
+      <p><b>Cells.</b> The final landing paints its cell with your element. Land in a cell of another element — a reaction: <b>Plasma Burst</b>, <b>Detonation</b>, <b>Toxic Field</b>, <b>Steam</b>, <b>Crystal Column</b>, <b>Static Ward</b> (see ALCHEMY). Terrain stays for the rest of the match until something replaces it.</p>
+      <p><b>Death.</b> At 0 HP a frog goes home with an empty tank.</p>
+      <p><b>Camera.</b> Drag the floor to scroll, pinch / wheel / ＋－ to zoom, ▦ to see the whole board.</p>
+      <button id="h-close" class="big-btn">Got it</button>
+    </div>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>window.FB_BUILD = '5.0.0-1791829766'; // tools/deploy.sh ставит сюда метку сборки — браузер не берёт старые файлы из кэша</script>
+<script src="js/config.js?b=5.0.0-1791829766"></script>
+<script src="js/sim.js?b=5.0.0-1791829766"></script>
+<script src="js/ai.js?b=5.0.0-1791829766"></script>
+<script src="js/render3d.js?b=5.0.0-1791829766"></script>
+<script src="js/main.js?b=5.0.0-1791829766"></script>
+</body>
+</html>
