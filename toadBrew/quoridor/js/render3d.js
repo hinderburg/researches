@@ -42,15 +42,38 @@
     x.putImageData(id, 0, 0);
     return c;
   }
+  function atlasTank(kind) { // круг резервуара в координатах атласа (в риге — относительно детали тела)
+    var r = rigs[kind], b = r.parts.filter(function (p) { return p.name === 'body'; })[0];
+    return { cx: b.rect[0] + r.tank.cx, cy: b.rect[1] + r.tank.cy, r: r.tank.r };
+  }
+  // Арт гайда v2 (D-140): резервуар — кремовое стекло в круге на теле; красим только его, блик стекла оставляем белым
+  function recolorTank(img, el, tk) {
+    var c = document.createElement('canvas'); c.width = img.naturalWidth || img.width; c.height = img.naturalHeight || img.height;
+    var x = c.getContext('2d'); x.drawImage(img, 0, 0);
+    if (el === 'orig' || !tk) return c;
+    var E = FB.ELEMENTS[el], x0 = Math.max(0, Math.floor(tk.cx - tk.r)), y0 = Math.max(0, Math.floor(tk.cy - tk.r)), w = Math.min(c.width - x0, Math.ceil(tk.r * 2)), h = Math.min(c.height - y0, Math.ceil(tk.r * 2));
+    var id = x.getImageData(x0, y0, w, h), d = id.data;
+    for (var yy = 0; yy < h; yy++) for (var xx = 0; xx < w; xx++) {
+      var px = x0 + xx - tk.cx, py = y0 + yy - tk.cy; if (px * px + py * py > tk.r * tk.r) continue;
+      var o = (yy * w + xx) * 4; if (d[o + 3] < 10) continue;
+      var mx = Math.max(d[o], d[o + 1], d[o + 2]), mn = Math.min(d[o], d[o + 1], d[o + 2]), L = (mx + mn) / 510;
+      if (L < 0.55 || mx - mn > 80) continue; // латунь и тёмный контур — мимо
+      if (L > 0.93) continue;                  // блик
+      var t = (L - 0.55) / 0.38, rgb = E ? hsl2rgb(E.hue, 0.9, 0.3 + t * 0.38 + (E.light || 0)) : hsl2rgb(30, 0.05, 0.3 + t * 0.25);
+      d[o] = rgb[0]; d[o + 1] = rgb[1]; d[o + 2] = rgb[2];
+    }
+    x.putImageData(id, x0, y0);
+    return c;
+  }
   R.portrait = function (kind, el) { // канвас для UI (команда, алхимия, HUD)
     var key = 'full:' + kind + ':' + (el || '');
-    if (!recolored[key] && fullImg[kind]) recolored[key] = recolor(fullImg[kind], el);
+    if (!recolored[key] && fullImg[kind]) recolored[key] = rigs[kind] && rigs[kind].tankFull ? recolorTank(fullImg[kind], el, rigs[kind].tankFull) : recolor(fullImg[kind], el);
     return recolored[key];
   };
   function atlasTex(kind, el) {
     var key = kind + ':' + (el || '');
     if (!tex[key]) {
-      var t = new THREE.CanvasTexture(recolor(atlasImg[kind], el));
+      var t = new THREE.CanvasTexture(rigs[kind] && rigs[kind].tank ? recolorTank(atlasImg[kind], el, atlasTank(kind)) : recolor(atlasImg[kind], el));
       t.encoding = THREE.sRGBEncoding; t.anisotropy = 4;
       tex[key] = t;
     }
@@ -106,6 +129,7 @@
     if (!T.simplify) return;
     var t0 = performance.now();
     FB.FROG_ORDER.forEach(function (k) {
+      if (rigs[k] && rigs[k].src) return; // арт гайда v2 и так чистый — не размываем (D-140)
       atlasImg[k] = simplifyImage(atlasImg[k], T.simplifyFrogR, T.simplifyLevels, 0.55, T.simplifyLineL);
       fullImg[k] = simplifyImage(fullImg[k], T.simplifyFrogR + 2, T.simplifyLevels, 0.55, T.simplifyLineL);
     });
