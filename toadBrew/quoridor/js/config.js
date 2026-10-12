@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '5.6.0';
+FB.VERSION = '5.6.1';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -114,12 +114,12 @@ FB.FROG_ORDER = ['spring', 'cling', 'bellows', 'spur'];
 // Свойства пар (§29, D-117). В команде из трёх жаб — три пары, все три свойства действуют.
 // «relay» — срабатывает, если в эстафете этой активации был прыжок с одной жабы пары на другую.
 FB.TEAM_TRAITS = {
-  'cling+spring':  { id: 'catapult', icon: '🏹', name: 'LIVING CATAPULT',   when: 'relay',  desc: 'Relay between them: the next jump off the partner’s back reaches 40% further.' },
-  'bellows+spring':{ id: 'alchemy',  icon: '🌀', name: 'ALCHEMICAL RELAY',  when: 'relay',  desc: 'After a relay between them, the final reaction is ×1.5 stronger and covers more cells.' },
-  'spring+spur':   { id: 'momentum', icon: '☄️', name: 'MOMENTUM STRIKE',   when: 'relay',  desc: 'After a relay between them, a direct hit lands ×1.35 harder per relay and knocks back further.' },
-  'bellows+cling': { id: 'territory',icon: '⛲', name: 'TERRITORY',         when: 'relay',  desc: 'After a relay between them, the final landing also paints the 4 neutral cells around.' },
-  'cling+spur':    { id: 'anchor',   icon: '⚓', name: 'ANCHOR',            when: 'always', desc: 'Linked by a chain while within jump range: neither can be knocked back, and an enemy that hits one of them bounces off.' },
-  'bellows+spur':  { id: 'breach',   icon: '⛏', name: 'BREACH',            when: 'always', desc: 'Bellows Toad and Spur Knight hit through: a direct hit also strikes every enemy next to the target, and they smash through Crystal Columns.' }
+  'cling+spring':  { id: 'catapult', icon: '🏹', name: 'LIVING CATAPULT',   when: 'relay',  desc: 'Relay off the partner: the next jump is 40% longer.' },
+  'bellows+spring':{ id: 'alchemy',  icon: '🌀', name: 'ALCHEMICAL RELAY',  when: 'relay',  desc: 'Relay off the partner: the reaction is 1.5× stronger and wider.' },
+  'spring+spur':   { id: 'momentum', icon: '☄️', name: 'MOMENTUM STRIKE',   when: 'relay',  desc: 'Relay off the partner: your hit lands harder per relay.' },
+  'bellows+cling': { id: 'territory',icon: '⛲', name: 'TERRITORY',         when: 'relay',  desc: 'Relay off the partner: the landing paints 4 more cells.' },
+  'cling+spur':    { id: 'anchor',   icon: '⚓', name: 'ANCHOR',            when: 'always', desc: 'Chained when close: can’t be pushed, attackers bounce off.' },
+  'bellows+spur':  { id: 'breach',   icon: '⛏', name: 'BREACH',            when: 'always', desc: 'Hits also strike enemies next to the target.' }
 };
 FB.traitFor = function (a, b) { return FB.TEAM_TRAITS[FB.reactionKey(a, b)] || null; };
 FB.teamTraits = function (team) { // три пары команды → id свойств

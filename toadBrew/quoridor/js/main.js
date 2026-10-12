@@ -70,6 +70,20 @@
     syncPicks(); closePop(); renderTeam();
   }
   var TR_COL = ['#7ddf6a', '#7ddf6a', '#7ddf6a'];
+  // Мини-превью свойства (D-139): зацикленная сценка — синие свои, красные враги, пунктир — прыжок
+  function traitPreview(id) {
+    var D = 'dur="2.4s" repeatCount="indefinite"', frog = function (x, y, c, extra) { return '<circle cx="' + x + '" cy="' + y + '" r="7" fill="' + c + '" stroke="#0a0604" stroke-width="1.5">' + (extra || '') + '</circle>'; };
+    var B = '#4aa3ff', E = '#ff5a4a', Y = '#ffd36a', hop = function (path, kt) { return '<circle r="5" fill="' + Y + '" stroke="#0a0604" stroke-width="1.5"><animateMotion ' + D + ' path="' + path + '" keyPoints="0;1;1" keyTimes="0;' + (kt || 0.7) + ';1" calcMode="linear"/></circle>'; };
+    var s = '<svg class="s2-pv" viewBox="4 0 112 44" xmlns="http://www.w3.org/2000/svg">';
+    var relayPath = 'M10,34 Q24,8 38,30 Q', burst = function (x, y, r, c) { return '<circle cx="' + x + '" cy="' + y + '" r="2" fill="none" stroke="' + c + '" stroke-width="3"><animate attributeName="r" values="0;0;' + r + '" keyTimes="0;0.7;1" ' + D + '/><animate attributeName="opacity" values="0;1;0" keyTimes="0;0.7;1" ' + D + '/></circle>'; };
+    if (id === 'catapult') s += frog(38, 30, B) + '<path d="M10,34 Q24,8 38,30 Q74,-14 112,30" stroke="' + Y + '" stroke-dasharray="3 3" fill="none" opacity="0.6"/>' + hop('M10,34 Q24,8 38,30 Q74,-14 112,30') + '<text x="86" y="42" fill="' + Y + '" font-size="10" font-weight="900">×1.4</text>';
+    else if (id === 'alchemy') s += frog(38, 30, B) + '<rect x="78" y="22" width="16" height="16" fill="#ff5a00" opacity="0.7"/>' + hop(relayPath + '62,0 86,30') + burst(86, 30, 20, '#ffe100') + burst(86, 30, 14, '#ff7a00') + '<text x="98" y="12" fill="' + Y + '" font-size="10" font-weight="900">×1.5</text>';
+    else if (id === 'momentum') s += frog(38, 30, B) + frog(92, 30, E, '<animate attributeName="cx" values="92;92;110" keyTimes="0;0.7;1" ' + D + '/>') + hop(relayPath + '64,2 90,28') + burst(92, 30, 14, Y) + '<text x="58" y="12" fill="' + Y + '" font-size="11" font-weight="900">POW!</text>';
+    else if (id === 'territory') { s += frog(38, 30, B); [[86, 26], [76, 26], [96, 26], [86, 16], [86, 36]].forEach(function (c, i) { s += '<rect x="' + (c[0] - 5) + '" y="' + (c[1] - 5) + '" width="10" height="10" fill="#78ff14" opacity="0"><animate attributeName="opacity" values="0;0;0.85" keyTimes="0;' + (i ? 0.75 : 0.7) + ';1" ' + D + '/></rect>'; }); s += hop(relayPath + '62,0 86,26'); }
+    else if (id === 'anchor') s += '<line x1="30" y1="32" x2="90" y2="32" stroke="' + Y + '" stroke-width="2.5" stroke-dasharray="5 3"/>' + frog(30, 32, B) + frog(90, 32, B) + frog(90, 6, E, '<animate attributeName="cy" values="0;24;6" keyTimes="0;0.45;1" ' + D + '/><animate attributeName="cx" values="90;90;114" keyTimes="0;0.45;1" ' + D + '/>') + '<text x="50" y="22" fill="' + Y + '" font-size="12">⚓</text>';
+    else if (id === 'breach') s += frog(60, 30, E) + frog(40, 30, E, '<animate attributeName="cx" values="40;40;30" keyTimes="0;0.6;1" ' + D + '/>') + frog(80, 30, E, '<animate attributeName="cx" values="80;80;90" keyTimes="0;0.6;1" ' + D + '/>') + '<circle r="5" fill="' + Y + '" stroke="#0a0604" stroke-width="1.5"><animateMotion ' + D + ' path="M8,40 Q34,-6 60,24" keyPoints="0;1;1" keyTimes="0;0.6;1" calcMode="linear"/></circle>' + burst(60, 30, 12, Y).replace(/0\.7/g, '0.6') + burst(40, 30, 8, '#ff9a6a').replace(/0\.7/g, '0.6') + burst(80, 30, 8, '#ff9a6a').replace(/0\.7/g, '0.6');
+    return s + '</svg>';
+  }
   function renderTeam() {
     var n = app.picks.length, ready = n === 3;
     $('pick-n').textContent = '🐸 ' + n + ' / 3 PICKED';
@@ -89,7 +103,7 @@
       el.dataset.key = key; el.classList.toggle('on', !!key);
       if (!key) { el.innerHTML = '<div class="s2-empty">Fill both frogs —<br>their pair gives a trait</div>'; return; }
       var t = FB.traitFor(a, b);
-      el.innerHTML = '<div class="s2-h"><span class="s2-ic">' + t.icon + '</span><b>' + t.name + '</b></div><div class="s2-w">' + (t.when === 'relay' ? 'on relay' : 'always') + ' · ' + FB.FROGS[a].name + ' + ' + FB.FROGS[b].name + '</div><div class="s2-d">' + t.desc + '</div>';
+      el.innerHTML = '<div class="s2-h"><span class="s2-ic">' + t.icon + '</span><b>' + t.name + '</b></div><div class="s2-w">' + (t.when === 'relay' ? 'ON RELAY' : 'ALWAYS') + '</div>' + traitPreview(t.id) + '<div class="s2-d">' + t.desc + '</div>';
       el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
     });
     requestAnimationFrame(drawArrows); setTimeout(drawArrows, 300);
