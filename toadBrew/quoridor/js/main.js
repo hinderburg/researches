@@ -14,6 +14,11 @@
   };
   if (!Array.isArray(app.picks)) app.picks = ['spring', 'cling', 'bellows'];
   app.picks = app.picks.filter(function (k, i) { return FB.FROGS[k] && app.picks.indexOf(k) === i; }).slice(0, 3); // 0–3 разных жаб (D-135)
+  // три слота треугольником (D-138): пустой слот — null; команда — занятые слоты по порядку
+  app.slots = store.get('slots3');
+  if (!Array.isArray(app.slots) || app.slots.length !== 3) app.slots = [app.picks[0] || null, app.picks[1] || null, app.picks[2] || null];
+  app.slots = app.slots.map(function (k, i, arr) { return FB.FROGS[k] && arr.indexOf(k) === i ? k : null; });
+  app.picks = app.slots.filter(Boolean);
   var SIDE_C = ['#4aa3ff', '#ff5a4a'];
   var ELC = function (el) { return FB.ELEMENTS[el] ? FB.ELEMENTS[el].color : '#d8c8a8'; };
   var RXC = { 'fire+ice': '#eefaff', 'fire+poison': '#ff6a00', 'fire+lightning': '#ff9800', 'ice+poison': '#46ffb0', 'ice+lightning': '#bfefff', 'lightning+poison': '#9dff3a' };
@@ -27,65 +32,86 @@
   function pips(ch, el) { var h = ''; for (var i = 0; i < T.tank; i++) h += '<i class="' + (i < ch ? 'on' : '') + '" style="--c:' + ELC(el) + '"></i>'; return '<span class="pips">' + h + '</span>'; }
 
   // ---------- TEAM ----------
-  function buildRoster() {
+  // Экран команды по макету автора (D-138): три слота треугольником; между соседними слотами — свойство их пары.
+  // Тап по слоту — попап со всеми жабами; жаба, уже стоящая в другом слоте, переезжает сюда, тот слот пустеет.
+  var PAIRS = [[0, 1], [0, 2], [1, 2]], popSlot = -1;
+  function syncPicks() { app.picks = app.slots.filter(Boolean); store.set('slots3', app.slots); }
+  function buildRoster() { // сетка попапа: все четыре жабы
     var r = $('roster'); r.innerHTML = '';
     FB.FROG_ORDER.forEach(function (k) {
-      var F = FB.FROGS[k], el = document.createElement('button'); el.className = 'card fcbtn'; el.dataset.kind = k;
+      var F = FB.FROGS[k], el = document.createElement('button'); el.className = 'card ppf'; el.dataset.kind = k;
       el.appendChild(pic(k, 'orig', 160));
-      el.insertAdjacentHTML('beforeend', '<div class="check">✓</div><div class="cname">' + F.name + '</div><div class="cstats">❤ ' + F.hp + ' · 🛡 ' + F.def + '% · 💥 ×' + F.impact + '</div>');
-      el.onclick = function () { togglePick(k); };
+      el.insertAdjacentHTML('beforeend', '<div class="pp-tag"></div><div class="cname">' + F.name + '</div><div class="cstats">❤ ' + F.hp + ' · 🛡 ' + F.def + '% · 💥 ×' + F.impact + '</div><div class="ctrait">' + F.role + ' — ' + F.tdesc + '</div>');
+      el.onclick = function () { choose(k); };
       r.appendChild(el);
     });
+    document.querySelectorAll('.tslot').forEach(function (b) { b.onclick = function () { openPop(+b.dataset.i); }; });
+    $('pickpop').onclick = function (e) { if (e.target === $('pickpop')) closePop(); };
+    $('pp-clear').onclick = function () { app.slots[popSlot] = null; syncPicks(); closePop(); renderTeam(); };
   }
-  // выбор (D-135): тап — выбрать или снять; больше трёх нельзя, в бой — только с тремя
-  function togglePick(k) {
-    var i = app.picks.indexOf(k);
-    if (i >= 0) app.picks.splice(i, 1);
-    else if (app.picks.length >= 3) { var pn = $('pick-n'); pn.classList.remove('shake'); void pn.offsetWidth; pn.classList.add('shake'); return; }
-    else app.picks.push(k);
-    store.set('picks3', app.picks); renderTeam();
+  function openPop(i) {
+    popSlot = i;
+    $('pp-h').textContent = 'CHOOSE A FROG · SLOT ' + (i + 1);
+    document.querySelectorAll('.ppf').forEach(function (el) {
+      var at = app.slots.indexOf(el.dataset.kind);
+      el.classList.toggle('sel', at === i);
+      el.querySelector('.pp-tag').textContent = at < 0 ? '' : at === i ? 'IN THIS SLOT' : 'IN SLOT ' + (at + 1) + ' → moves here';
+      el.classList.toggle('other', at >= 0 && at !== i);
+    });
+    $('pp-clear').style.display = app.slots[i] ? '' : 'none';
+    $('pickpop').classList.remove('hidden');
   }
-  var TR_COL = ['#ffb84a', '#6fd0ff', '#b88aff'];
+  function closePop() { $('pickpop').classList.add('hidden'); popSlot = -1; }
+  function choose(k) {
+    var i = popSlot; if (i < 0) return;
+    var at = app.slots.indexOf(k);
+    if (at >= 0 && at !== i) app.slots[at] = null; // была в другом слоте — тот пустеет
+    app.slots[i] = k;
+    syncPicks(); closePop(); renderTeam();
+  }
+  var TR_COL = ['#7ddf6a', '#7ddf6a', '#7ddf6a'];
   function renderTeam() {
-    document.querySelectorAll('.card').forEach(function (el) { el.classList.toggle('sel', app.picks.indexOf(el.dataset.kind) >= 0); });
     var n = app.picks.length, ready = n === 3;
     $('pick-n').textContent = '🐸 ' + n + ' / 3 PICKED';
     $('btn-battle').classList.toggle('off', !ready);
     $('btn-battle').innerHTML = ready ? '<span>⚔</span> BATTLE' : '<span>🐸</span> PICK ' + (3 - n) + ' MORE';
-    // пары выбранных жаб — по блоку свойства на каждую; уже показанные блоки остаются на месте, новые выезжают
-    var pairs = [];
-    for (var a = 0; a < n; a++) for (var b = a + 1; b < n; b++) pairs.push([app.picks[a], app.picks[b]]);
-    var box = $('traits'), keep = {};
-    pairs.forEach(function (p) { keep[FB.reactionKey(p[0], p[1])] = p; });
-    Array.prototype.slice.call(box.querySelectorAll('.trc')).forEach(function (el) { if (!keep[el.dataset.key]) el.remove(); });
-    var empty = box.querySelector('.tr-empty'); if (empty) empty.style.display = pairs.length ? 'none' : '';
-    pairs.forEach(function (p) {
-      var key = FB.reactionKey(p[0], p[1]);
-      if (box.querySelector('.trc[data-key="' + key + '"]')) return;
-      var t = FB.traitFor(p[0], p[1]), el = document.createElement('div'); el.className = 'trc new'; el.dataset.key = key; el.dataset.a = p[0]; el.dataset.b = p[1];
-      el.innerHTML = '<div class="tr-ic">' + t.icon + '</div><div><div class="tr-n">' + t.name + (t.when === 'relay' ? ' <small>on relay</small>' : ' <small>always</small>') + '</div><div class="tr-p">' + FB.FROGS[p[0]].name + ' + ' + FB.FROGS[p[1]].name + '</div><div class="tr-d">' + t.desc + '</div></div>';
-      box.appendChild(el);
+    document.querySelectorAll('.tslot').forEach(function (b) {
+      var k = app.slots[+b.dataset.i];
+      if (b.dataset.k === (k || '')) return;
+      b.dataset.k = k || ''; b.innerHTML = ''; b.classList.toggle('empty', !k);
+      if (k) { b.appendChild(pic(k, 'orig', 180)); b.insertAdjacentHTML('beforeend', '<div class="cname">' + FB.FROGS[k].name + '</div>'); }
+      else b.innerHTML = '<div class="plus">＋</div><div class="cname">TAP TO CHOOSE</div>';
+      b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop');
     });
-    // порядок блоков — как пары в выборе; цвет блока и его стрелок — по месту
-    pairs.forEach(function (p, i) { var el = box.querySelector('.trc[data-key="' + FB.reactionKey(p[0], p[1]) + '"]'); box.appendChild(el); el.style.setProperty('--tc', TR_COL[i % TR_COL.length]); });
-    requestAnimationFrame(drawArrows); setTimeout(drawArrows, 380); // после выезда блоков
+    document.querySelectorAll('.syn2').forEach(function (el) {
+      var p = el.dataset.p.split('-'), a = app.slots[+p[0]], b = app.slots[+p[1]], key = a && b ? FB.reactionKey(a, b) : '';
+      if (el.dataset.key === key) return;
+      el.dataset.key = key; el.classList.toggle('on', !!key);
+      if (!key) { el.innerHTML = '<div class="s2-empty">Fill both frogs —<br>their pair gives a trait</div>'; return; }
+      var t = FB.traitFor(a, b);
+      el.innerHTML = '<div class="s2-h"><span class="s2-ic">' + t.icon + '</span><b>' + t.name + '</b></div><div class="s2-w">' + (t.when === 'relay' ? 'on relay' : 'always') + ' · ' + FB.FROGS[a].name + ' + ' + FB.FROGS[b].name + '</div><div class="s2-d">' + t.desc + '</div>';
+      el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+    });
+    requestAnimationFrame(drawArrows); setTimeout(drawArrows, 300);
   }
-  // Стрелки (D-135): от каждого блока свойства к двум жабам, которые его дают
+  // точка на краю прямоугольника по направлению к цели
+  function edge(R, tx, ty) {
+    var cx = R.x + R.w / 2, cy = R.y + R.h / 2, dx = tx - cx, dy = ty - cy;
+    var k = Math.min(Math.abs(R.w / 2 / (dx || 1e-6)), Math.abs(R.h / 2 / (dy || 1e-6)));
+    return { x: cx + dx * k, y: cy + dy * k };
+  }
+  // Зелёные стрелки (D-138): от каждого блока свойства к двум слотам его пары
   function drawArrows() {
     var wrap = $('teamwrap'), svg = $('tarrows'); if (!wrap || app.screen !== 'team') return;
-    var W = wrap.getBoundingClientRect(); svg.setAttribute('width', W.width); svg.setAttribute('height', W.height); svg.setAttribute('viewBox', '0 0 ' + W.width + ' ' + W.height);
-    var blocks = Array.prototype.slice.call(document.querySelectorAll('#traits .trc')), used = {}, h = '<defs>';
-    blocks.forEach(function (el, i) { var c = getComputedStyle(el).getPropertyValue('--tc') || '#ffb84a'; h += '<marker id="ah' + i + '" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="' + c.trim() + '"/></marker>'; });
-    h += '</defs>';
-    blocks.forEach(function (el, i) {
-      var B = el.getBoundingClientRect(), c = (getComputedStyle(el).getPropertyValue('--tc') || '#ffb84a').trim(), sx = B.left - W.left - 2;
-      [el.dataset.a, el.dataset.b].forEach(function (k, j) {
-        var card = document.querySelector('.card[data-kind="' + k + '"]'); if (!card) return;
-        var C = card.getBoundingClientRect(), u = used[k] = (used[k] || 0) + 1;
-        var ex = C.right - W.left + 4, ey = C.top - W.top + C.height * (0.28 + 0.22 * (u - 1)), sy = B.top - W.top + B.height * (0.35 + 0.3 * j);
-        var mx = (sx + ex) / 2;
-        h += '<path d="M' + sx + ',' + sy + ' C' + mx + ',' + sy + ' ' + mx + ',' + ey + ' ' + ex + ',' + ey + '" stroke="' + c + '" stroke-width="2.5" fill="none" marker-end="url(#ah' + i + ')" stroke-linecap="round" opacity="0.9"/>';
-        h += '<circle cx="' + sx + '" cy="' + sy + '" r="3.5" fill="' + c + '"/>';
+    var W = wrap.getBoundingClientRect(); svg.setAttribute('viewBox', '0 0 ' + W.width + ' ' + W.height);
+    function rect(el) { var r = el.getBoundingClientRect(); return { x: r.left - W.left, y: r.top - W.top, w: r.width, h: r.height }; }
+    var h = '<defs><marker id="ahg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7ddf6a"/></marker><marker id="ahd" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6a5a44"/></marker></defs>';
+    document.querySelectorAll('.syn2').forEach(function (el) {
+      var on = el.classList.contains('on'), B = rect(el), p = el.dataset.p.split('-');
+      p.forEach(function (si) {
+        var S = rect(document.querySelector('.tslot[data-i="' + si + '"]')), sc = { x: S.x + S.w / 2, y: S.y + S.h / 2 }, bc = { x: B.x + B.w / 2, y: B.y + B.h / 2 };
+        var a = edge(B, sc.x, sc.y), b = edge(S, bc.x, bc.y), mx = (a.x + b.x) / 2 + (b.y - a.y) * 0.15, my = (a.y + b.y) / 2 - (b.x - a.x) * 0.15;
+        h += '<path d="M' + a.x + ',' + a.y + ' Q' + mx + ',' + my + ' ' + b.x + ',' + b.y + '" stroke="' + (on ? '#7ddf6a' : '#6a5a44') + '" stroke-width="' + (on ? 3 : 2) + '" fill="none" stroke-linecap="round"' + (on ? '' : ' stroke-dasharray="5 6"') + ' marker-end="url(#' + (on ? 'ahg' : 'ahd') + ')"/>';
       });
     });
     svg.innerHTML = h;

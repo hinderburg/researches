@@ -2,6 +2,11 @@
 
 Формат: [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/). Версия — в `js/config.js` (`FB.VERSION`), она же видна в заголовке вкладки. Ссылки вида D-xxx ведут в [DECISIONS.md](DECISIONS.md), §N — в [GDD.md](GDD.md). Записи до 5.0.0 ссылаются на [DECISIONS-v3-arena2.md](DECISIONS-v3-arena2.md) и [GDD-v3-arena2.md](GDD-v3-arena2.md).
 
+## [5.6.0] — 2026-10-12
+
+### Изменено
+- Экран команды — три слота треугольником, свойства соседних пар между ними со стрелками, попап выбора жабы (D-138).
+
 ## [5.5.0] — 2026-10-12
 
 ### Изменено

@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Lilita+One&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?b=5.5.0-1791836337">
+<link rel="stylesheet" href="css/style.css?b=5.6.0-1791836706">
 </head>
 <body>
 <div id="app">
@@ -27,12 +27,14 @@
   <!-- TEAM (§6, §29): три жабы из четырёх, три пары — три свойства -->
   <section id="team" class="screen meta">
     <div class="sec-head"><div class="plaque">TEAM</div><div class="counter" id="pick-n">🐸 PICK 3 OF 4</div></div>
-    <!-- по макету автора (D-135): слева четыре кнопки-жабы, справа свойства пар выбранных жаб со стрелками к ним -->
-    <div class="teamwrap" id="teamwrap">
-      <div id="roster" class="roster rv"></div>
-      <div id="traits" class="traits"><div class="tr-empty">Pick frogs on the left — every pair of them gives a team trait.</div></div>
+    <!-- по макету автора (D-138): три слота треугольником, между соседними — свойство пары со стрелками к ним -->
+    <div class="tri" id="teamwrap">
       <svg id="tarrows" class="tarrows"></svg>
+      <button class="tslot" data-i="0"></button><button class="tslot" data-i="1"></button><button class="tslot" data-i="2"></button>
+      <div class="syn2" data-p="0-1"></div><div class="syn2" data-p="0-2"></div><div class="syn2" data-p="1-2"></div>
     </div>
+    <!-- попап выбора жабы для слота (D-138) -->
+    <div id="pickpop" class="pickpop hidden"><div class="pp-card"><div class="pp-h" id="pp-h">CHOOSE A FROG</div><div id="roster" class="pp-grid"></div><button id="pp-clear" class="chip">Empty this slot</button></div></div>
   </section>
 
   <!-- ALCHEMY (§15, §18, §36): общая последовательность и реакции на сетке -->
@@ -132,11 +134,11 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>window.FB_BUILD = '5.5.0-1791836337'; // tools/deploy.sh ставит сюда метку сборки — браузер не берёт старые файлы из кэша</script>
-<script src="js/config.js?b=5.5.0-1791836337"></script>
-<script src="js/sim.js?b=5.5.0-1791836337"></script>
-<script src="js/ai.js?b=5.5.0-1791836337"></script>
-<script src="js/render3d.js?b=5.5.0-1791836337"></script>
-<script src="js/main.js?b=5.5.0-1791836337"></script>
+<script>window.FB_BUILD = '5.6.0-1791836706'; // tools/deploy.sh ставит сюда метку сборки — браузер не берёт старые файлы из кэша</script>
+<script src="js/config.js?b=5.6.0-1791836706"></script>
+<script src="js/sim.js?b=5.6.0-1791836706"></script>
+<script src="js/ai.js?b=5.6.0-1791836706"></script>
+<script src="js/render3d.js?b=5.6.0-1791836706"></script>
+<script src="js/main.js?b=5.6.0-1791836706"></script>
 </body>
 </html>
