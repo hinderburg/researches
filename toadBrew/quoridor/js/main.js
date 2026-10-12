@@ -100,6 +100,11 @@
     app.s = Sim.createMatch(app.picks, botTeam, seed);
     var ev = Sim.startMatch(app.s);
     app.shown = Sim.clone(app.s); app.disp = {}; app.queue = []; app.cur = null; app.sel = -1; app.aimCmd = null; app.timerTurn = -1;
+    // стартовые баки наливаются на глазах (D-133): на экране жабы начинают пустыми, после подсказки — струйки из фляг, сначала свои
+    app.shown.frogs.forEach(function (f) { f.ch = 0; f.el = null; });
+    [0, 1].forEach(function (side) {
+      app.s.frogs.forEach(function (f) { if (f.side === side) ev.push({ t: 'tick', id: f.id, ch: f.ch, el: f.el, fresh: true }); });
+    });
     app.s.frogs.forEach(function (f) { app.disp[f.id] = { x: f.x, y: f.y, z: 0, facing: f.side === 0 ? 0 : Math.PI, pose: 'idle', poseT: 0, alive: true, flash: 0, squash: 0 }; });
     R.resetFrogs();
     showScreen('battle');
