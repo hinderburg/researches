@@ -267,11 +267,61 @@
     });
   }
   R.flaskObjs = flaskObjs;
+  // Победа (D-137): жаба влетает во флягу — колба взрывается осколками стекла, эликсир выплёскивается и растекается по полу
+  R.flaskBurst = function (side) {
+    var F = flaskObjs[side], p = AR.flasks[side]; if (!F || F.broken) return;
+    F.broken = true;
+    var col = '#' + F.liquid.material.color.getHexString(), i, a, v;
+    F.g.children.forEach(function (o, k) { if (k > 0) o.visible = false; }); // остаётся только латунная подставка
+    for (i = 0; i < 26; i++) { // осколки стекла
+      a = Math.random() * 6.28; v = 160 + Math.random() * 260;
+      var sh = sprite(shardTex(), i % 3 ? 0xe8fbff : 0xbfe8ff); sh.material.rotation = a;
+      particle(sh, p.x, p.y, 40 + Math.random() * 40, { life: 1.1 + Math.random() * 0.5, v: { x: Math.cos(a) * v, y: 260 + Math.random() * 220, z: Math.sin(a) * v }, drag: 1.4, s0: 26 + Math.random() * 18, s1: 12, spin: (Math.random() - 0.5) * 12 });
+    }
+    for (i = 0; i < 70; i++) { // брызги эликсира по дугам
+      a = Math.random() * 6.28; v = 120 + Math.random() * 380;
+      drop(p.x, 40 + Math.random() * 30, p.y, Math.cos(a) * v, 220 + Math.random() * 300, Math.sin(a) * v, col, (12 + Math.random() * 18) * FXS);
+    }
+    particle(sprite(solidTex(), col, false), p.x, p.y, 50, { life: 0.5, s0: 60, s1: 360, ease: true, a0: 0.9 });
+    particle(sprite(glowTex(), 0xffffff, true), p.x, p.y, 60, { life: 0.35, s0: 80, s1: 420, ease: true });
+    R.ring(p.x, p.y, 320, col, 0.8); setTimeout(function () { R.ring(p.x, p.y, 460, col, 1); }, 140);
+    // лужа эликсира растекается и остаётся до конца матча
+    R.splat(p.x, p.y, col, 240, 60); setTimeout(function () { R.splat(p.x + 60, p.y - 40, col, 150, 60); R.splat(p.x - 70, p.y + 20, col, 130, 60); }, 220);
+    swirl(p.x, p.y, 30, 260, [col, '#ffffff'], { out: true, w: 0.5, turns: 2, life: 1.2, sz: 28, lift: 120 });
+    R.shake(26);
+  };
+  function restoreFlasks() { flaskObjs.forEach(function (F) { F.broken = false; F.g.children.forEach(function (o) { o.visible = true; }); }); }
+  // Anchor (D-134): пока Clingfoot и Spur Knight в связке, между ними светится цепь — видно, кого нельзя сдвинуть
+  var anchorLinks = []; R.anchorLinks = anchorLinks;
+  function chainTex() { return canvasTex('chain2', function (x) { x.clearRect(0, 0, 128, 128); x.lineWidth = 12; for (var k = 0; k < 4; k++) { x.strokeStyle = 'rgba(40,24,8,0.9)'; x.beginPath(); x.ellipse(16 + k * 32, 64, 20, k % 2 ? 9 : 26, 0, 0, 7); x.stroke(); x.strokeStyle = '#ffe0a0'; x.lineWidth = 7; x.beginPath(); x.ellipse(16 + k * 32, 64, 20, k % 2 ? 9 : 26, 0, 0, 7); x.stroke(); x.lineWidth = 12; } }); }
+  function syncAnchors(s, t) {
+    [0, 1].forEach(function (side) {
+      var L = anchorLinks[side];
+      var on = s.traits && s.traits[side] && s.traits[side].indexOf('anchor') >= 0;
+      var c = on && s.frogs.filter(function (f) { return f.side === side && f.kind === 'cling'; })[0], p = on && s.frogs.filter(function (f) { return f.side === side && f.kind === 'spur'; })[0];
+      var dc = c && app.disp[c.id], dp = p && app.disp[p.id];
+      var linked = dc && dp && !dc.hidden && !dp.hidden && Math.hypot(c.x - p.x, c.y - p.y) <= T.anchorR;
+      if (!L) {
+        if (!linked) return;
+        var tx = chainTex().clone(); tx.needsUpdate = true; tx.wrapS = THREE.RepeatWrapping;
+        L = anchorLinks[side] = new THREE.Mesh(new THREE.PlaneGeometry(1, 30), new THREE.MeshBasicMaterial({ map: tx, color: side === 0 ? 0xd8ecff : 0xffd8c8, transparent: true, depthWrite: false }));
+        L.rotation.order = 'YXZ'; L.renderOrder = 6; scene.add(L);
+      }
+      L.visible = !!linked;
+      if (!linked) return;
+      var dx = dp.x - dc.x, dy = dp.y - dc.y, len = Math.hypot(dx, dy);
+      L.position.set((dc.x + dp.x) / 2, 9, (dc.y + dp.y) / 2);
+      L.rotation.y = -Math.atan2(dy, dx); L.rotation.x = -Math.PI / 2;
+      L.scale.x = len; L.material.map.repeat.x = len / 90; L.material.map.offset.x = -t * 0.3;
+      L.material.opacity = 0.65 + 0.25 * Math.sin(t * 3);
+    });
+  }
   // Жидкость во фляге — следующий элемент стороны из общей последовательности (D-130): им зарядится жаба, начинающая новый бак.
   // Смена цвета — с перетеканием и всплеском; над колбой поднимаются пузыри этого цвета.
   function syncFlasks(s, t) {
     if (!s.seq || !s.ptr) return;
     flaskObjs.forEach(function (F, side) {
+      if (F.broken) return; // разбита — ни цвета, ни пузырей
       var el = s.seq[s.ptr[side] % s.seq.length], E = FB.ELEMENTS[el];
       if (!E) return;
       if (F.el !== el) {
@@ -393,6 +443,7 @@
   }
 
   R.resetFrogs = function () {
+    restoreFlasks();
     Object.keys(frogs).forEach(function (id) { scene.remove(frogs[id].grp); frogs[id].label.remove(); });
     frogs = {};
     Object.keys(dyn.cells).forEach(function (id) { if (dyn.cells[id]) scene.remove(dyn.cells[id].obj); }); dyn.cells = {};
@@ -1018,6 +1069,7 @@
     if (s) {
       syncDyn(s, tAll);
       syncFlasks(s, tAll);
+      syncAnchors(s, tAll);
       s.frogs.forEach(function (f) { var d = app.disp[f.id]; if (d) syncFrog(f, d, dt, tAll, d.hidden); });
     }
     stepFx(dt * R.fxScale); stepDecals(dt * R.fxScale); // fxScale — замедление эффектов для отладки

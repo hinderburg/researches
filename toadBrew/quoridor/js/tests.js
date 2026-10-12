@@ -166,11 +166,12 @@
     ok(has(r, 'flask')); eq(s.phase, 'over'); eq(s.winner, 0);
   });
 
-  test('Living Catapult (spring+cling relay): the relay frog moves forward too', function () {
-    var s = match(['spring', 'cling', 'bellows']); put(s, 1, 2, 10);
-    jumpTo(s, 0, s.frogs[1].x, s.frogs[1].y); var y1 = s.frogs[1].y;
-    jumpCell(s, 0, 2, 7);
-    ok(s.frogs[1].y < y1 - 100, 'cling flung forward');
+  test('Living Catapult (spring+cling relay): the jump off the partner reaches ×1.4', function () {
+    var s = match(['spring', 'cling', 'bellows']); put(s, 1, 2, 10); s.frogs[1].ch = 0;
+    jumpTo(s, 0, s.frogs[1].x, s.frogs[1].y);
+    ok(Math.abs(Sim.rangeFor(s, s.frogs[0], 'jump') - T.jumpR * T.catapultMul) < 1, 'longer relay jump');
+    var y0 = s.frogs[0].y; jumpTo(s, 0, s.frogs[0].x, s.frogs[0].y - 900);
+    ok(y0 - s.frogs[0].y > T.jumpR * 1.2, 'flew further than a normal jump');
   });
   test('Territory (cling+bellows relay): final landing paints the 4 neutral cells around', function () {
     var s = match(['cling', 'bellows', 'spur']); put(s, 1, 2, 10); s.frogs[1].ch = 0;
@@ -186,15 +187,19 @@
     }
     ok(hitDmg(true) > hitDmg(false) * 1.2);
   });
-  test('Anchor (cling+spur): not knocked back while the partner is near', function () {
+  test('Anchor (cling+spur): not knocked back while the partner is near; the attacker bounces off', function () {
     var s = match(['spring', 'bellows', 'cling'], ['cling', 'spur', 'bellows']); put(s, 3, 2, 9); put(s, 4, 3, 9); put(s, 0, 2, 12);
     var x = s.frogs[3].x, y = s.frogs[3].y, r = jumpTo(s, 0, x, y);
     ok(has(r, 'anchored')); eq(s.frogs[3].x, x);
+    ok(Sim.dist(s.frogs[0].x, s.frogs[0].y, x, y) > 150, 'attacker bounced away');
   });
-  test('Breach (bellows+spur): smashes through a column', function () {
+  test('Breach (bellows+spur): smashes through a column; a direct hit also strikes enemies next to the target', function () {
     var s = match(['bellows', 'spur', 'cling']); put(s, 0, 2, 12); cell(s, 2, 11).t = 'column';
     var r = jumpCell(s, 0, 2, 10);
     ok(has(r, 'smash')); ok(!cell(s, 2, 11).t);
+    s = match(['bellows', 'spur', 'cling'], ['spring', 'cling', 'bellows']); put(s, 1, 2, 12); put(s, 3, 2, 10); put(s, 4, 3, 10);
+    var hp4 = s.frogs[4].hp; jumpTo(s, 1, s.frogs[3].x, s.frogs[3].y);
+    ok(s.frogs[4].hp < hp4, 'neighbour hit too');
   });
 
   test('preview equals the real result', function () {

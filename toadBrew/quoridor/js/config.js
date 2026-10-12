@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '5.4.1';
+FB.VERSION = '5.5.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -34,19 +34,19 @@ FB.T = {
   // Матч (§28)
   turnCap: 120,                        // 60 ходов на сторону; дальше — победа того, кто ближе к чужой фляге
   turnTimeSec: 20,
-  tipSec: 5,
+  tipSec: 8,
   simplify: 1, simplifyFrogR: 6, simplifyArenaR: 6, simplifyLevels: 4, simplifyLineL: 0.17, // упрощённый визуал (D-106)
 
   // Урон и физика (§10)
-  impactBase: 26, impactSpeed: 18,     // удар сверху: base + speed × доля дальности, × impact жабы, − Defense
+  impactBase: 34, impactSpeed: 23,     // удар сверху: base + speed × доля дальности, × impact жабы, − Defense
   kbBase: 190, kbMin: 60, kbMax: 380, kbSpeedMin: 0.6,
-  slamDamage: 8,                       // отброс в стену / колонну
+  slamDamage: 10,                      // отброс в стену / колонну
   contactAssist: 14,
   hitAnimSec: 0.6,                     // анимация отброса (D-108)
   ambient: 1,                          // живые клетки и фляги: частицы над поверхностями (D-129); ?t={"ambient":0} — выключить
 
   // Реакции на сетке (§36, D-116)
-  plasmaDmg: 30, plasmaKnock: 80,                  // Plasma Burst: 3×3 клетки — урон врагам и лёгкий отброс
+  plasmaDmg: 39, plasmaKnock: 80,                  // Plasma Burst: 3×3 клетки — урон врагам и лёгкий отброс
   detR: 300, detKnock: 300,                        // Detonation: без урона — сильный разброс врагов вокруг и очистка 3×3 (D-124)
   vortexR: 340, vortexDmg: 0,                      // Toxic Vortex: стягивает врагов в этом радиусе к центру (D-126)
   freezeR: 340, chillMul: 0.55,                    // Frost Ward: ближайший враг в радиусе — во льду на свой ход; приземлился в мороз — следующая активация ×0.55 дальности (D-125)
@@ -54,8 +54,10 @@ FB.T = {
   ampMul: 1.5,                                     // Alchemical Relay: реакция сильнее и шире
 
   // Командные свойства (§29, D-117)
-  catapultShove: 128,                  // Living Catapult: точка эстафеты подаётся на клетку вперёд
-  breachWipe: 0,                       // Breach: стирать чужой рельеф при приземлении — выключено балансом (D-128); колонны пробивает в полёте
+  catapultMul: 1.4,                    // Living Catapult: прыжок со спины напарника по паре — дальность ×1.4 (D-134)
+  breachWipe: 0,                       // Breach: стирать чужой рельеф при приземлении — выключено (D-128)
+  breachR: 160, breachMul: 0.3, breachKnock: 110, // Breach: удар задевает врагов рядом с целью — половина урона и отброс (D-134)
+  anchorRecoil: 210,                   // Anchor: напавшая на связанную жабу отлетает сама (D-134)
   momentumPerRelay: 0.35,              // Momentum Strike: удар ×(1 + 0.35 × эстафеты)
   momentumKb: 1.4,
   anchorR: 400,                        // Anchor: Clingfoot и Spur Knight не отбрасываются, пока напарник в радиусе прыжка
@@ -112,12 +114,12 @@ FB.FROG_ORDER = ['spring', 'cling', 'bellows', 'spur'];
 // Свойства пар (§29, D-117). В команде из трёх жаб — три пары, все три свойства действуют.
 // «relay» — срабатывает, если в эстафете этой активации был прыжок с одной жабы пары на другую.
 FB.TEAM_TRAITS = {
-  'cling+spring':  { id: 'catapult', icon: '🏹', name: 'LIVING CATAPULT',   when: 'relay',  desc: 'Relay between them: the relay frog is flung one cell forward too — the whole formation advances.' },
+  'cling+spring':  { id: 'catapult', icon: '🏹', name: 'LIVING CATAPULT',   when: 'relay',  desc: 'Relay between them: the next jump off the partner’s back reaches 40% further.' },
   'bellows+spring':{ id: 'alchemy',  icon: '🌀', name: 'ALCHEMICAL RELAY',  when: 'relay',  desc: 'After a relay between them, the final reaction is ×1.5 stronger and covers more cells.' },
   'spring+spur':   { id: 'momentum', icon: '☄️', name: 'MOMENTUM STRIKE',   when: 'relay',  desc: 'After a relay between them, a direct hit lands ×1.35 harder per relay and knocks back further.' },
   'bellows+cling': { id: 'territory',icon: '⛲', name: 'TERRITORY',         when: 'relay',  desc: 'After a relay between them, the final landing also paints the 4 neutral cells around.' },
-  'cling+spur':    { id: 'anchor',   icon: '⚓', name: 'ANCHOR',            when: 'always', desc: 'Clingfoot and Spur Knight cannot be knocked back while the other is within jump range.' },
-  'bellows+spur':  { id: 'breach',   icon: '⛏', name: 'BREACH',            when: 'always', desc: 'Bellows Toad and Spur Knight smash straight through Crystal Columns in flight.' }
+  'cling+spur':    { id: 'anchor',   icon: '⚓', name: 'ANCHOR',            when: 'always', desc: 'Linked by a chain while within jump range: neither can be knocked back, and an enemy that hits one of them bounces off.' },
+  'bellows+spur':  { id: 'breach',   icon: '⛏', name: 'BREACH',            when: 'always', desc: 'Bellows Toad and Spur Knight hit through: a direct hit also strikes every enemy next to the target, and they smash through Crystal Columns.' }
 };
 FB.traitFor = function (a, b) { return FB.TEAM_TRAITS[FB.reactionKey(a, b)] || null; };
 FB.teamTraits = function (team) { // три пары команды → id свойств

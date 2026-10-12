@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Lilita+One&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?b=5.4.1-1791835203">
+<link rel="stylesheet" href="css/style.css?b=5.5.0-1791836337">
 </head>
 <body>
 <div id="app">
@@ -26,10 +26,13 @@
 
   <!-- TEAM (§6, §29): три жабы из четырёх, три пары — три свойства -->
   <section id="team" class="screen meta">
-    <div class="sec-head"><div class="plaque">TEAM</div><div class="counter">🐸 PICK 3 OF 4</div></div>
-    <div id="roster" class="roster r4"></div>
-    <div class="sec-head small"><div class="plaque sm">⚔ TEAM TRAITS · 3 PAIRS</div></div>
-    <div id="traits" class="traits"></div>
+    <div class="sec-head"><div class="plaque">TEAM</div><div class="counter" id="pick-n">🐸 PICK 3 OF 4</div></div>
+    <!-- по макету автора (D-135): слева четыре кнопки-жабы, справа свойства пар выбранных жаб со стрелками к ним -->
+    <div class="teamwrap" id="teamwrap">
+      <div id="roster" class="roster rv"></div>
+      <div id="traits" class="traits"><div class="tr-empty">Pick frogs on the left — every pair of them gives a team trait.</div></div>
+      <svg id="tarrows" class="tarrows"></svg>
+    </div>
   </section>
 
   <!-- ALCHEMY (§15, §18, §36): общая последовательность и реакции на сетке -->
@@ -82,8 +85,9 @@
   <section id="tip" class="tipbox hidden">
     <div class="tip-card">
       <div class="tip-h">RELAY ALCHEMY</div>
-      <div class="tip-ic" id="tip-ic">⚗</div>
-      <div class="tip-n" id="tip-n">LAND ON THE ENEMY FLASK</div>
+      <div class="tip-ic" id="tip-ic">🐸➜⚗️</div>
+      <div class="tip-g">🎯 GOAL</div>
+      <div class="tip-n" id="tip-n">JUMP A FROG INTO THE ENEMY FLASK</div>
       <div class="tip-t" id="tip-t"></div>
       <div class="tip-bar"><i></i></div>
       <div class="tip-s">tap to start</div>
@@ -128,11 +132,11 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>window.FB_BUILD = '5.4.1-1791835203'; // tools/deploy.sh ставит сюда метку сборки — браузер не берёт старые файлы из кэша</script>
-<script src="js/config.js?b=5.4.1-1791835203"></script>
-<script src="js/sim.js?b=5.4.1-1791835203"></script>
-<script src="js/ai.js?b=5.4.1-1791835203"></script>
-<script src="js/render3d.js?b=5.4.1-1791835203"></script>
-<script src="js/main.js?b=5.4.1-1791835203"></script>
+<script>window.FB_BUILD = '5.5.0-1791836337'; // tools/deploy.sh ставит сюда метку сборки — браузер не берёт старые файлы из кэша</script>
+<script src="js/config.js?b=5.5.0-1791836337"></script>
+<script src="js/sim.js?b=5.5.0-1791836337"></script>
+<script src="js/ai.js?b=5.5.0-1791836337"></script>
+<script src="js/render3d.js?b=5.5.0-1791836337"></script>
+<script src="js/main.js?b=5.5.0-1791836337"></script>
 </body>
 </html>

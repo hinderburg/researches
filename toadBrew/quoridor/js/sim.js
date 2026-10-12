@@ -173,7 +173,9 @@
   Sim.canRecall = function (s, f) { return s.phase === 'play' && !s.pending && !s.act && f.side === s.turnSide && s.recalls < T.recallsPerTurn && !(Sim.onBase(f) && !f.el && !f.ch); };
   Sim.rangeFor = function (s, f, mode) { // Frost Ward: замедленная жаба прыгает короче всю следующую активацию (D-125)
     var r = mode === 'end' ? T.jumpR * T.relayAuto : T.jumpR, slow = s.act && s.act.frog === f.id ? s.act.slow : f.chill;
-    return slow ? r * T.chillMul : r;
+    if (slow) r *= T.chillMul;
+    if (mode !== 'end' && s.pending && s.pending.frog === f.id && s.act && s.act.last && s.act.last.trait === 'catapult') r *= T.catapultMul; // Living Catapult (D-134)
+    return r;
   };
   function enemiesOf(s, f) { return s.frogs.filter(function (e) { return e.alive && e.side !== f.side; }); }
   function mates(s, f) { return s.frogs.filter(function (e) { return e.alive && e.side === f.side && e.id !== f.id; }); }
@@ -276,15 +278,16 @@
       events.push({ t: 'act', id: f.id, side: f.side });
       if (f.chill) { f.chill = 0; events.push({ t: 'thaw', id: f.id, slow: true }); }
     }
+    var maxR = Sim.rangeFor(s, f, mode === 'end' ? 'end' : 'jump'); // до сброса pending: Catapult смотрит на него (D-134)
     s.pending = null;
     var A = s.act, v;
     if (P) { // прыжок со спины союзника
       v = mode === 'end' ? { x: P.dir.x, y: P.dir.y } : norm(cmd.dx || 0, cmd.dy || 0);
       if (!v.x && !v.y) v = { x: P.dir.x, y: P.dir.y };
-      // Living Catapult: точка эстафеты подаётся вперёд по ходу прыжка (§29, D-117)
-      if (A.last && A.last.trait === 'catapult') { var al = s.frogs[A.last.ally]; push(s, al, norm(v.x, v.y), T.catapultShove, events, true); events.push({ t: 'label', id: al.id, text: '🏹 CATAPULT' }); }
+      // Living Catapult (D-134): прыжок со спины напарника по паре дальше — rangeFor
+      if (A.last && A.last.trait === 'catapult' && mode !== 'end') events.push({ t: 'label', id: f.id, text: '🏹 CATAPULT ×' + T.catapultMul });
     }
-    var len = mode === 'end' ? Sim.rangeFor(s, f, 'end') : Math.min(norm(cmd.dx || 0, cmd.dy || 0).l, Sim.rangeFor(s, f, 'jump'));
+    var len = mode === 'end' ? maxR : Math.min(norm(cmd.dx || 0, cmd.dy || 0).l, maxR);
     if (mode !== 'end' && len < 1) { len = T.jumpR * T.minPull; }
     var cont = jump(s, f, mode === 'end' ? v : { x: cmd.dx || 0, y: cmd.dy || 0 }, len, events, !!P);
     if (cont && s.phase === 'play') return { ok: true, events: events, continues: true, pending: s.pending };
@@ -343,8 +346,20 @@
       var mom = A.tr.momentum ? 1 + T.momentumPerRelay * A.relays : 1;
       var imp = (T.impactBase + T.impactSpeed * Math.min(1, speed)) * f.imp * mom;
       events.push({ t: 'impact', id: enemy.id, by: f.id, x: enemy.x, y: enemy.y, mom: mom > 1 ? mom : undefined });
-      var eid = enemy.id, ex = enemy.x, ey = enemy.y;
+      var eid = enemy.id, ex = enemy.x, ey = enemy.y, anchored = immovable(s, enemy) === 'anchor';
+      // Breach (D-134): удар Bellows / Spur задевает и врагов рядом с целью
+      if (Sim.traitOn(s, f.side, 'breach') && (f.kind === 'bellows' || f.kind === 'spur')) {
+        var near = enemiesOf(s, f).filter(function (o) { return o.id !== eid && dist(o.x, o.y, ex, ey) <= T.breachR + o.r; });
+        if (near.length) events.push({ t: 'label', id: eid, text: '⛏ BREACH' });
+        near.forEach(function (o) { damage(s, o, imp * T.breachMul, events, 'breach'); if (o.alive) knockFrom(s, o, { x: ex, y: ey }, T.breachKnock, events, dir); });
+      }
       damage(s, enemy, imp, events, 'impact');
+      if (anchored && s.frogs[eid].x === ex) { // Anchor (D-134): связанная якорем жаба не сдвигается — напавшая отлетает сама
+        var rb = norm(f.x - ex, f.y - ey); if (!rb.l) rb = { x: -dir.x, y: -dir.y };
+        f.x = ex + rb.x * (enemy.r + f.r + 4); f.y = ey + rb.y * (enemy.r + f.r + 4);
+        events.push({ t: 'label', id: eid, text: '⚓ ANCHOR' });
+        push(s, f, rb, T.anchorRecoil, events);
+      }
       if (enemy.x === ex && enemy.y === ey) { var kd = norm(enemy.x - f.x, enemy.y - f.y); push(s, enemy, kd.l > 1 ? kd : dir, knockAmount(f, enemy, speed, A.tr.momentum ? T.momentumKb : 1), events); }
       // враг не сдвинулся (якорь, стена) — атакующая соскакивает назад, чтобы не стоять внутри
       var e2 = s.frogs[eid];

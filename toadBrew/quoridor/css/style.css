@@ -375,3 +375,28 @@ button { font-family: inherit; cursor: pointer; }
 .flabel .pips i { width: 10px; height: 10px; border-width: 2px; }
 .flabel .pips i.on { box-shadow: 0 0 6px var(--c), inset 0 -2px 0 rgba(0,0,0,0.25); }
 .flabel .emp { font-size: 10px; padding: 1px 4px; }
+/* экран команды по макету автора (D-135): жабы слева столбиком, свойства пар справа, стрелки между ними */
+#team.screen { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; }
+.teamwrap { position: relative; display: grid; grid-template-columns: 34% 1fr; gap: 34px; min-height: 0; }
+.roster.rv { display: grid; grid-template-rows: repeat(4, minmax(0, 1fr)); grid-template-columns: 1fr; gap: 8px; min-height: 0; }
+.roster.rv .card { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; min-height: 0; padding: 2px 2px 4px; border-color: #8f3a33; background: linear-gradient(#3a2420, #1c120e); }
+.roster.rv .card canvas { flex: 1 1 0; min-height: 0; width: 100%; height: 100%; aspect-ratio: auto; object-fit: contain; }
+.roster.rv .card.sel { border-color: #ff8a6a; box-shadow: 0 0 0 2px #ff5a4a, 0 0 16px rgba(255,90,74,0.6); }
+.roster.rv .card .check { background: #e0453b; bottom: auto; top: 4px; right: 4px; }
+.roster.rv .cname { font-size: 11px; } .roster.rv .cstats { font-size: 9px; }
+.teamwrap .traits { display: flex; flex-direction: column; justify-content: space-around; gap: 10px; min-height: 0; }
+.teamwrap .trc { border: 2px solid var(--tc, #3c5f95); box-shadow: 0 0 12px color-mix(in srgb, var(--tc, #3c5f95) 40%, transparent); padding: 7px 8px; }
+.teamwrap .trc.new { animation: trIn 0.35s ease-out; }
+@keyframes trIn { from { opacity: 0; transform: translateX(24px) scale(0.96); } to { opacity: 1; transform: none; } }
+.teamwrap .trc .tr-ic { background: radial-gradient(circle, color-mix(in srgb, var(--tc, #2c5ea8) 60%, #000), #120c08); border-color: var(--tc, #7fc4ff); }
+.trc .tr-p { font-size: 9.5px; font-weight: 900; color: var(--tc, #bfe0ff); margin: 1px 0 2px; }
+.tr-empty { color: var(--muted); font-weight: 800; font-size: 12px; text-align: center; border: 2px dashed #5b4a33; border-radius: 10px; padding: 18px 10px; }
+.tarrows { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.battle-btn.off { filter: grayscale(0.7) brightness(0.7); }
+.counter.shake { animation: shk 0.4s; color: #ff8a6a; }
+@keyframes shk { 0%, 100% { transform: none; } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+/* цель матча на стартовом окне (D-136) */
+.tip-g { font-family: var(--font-b); font-size: 15px; color: #ffd36a; letter-spacing: 1px; margin-top: 2px; }
+.tip-t .tip-goal { font-size: 15px; color: #fff3d0; background: rgba(255,200,90,0.12); border: 1.5px solid #c99a3d; border-radius: 10px; padding: 8px 10px; margin: 6px 0 8px; }
+.tip-t p { margin: 4px 0; }
+.tip-ic { width: auto !important; min-width: 0; padding: 4px 16px; border-radius: 999px !important; white-space: nowrap; display: inline-flex !important; align-items: center; gap: 6px; font-size: 34px !important; height: auto !important; }

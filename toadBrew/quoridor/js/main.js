@@ -12,7 +12,8 @@
     s: null, shown: null, disp: {}, queue: [], cur: null, busy: false, playing: false, speed: 1, paused: false,
     auto: /[?&]auto=1/.test(location.search), sel: -1, aimCmd: null, turnLeft: 0, timerTurn: -1, hudT: 0
   };
-  if (!Array.isArray(app.picks) || app.picks.length !== 3 || app.picks.some(function (k) { return !FB.FROGS[k]; }) || app.picks[0] === app.picks[1] || app.picks[1] === app.picks[2] || app.picks[0] === app.picks[2]) app.picks = ['spring', 'cling', 'bellows'];
+  if (!Array.isArray(app.picks)) app.picks = ['spring', 'cling', 'bellows'];
+  app.picks = app.picks.filter(function (k, i) { return FB.FROGS[k] && app.picks.indexOf(k) === i; }).slice(0, 3); // 0–3 разных жаб (D-135)
   var SIDE_C = ['#4aa3ff', '#ff5a4a'];
   var ELC = function (el) { return FB.ELEMENTS[el] ? FB.ELEMENTS[el].color : '#d8c8a8'; };
   var RXC = { 'fire+ice': '#eefaff', 'fire+poison': '#ff6a00', 'fire+lightning': '#ff9800', 'ice+poison': '#46ffb0', 'ice+lightning': '#bfefff', 'lightning+poison': '#9dff3a' };
@@ -29,25 +30,67 @@
   function buildRoster() {
     var r = $('roster'); r.innerHTML = '';
     FB.FROG_ORDER.forEach(function (k) {
-      var F = FB.FROGS[k], el = document.createElement('button'); el.className = 'card'; el.dataset.kind = k;
-      el.appendChild(pic(k, 'orig', 200));
-      el.insertAdjacentHTML('beforeend', '<div class="check">✓</div><div class="cname">' + F.name + '</div><div class="cstats">❤ ' + F.hp + ' · 🛡 ' + F.def + '% · 💥 ×' + F.impact + '</div><div class="ctrait">' + F.role + ' — ' + F.tdesc + '</div>');
+      var F = FB.FROGS[k], el = document.createElement('button'); el.className = 'card fcbtn'; el.dataset.kind = k;
+      el.appendChild(pic(k, 'orig', 160));
+      el.insertAdjacentHTML('beforeend', '<div class="check">✓</div><div class="cname">' + F.name + '</div><div class="cstats">❤ ' + F.hp + ' · 🛡 ' + F.def + '% · 💥 ×' + F.impact + '</div>');
       el.onclick = function () { togglePick(k); };
       r.appendChild(el);
     });
   }
+  // выбор (D-135): тап — выбрать или снять; больше трёх нельзя, в бой — только с тремя
   function togglePick(k) {
-    if (app.picks.indexOf(k) >= 0) return; // всегда ровно 3: тап по четвёртой заменяет самую давнюю
-    app.picks = app.picks.slice(1).concat([k]);
+    var i = app.picks.indexOf(k);
+    if (i >= 0) app.picks.splice(i, 1);
+    else if (app.picks.length >= 3) { var pn = $('pick-n'); pn.classList.remove('shake'); void pn.offsetWidth; pn.classList.add('shake'); return; }
+    else app.picks.push(k);
     store.set('picks3', app.picks); renderTeam();
   }
+  var TR_COL = ['#ffb84a', '#6fd0ff', '#b88aff'];
   function renderTeam() {
     document.querySelectorAll('.card').forEach(function (el) { el.classList.toggle('sel', app.picks.indexOf(el.dataset.kind) >= 0); });
-    $('traits').innerHTML = FB.teamTraits(app.picks).map(function (id) {
-      var t = FB.traitById(id);
-      return '<div class="trc"><div class="tr-ic">' + t.icon + '</div><div><div class="tr-n">' + t.name + (t.when === 'relay' ? ' <small>on relay</small>' : ' <small>always</small>') + '</div><div class="tr-d">' + t.desc + '</div></div></div>';
-    }).join('');
+    var n = app.picks.length, ready = n === 3;
+    $('pick-n').textContent = '🐸 ' + n + ' / 3 PICKED';
+    $('btn-battle').classList.toggle('off', !ready);
+    $('btn-battle').innerHTML = ready ? '<span>⚔</span> BATTLE' : '<span>🐸</span> PICK ' + (3 - n) + ' MORE';
+    // пары выбранных жаб — по блоку свойства на каждую; уже показанные блоки остаются на месте, новые выезжают
+    var pairs = [];
+    for (var a = 0; a < n; a++) for (var b = a + 1; b < n; b++) pairs.push([app.picks[a], app.picks[b]]);
+    var box = $('traits'), keep = {};
+    pairs.forEach(function (p) { keep[FB.reactionKey(p[0], p[1])] = p; });
+    Array.prototype.slice.call(box.querySelectorAll('.trc')).forEach(function (el) { if (!keep[el.dataset.key]) el.remove(); });
+    var empty = box.querySelector('.tr-empty'); if (empty) empty.style.display = pairs.length ? 'none' : '';
+    pairs.forEach(function (p) {
+      var key = FB.reactionKey(p[0], p[1]);
+      if (box.querySelector('.trc[data-key="' + key + '"]')) return;
+      var t = FB.traitFor(p[0], p[1]), el = document.createElement('div'); el.className = 'trc new'; el.dataset.key = key; el.dataset.a = p[0]; el.dataset.b = p[1];
+      el.innerHTML = '<div class="tr-ic">' + t.icon + '</div><div><div class="tr-n">' + t.name + (t.when === 'relay' ? ' <small>on relay</small>' : ' <small>always</small>') + '</div><div class="tr-p">' + FB.FROGS[p[0]].name + ' + ' + FB.FROGS[p[1]].name + '</div><div class="tr-d">' + t.desc + '</div></div>';
+      box.appendChild(el);
+    });
+    // порядок блоков — как пары в выборе; цвет блока и его стрелок — по месту
+    pairs.forEach(function (p, i) { var el = box.querySelector('.trc[data-key="' + FB.reactionKey(p[0], p[1]) + '"]'); box.appendChild(el); el.style.setProperty('--tc', TR_COL[i % TR_COL.length]); });
+    requestAnimationFrame(drawArrows); setTimeout(drawArrows, 380); // после выезда блоков
   }
+  // Стрелки (D-135): от каждого блока свойства к двум жабам, которые его дают
+  function drawArrows() {
+    var wrap = $('teamwrap'), svg = $('tarrows'); if (!wrap || app.screen !== 'team') return;
+    var W = wrap.getBoundingClientRect(); svg.setAttribute('width', W.width); svg.setAttribute('height', W.height); svg.setAttribute('viewBox', '0 0 ' + W.width + ' ' + W.height);
+    var blocks = Array.prototype.slice.call(document.querySelectorAll('#traits .trc')), used = {}, h = '<defs>';
+    blocks.forEach(function (el, i) { var c = getComputedStyle(el).getPropertyValue('--tc') || '#ffb84a'; h += '<marker id="ah' + i + '" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="' + c.trim() + '"/></marker>'; });
+    h += '</defs>';
+    blocks.forEach(function (el, i) {
+      var B = el.getBoundingClientRect(), c = (getComputedStyle(el).getPropertyValue('--tc') || '#ffb84a').trim(), sx = B.left - W.left - 2;
+      [el.dataset.a, el.dataset.b].forEach(function (k, j) {
+        var card = document.querySelector('.card[data-kind="' + k + '"]'); if (!card) return;
+        var C = card.getBoundingClientRect(), u = used[k] = (used[k] || 0) + 1;
+        var ex = C.right - W.left + 4, ey = C.top - W.top + C.height * (0.28 + 0.22 * (u - 1)), sy = B.top - W.top + B.height * (0.35 + 0.3 * j);
+        var mx = (sx + ex) / 2;
+        h += '<path d="M' + sx + ',' + sy + ' C' + mx + ',' + sy + ' ' + mx + ',' + ey + ' ' + ex + ',' + ey + '" stroke="' + c + '" stroke-width="2.5" fill="none" marker-end="url(#ah' + i + ')" stroke-linecap="round" opacity="0.9"/>';
+        h += '<circle cx="' + sx + '" cy="' + sy + '" r="3.5" fill="' + c + '"/>';
+      });
+    });
+    svg.innerHTML = h;
+  }
+  window.addEventListener('resize', function () { if (app.screen === 'team') drawArrows(); });
 
   // ---------- ALCHEMY ----------
   function renderAlchemy() {
@@ -72,7 +115,7 @@
     log('screen', name);
   }
   document.querySelectorAll('.tab').forEach(function (t) { t.onclick = function () { if (!t.disabled) showScreen(t.dataset.tab); }; });
-  $('btn-battle').onclick = function () { startBattle(); };
+  $('btn-battle').onclick = function () { if (app.picks.length === 3) startBattle(); else { var pn = $('pick-n'); pn.classList.remove('shake'); void pn.offsetWidth; pn.classList.add('shake'); } }; // в бой — только с тремя (D-135)
   $('btn-help').onclick = $('m-help').onclick = function () { $('help').classList.remove('hidden'); };
   $('h-close').onclick = function () { $('help').classList.add('hidden'); };
   $('btn-menu').onclick = function () { app.paused = true; $('menu').classList.remove('hidden'); };
@@ -118,7 +161,9 @@
 
   function showTip(done) {
     var box = $('tip'), fin = false;
-    $('tip-t').innerHTML = 'Land on <b>your own frog</b> to jump again — build a relay route. Charge on your base. Paint cells and set off reactions to block the enemy route.';
+    // цель матча на стартовом окне (D-136)
+    $('tip-t').innerHTML = '<p class="tip-goal">The enemy Base Flask stands at the far end of the board. Land <b>any</b> of your frogs on it — and you win the match. Don’t let the enemy reach yours.</p>' +
+      '<p>How to get there: land on <b>your own frog</b> to jump again — a relay route. Charge on your base. Paint cells and set off reactions to block the enemy.</p>';
     box.classList.remove('hidden');
     var bar = box.querySelector('.tip-bar i'); bar.style.transition = 'none'; bar.style.width = '100%';
     requestAnimationFrame(function () { bar.style.transition = 'width ' + T.tipSec + 's linear'; bar.style.width = '0%'; });
@@ -326,7 +371,7 @@
         });
         dur = 0.36; break;
       }
-      case 'flask': { var fk = AR.flasks[1 - e.side]; R.reactionFx('fire+poison', fk.x, fk.y, 220); R.text(fk.x, fk.y, 'FLASK!', 'ko'); R.shake(20); dur = 0.9; break; }
+      case 'flask': { var fk = AR.flasks[1 - e.side]; R.flaskBurst(1 - e.side); R.text(fk.x, fk.y, 'FLASK SHATTERED!', 'ko'); dur = 1.3; break; } // колба взрывается, эликсир разливается (D-137)
       case 'turn': app.shown.turnSide = e.side; app.shown.turn = e.turn; app.shown.recalls = 0; frameSide(e.side); banner(e.side === 0 ? 'YOUR TURN' : 'ENEMY TURN', e.side === 0 ? 'p' : 'b', 'Turn ' + e.turn); dur = 0.55; break;
       case 'label': if (d) R.text(d.x, d.y, e.text, 'gold'); dur = 0.25; break;
       case 'skip': if (d) R.text(d.x, d.y, 'PASS', 'dmg'); dur = 0.25; break;
@@ -672,6 +717,6 @@
     $('loading').classList.add('hidden');
     buildRoster(); showScreen('team');
     requestAnimationFrame(raf);
-    if (app.auto) startBattle();
+    if (app.auto) { if (app.picks.length !== 3) app.picks = ['spring', 'cling', 'bellows']; startBattle(); }
   }).catch(function (err) { $('loading').textContent = 'Load failed: ' + err.message; console.error(err); });
 })();
