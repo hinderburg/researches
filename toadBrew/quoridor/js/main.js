@@ -301,7 +301,8 @@
         R.reactionFx(e.key, e.x, e.y, { 'fire+lightning': T.cell * (e.amp ? 2.5 : 1.5), 'fire+poison': T.detR, 'lightning+poison': T.cell * 1.4, 'fire+ice': T.cell * 1.4, 'ice+poison': T.cell * 0.8, 'ice+lightning': T.cell }[e.key] || 150);
         R.text(e.x, e.y, e.name + (e.amp ? '<br><small>🌀 ×' + T.ampMul + '</small>' : ''), 'rx'); R.shake(8); dur = 0.5; break;
       case 'wardZap': { var wp = Sim.cellCenter(e.i); R.reactionFx('ice+lightning', wp.x, wp.y, 90); R.zap({ x: wp.x - 50, y: wp.y }, { x: wp.x + 50, y: wp.y }); R.text(d.x, d.y, 'ϟ WARD!', 'light'); dur = 0.25; break; }
-      case 'toxic': R.text(d.x, d.y, '☣ TOXIC', 'poison'); dur = 0.15; break;
+      case 'toxic': if (e.erupt) { var tp = Sim.cellCenter(e.i); R.reactionFx('lightning+poison', tp.x, tp.y, 90); R.text(d.x, d.y, '☣ ERUPTION', 'poison'); R.shake(8); } else R.text(d.x, d.y, '☣ TOXIC', 'poison'); dur = e.erupt ? 0.3 : 0.15; break;
+      case 'jet': { var jp = Sim.cellCenter(e.i); R.reactionFx('fire+ice', jp.x, jp.y, 70); R.text(jp.x, jp.y, e.side === SF(e.id).side ? '⇧ JET' : '⇩ BLOWN BACK', 'gold'); dur = 0.2; break; } // Steam Jet (D-123)
       case 'spend': SF(e.id).ch = e.ch; break;
       case 'empty': SF(e.id).empty = true; SF(e.id).ret = e.ret; R.text(d.x, d.y, 'EMPTY', 'dmg'); dur = 0.2; break;
       case 'ret': SF(e.id).ret = e.ret; break;
@@ -329,13 +330,7 @@
     }
   }
 
-  // ---------- скрытность (Steam) с точки зрения игрока ----------
-  function hiddenNow(f) {
-    if (f.side === 0 || !app.shown || app.auto) return false;
-    var d = D(f.id), cl = app.shown.cells[Sim.cellIdx(d.x, d.y)];
-    if (!cl || cl.t !== 'steam' || cl.side !== f.side) return false;
-    return !app.shown.frogs.some(function (o) { return o.side === 0 && Math.hypot(D(o.id).x - d.x, D(o.id).y - d.y) <= T.steamSight; });
-  }
+  function hiddenNow() { return false; } // сокрытия нет: пар заменён на Steam Jet (D-123)
 
   // ---------- прицел и превью (§19: всё видно по траектории) ----------
   function showAim(f, cmd) {
@@ -355,6 +350,8 @@
       if (e.t === 'wardZap') zap = true;
       if (e.t === 'anchored') info.lines.push(e.why === 'ward' ? 'Ward holds it in place' : 'Anchored — no knockback');
       if (e.t === 'smash') info.lines.push('Breach: smashes the column');
+      if (e.t === 'jet') info.lines.push(e.side === f.side ? '⇧ Jet: launched 2 cells forward' : '⇩ Enemy jet: blown back');
+      if (e.t === 'toxic' && e.erupt) info.lines.push('☣ Toxic Field: burned and erupted out');
     });
     if (!a.land && a.segs.length) { var ls = a.segs[a.segs.length - 1]; a.land = ls.to; }
     if (!a.land) return;

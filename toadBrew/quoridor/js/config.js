@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '5.0.0';
+FB.VERSION = '5.1.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -47,9 +47,9 @@ FB.T = {
   // Реакции на сетке (§36, D-116)
   plasmaDmg: 30, plasmaKnock: 80,                  // Plasma Burst: 3×3 клетки — урон врагам, рельеф стирается
   detR: 290, detDmg: 12, detKnock: 240,            // Detonation: отброс всех врагов вокруг
-  toxicDmg: 14,                                    // Toxic Field: урон врагу создателя, кто закончил в нём прыжок или начал в нём ход
+  toxicDmg: 14, toxicKnock: 90,                   // Toxic Field: враг, приземлившийся в поле, получает урон и выброшен из поля к своей базе (D-122); начал ход в поле — урон
   wardDmg: 10, wardKnock: 170,                     // Static Ward: враг, приземлившийся в линию, отбит назад; свои в ней не отбрасываются
-  steamSight: 150,                                 // Steam: свои жабы в паре не видны врагу, если его жаба не стоит вплотную
+  jetLen: 256, jetChain: 3,                        // Steam Jet: приземление на струю подбрасывает жабу на 2 клетки по стрелке стороны-создателя, до 3 струй подряд (D-123)
   ampMul: 1.5,                                     // Alchemical Relay: реакция сильнее и шире
 
   // Командные свойства (§29, D-117)
@@ -61,7 +61,7 @@ FB.T = {
   // Бот
   botAimNoiseDeg: 2, botAimNoisePow: 0.03, botTopPick: 3, botDepthTop: 6,
   botAdv: 1.4, botDef: 0.8,            // вес своего продвижения и чужого отставания в оценке позиции
-  botRecallGain: 9999,                 // отзыв бота: выключен (D-118). ?t={"botRecallGain":30} — отзывает, когда позиция заметно лучше; матчи вдвое длиннее
+  botRecallGain: 30, botRecallEvery: 4,  // отзыв бота: когда позиция после него заметно лучше и не чаще раза в 4 своих хода (D-121)
   animSpeed: 1
 };
 
@@ -86,14 +86,14 @@ FB.ELEMENT_ORDER = ['fire', 'ice', 'poison', 'lightning'];
 FB.REACTIONS = {
   'fire+lightning':  { name: 'PLASMA BURST',   type: 'Instant damage',      terrain: null,     desc: 'Blast on the 3×3 cells around: damage to enemies, all terrain there is wiped back to neutral.' },
   'fire+poison':     { name: 'DETONATION',     type: 'Knockback',           terrain: null,     desc: 'Shockwave: enemies around are thrown far away. Breaks relay routes.' },
-  'lightning+poison':{ name: 'TOXIC FIELD',    type: 'Hazard · persistent', terrain: 'toxic',  desc: 'A plus of toxic cells. Enemies take damage when they land in it or start a turn in it.' },
-  'fire+ice':        { name: 'STEAM',          type: 'Conceal · persistent',terrain: 'steam',  desc: 'A plus of steam cells. Your frogs inside are hidden from the enemy.' },
+  'lightning+poison':{ name: 'TOXIC FIELD',    type: 'Hazard · persistent', terrain: 'toxic',  desc: 'A plus of toxic cells. An enemy landing in it is burned and erupted out toward its base; starting a turn inside burns too.' },
+  'fire+ice':        { name: 'STEAM JET',      type: 'Movement · persistent',terrain: 'jet',    desc: 'A plus of steam jets pointing at the enemy flask. Land on one and it launches you 2 cells forward; enemies are blown back toward their base.' },
   'ice+poison':      { name: 'CRYSTAL COLUMN', type: 'Terrain · persistent',terrain: 'column', desc: 'A crystal pillar rises in the cell: blocks short and low jumps and knockback.' },
   'ice+lightning':   { name: 'STATIC WARD',    type: 'Control · persistent',terrain: 'ward',   desc: 'A line of 3 charged cells across your jump. Enemies landing in it are zapped and thrown back; your frogs in it cannot be knocked back.' }
 };
 FB.TERRAIN = { // как выглядит и что значит клетка рельефа
   toxic:  { name: 'TOXIC',  icon: '☣', color: '#9dff3a' },
-  steam:  { name: 'STEAM',  icon: '♨', color: '#e8f4ff' },
+  jet:    { name: 'JET',    icon: '⇧', color: '#ffd9a0' },
   column: { name: 'COLUMN', icon: '▮', color: '#5cffb0' },
   ward:   { name: 'WARD',   icon: 'ϟ', color: '#7ad8ff' }
 };

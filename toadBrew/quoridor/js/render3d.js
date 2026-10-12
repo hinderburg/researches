@@ -431,17 +431,17 @@
       var col = t ? FB.TERRAIN[t].color : FB.ELEMENTS[el].color, team = side === 0 ? '#4aa3ff' : side === 1 ? '#ff5a4a' : null;
       x.clearRect(0, 0, 128, 128);
       rrect(x, 7, 7, 114, 114, 16);
-      var g = x.createLinearGradient(0, 0, 128, 128); g.addColorStop(0, rgba(col, t === 'steam' ? 0.35 : 0.72)); g.addColorStop(1, rgba(col, t === 'steam' ? 0.18 : 0.48));
+      var g = x.createLinearGradient(0, 0, 128, 128); g.addColorStop(0, rgba(col, 0.72)); g.addColorStop(1, rgba(col, 0.48));
       x.fillStyle = g; x.fill();
       x.save(); rrect(x, 7, 7, 114, 114, 16); x.clip();
       if (t === 'toxic') { x.strokeStyle = 'rgba(30,60,0,0.45)'; x.lineWidth = 9; for (var i = -128; i < 256; i += 26) { x.beginPath(); x.moveTo(i, 128); x.lineTo(i + 128, 0); x.stroke(); } }
       if (t === 'ward') { x.strokeStyle = 'rgba(230,250,255,0.9)'; x.lineWidth = 4; for (var k = 0; k < 3; k++) { x.beginPath(); var yy = 30 + k * 34; x.moveTo(12, yy); for (var j = 1; j <= 7; j++) x.lineTo(12 + j * 15, yy + (j % 2 ? -10 : 10)); x.stroke(); } }
-      if (t === 'steam') { x.fillStyle = 'rgba(255,255,255,0.35)'; for (var m = 0; m < 5; m++) { x.beginPath(); x.arc(24 + m * 20, 64 + Math.sin(m * 1.7) * 22, 18, 0, 7); x.fill(); } }
+      if (t === 'jet') { x.save(); x.translate(64, 64); if (side === 1) x.rotate(Math.PI); x.strokeStyle = 'rgba(255,255,255,0.95)'; x.lineWidth = 9; x.lineJoin = 'round'; x.lineCap = 'round'; [-30, -2, 26].forEach(function (yy) { x.beginPath(); x.moveTo(-30, yy + 18); x.lineTo(0, yy - 6); x.lineTo(30, yy + 18); x.stroke(); }); x.restore(); } // шевроны — куда бросает струя (D-123)
       x.fillStyle = 'rgba(255,255,255,0.22)'; x.fillRect(7, 7, 114, 18); // блик сверху — «глянец краски»
       x.restore();
       x.lineWidth = team ? 6 : 4; x.strokeStyle = team || rgba(col, 0.95); rrect(x, 7, 7, 114, 114, 16); x.stroke();
       x.font = '48px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
-      x.globalAlpha = t ? 0.75 : 0.6; x.fillStyle = '#fff'; x.fillText(t ? FB.TERRAIN[t].icon : FB.ELEMENTS[el].icon, 64, 68); x.globalAlpha = 1;
+      if (t !== 'jet') { x.globalAlpha = t ? 0.75 : 0.6; x.fillStyle = '#fff'; x.fillText(t ? FB.TERRAIN[t].icon : FB.ELEMENTS[el].icon, 64, 68); x.globalAlpha = 1; }
     });
   }
   function buildCell(i, cl) {
@@ -457,11 +457,7 @@
       var ring = new THREE.Mesh(new THREE.RingGeometry(cs * 0.44, cs * 0.5, 6), discMat(cl.side === 0 ? 0x4aa3ff : 0xff5a4a, 0.9)); ring.rotation.x = -Math.PI / 2; ring.position.y = 1.6; g.add(ring);
       D.col = m; D.tip = tip; D.hgt = hgt;
     }
-    if (cl.t === 'steam') for (var k = 0; k < 4; k++) { // клубы пара над клеткой
-      var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTex(), color: 0xeef4f8, transparent: true, opacity: 0.5, depthWrite: false }));
-      sp.position.set((k % 2 - 0.5) * cs * 0.45, 40 + k * 10, (k > 1 ? 0.5 : -0.5) * cs * 0.45); sp.scale.set(cs * 0.9, cs * 0.9, 1); sp.userData.ph = k + i; g.add(sp); D.puffs.push(sp);
-    }
-    if (cl.t === 'ward' || cl.t === 'toxic') { // свечение над клеткой
+    if (cl.t === 'ward' || cl.t === 'toxic' || cl.t === 'jet') { // свечение над клеткой
       var gl = new THREE.Mesh(new THREE.PlaneGeometry(cs * 1.2, cs * 1.2), new THREE.MeshBasicMaterial({ map: glowTex(), color: new THREE.Color(FB.TERRAIN[cl.t].color), transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending }));
       gl.rotation.x = -Math.PI / 2; gl.position.y = 2; g.add(gl); D.gl = gl;
     }
@@ -478,7 +474,7 @@
       var a = Math.min(1, (t - D.born) * 4), pop = a < 1 ? 0.5 + a * 0.6 : 1;
       D.tile.scale.set(pop, pop, 1);
       if (D.col) { var rise = Math.min(1, (t - D.born) * 2.5); D.col.scale.y = Math.max(0.02, rise); D.col.position.y = D.hgt / 2 * rise; D.tip.position.y = D.hgt * rise + 17; D.tip.visible = rise > 0.9; }
-      if (D.gl) D.gl.material.opacity = (D.t === 'ward' ? 0.3 + 0.25 * Math.abs(Math.sin(t * 7 + i)) : 0.25 + 0.12 * Math.sin(t * 2.2 + i));
+      if (D.gl) D.gl.material.opacity = (D.t === 'jet' ? 0.2 + 0.25 * Math.max(0, Math.sin(t * 5 - (i % T.cols) * 0.7)) : D.t === 'ward' ? 0.3 + 0.25 * Math.abs(Math.sin(t * 7 + i)) : 0.25 + 0.12 * Math.sin(t * 2.2 + i));
       D.puffs.forEach(function (sp) { sp.position.y = 40 + Math.sin(t * 0.8 + sp.userData.ph) * 10; sp.material.opacity = (cl.side === 0 ? 0.32 : 0.6) * a; });
     });
   }

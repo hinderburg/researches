@@ -109,14 +109,24 @@
     var x = reactWith('fire', 'poison', function (s) { put(s, 4, 3, 10); });
     var e = x.s.frogs[4]; ok(Math.abs(e.x - cx(3)) > 120, 'knocked away');
   });
-  test('Toxic Field (lightning + poison): plus of toxic cells; enemy starting its turn inside takes damage', function () {
+  test('Toxic Field (lightning + poison): plus of toxic cells; enemy landing in it is burned and erupted out toward its base; turn start burns', function () {
     var x = reactWith('lightning', 'poison', function (s) { put(s, 4, 3, 10); });
     eq(cell(x.s, 2, 10).t, 'toxic'); eq(cell(x.s, 3, 10).t, 'toxic'); eq(cell(x.s, 2, 9).t, 'toxic'); eq(cell(x.s, 3, 9).t, null);
     ok(x.s.frogs[4].hp < x.s.frogs[4].maxHp, 'toxic at turn start');
+    var s = x.s; put(s, 0, 5, 5); put(s, 3, 1, 7); s.frogs[3].ch = 1; // Clingfoot: без Breach
+    var hp = s.frogs[3].hp, r = jumpCell(s, 3, 1, 10);
+    ok(ev(r, 'toxic').length && s.frogs[3].hp < hp, 'burned');
+    var c3 = Sim.cellIdx(s.frogs[3].x, s.frogs[3].y); ok(cell(s, c3 % T.cols, Math.floor(c3 / T.cols)).t !== 'toxic', 'erupted out of the field');
+    ok(s.frogs[3].y < cy(10) - C, 'thrown toward its own base');
   });
-  test('Steam (fire + ice): own frogs inside are hidden from the enemy', function () {
-    var x = reactWith('fire', 'ice'); eq(cell(x.s, 2, 10).t, 'steam');
-    ok(Sim.hiddenFrom(x.s, 1, x.s.frogs[0]), 'hidden'); ok(Sim.perceived(x.s, 1).frogs[0].hidden);
+  test('Steam Jet (fire + ice): plus of jets; landing launches own frog 2 cells forward and blows an enemy back', function () {
+    var x = reactWith('fire', 'ice'), s = x.s; eq(cell(s, 2, 10).t, 'jet'); eq(cell(s, 2, 9).t, 'jet');
+    put(s, 0, 5, 5); put(s, 3, 1, 7); s.frogs[3].ch = 1;
+    var r = jumpCell(s, 3, 1, 10); // враг на струю стороны 0 — отброшен назад к своей базе
+    ok(has(r, 'jet')); ok(s.frogs[3].y < cy(10) - C * 1.5, 'enemy blown back');
+    put(s, 1, 2, 12); s.frogs[1].ch = 1;
+    r = jumpCell(s, 1, 2, 11); // своя: на (2,11) → струя → (2,9) — тоже струя → (2,7)
+    eq(ev(r, 'jet').length, 2, 'jets chain'); ok(Math.abs(s.frogs[1].y - cy(7)) < 30, 'launched forward 4 cells');
   });
   test('Static Ward (ice + lightning): line of 3 across the jump; enemy landing there is thrown back; own frog not knocked', function () {
     var x = reactWith('ice', 'lightning'), s = x.s;
@@ -217,7 +227,7 @@
     var why = {}; all.forEach(function (r) { why[r.why] = (why[r.why] || 0) + 1; });
     var p0 = all.filter(function (r) { return r.winner === 0; }).length;
     return { rows: rows, n: all.length, turns: med(all.map(function (r) { return r.turns; })), why: why, first: p0,
-      perMatch: { relays: sum('relays') / all.length, reactions: sum('reactions') / all.length, recalls: sum('recalls') / all.length, deaths: sum('deaths') / all.length, terrain: sum('terrain') / all.length } };
+      perMatch: { relays: sum('relays') / all.length, jets: sum('jets') / all.length, reactions: sum('reactions') / all.length, recalls: sum('recalls') / all.length, deaths: sum('deaths') / all.length, terrain: sum('terrain') / all.length } };
   }
   window.runMatrix = runMatrix;
   document.getElementById('run').onclick = function () {

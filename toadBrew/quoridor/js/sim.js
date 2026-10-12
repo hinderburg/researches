@@ -144,7 +144,7 @@
   // teams: [[k, k, k], [k, k, k]] — по три жабы (§6)
   Sim.createMatch = function (teamA, teamB, seed) {
     var s = { seed: seed >>> 0, rng: seed >>> 0, teams: [teamA.slice(), teamB.slice()], traits: [FB.teamTraits(teamA), FB.teamTraits(teamB)],
-      turn: 0, turnSide: 0, phase: 'init', frogs: [], cells: [], seq: [], ptr: [0, 0], played: [0, 0], recalls: 0, act: null, pending: null };
+      turn: 0, turnSide: 0, phase: 'init', frogs: [], cells: [], seq: [], ptr: [0, 0], played: [0, 0], recalls: 0, recallTurn: [-99, -99], act: null, pending: null };
     s.seq = makeSequence(s);
     return s;
   };
@@ -175,13 +175,8 @@
   function enemiesOf(s, f) { return s.frogs.filter(function (e) { return e.alive && e.side !== f.side; }); }
   function mates(s, f) { return s.frogs.filter(function (e) { return e.alive && e.side === f.side && e.id !== f.id; }); }
 
-  // Steam (§36): жаба в паре своей стороны не видна врагу, если рядом нет его жабы
-  Sim.hiddenFrom = function (s, viewer, f) {
-    if (f.side === viewer || !f.alive) return false;
-    var cl = s.cells[cellIdx(f.x, f.y)];
-    if (cl.t !== 'steam' || cl.side !== f.side) return false;
-    return !s.frogs.some(function (o) { return o.side === viewer && o.alive && dist(o.x, o.y, f.x, f.y) <= T.steamSight; });
-  };
+  // Сокрытия нет: пар заменён на Steam Jet (D-123). Функция оставлена — бот и превью смотрят через perceived()
+  Sim.hiddenFrom = function () { return false; };
   Sim.perceived = function (s, viewer) {
     var c = Sim.clone(s);
     c.frogs.forEach(function (f) { if (Sim.hiddenFrom(s, viewer, s.frogs[f.id])) { f.hidden = true; f.x = -5000; f.y = -5000; } });
@@ -266,6 +261,7 @@
     if (mode === 'recall') { // отзыв (§23): бесплатно, 1 за ход, до активации
       if (!Sim.canRecall(s, f)) return { ok: false, events: events, why: 'cannot recall' };
       s.recalls++;
+      s.recallTurn[f.side] = s.turn;
       events.push({ t: 'recall', id: f.id });
       sendHome(s, f, events, 'recall');
       return { ok: true, events: events, free: true };
@@ -350,8 +346,7 @@
         events.push({ t: 'push', id: f.id, from: { x: f.x, y: f.y }, to: { x: nx, y: ny }, soft: true }); f.x = nx; f.y = ny;
       }
     }
-    finalLanding(s, f, dir, events, A);
-    return false;
+    return finalLanding(s, f, dir, events, A);
   }
 
   // Финальное приземление (§8, §18, §19): фляга врага, Static Ward, Toxic Field, элемент в клетку, заряд
@@ -361,7 +356,7 @@
       events.push({ t: 'flask', id: f.id, side: f.side });
       spendCharge(s, f, events);
       finish(s, f.side, events, 'flask');
-      return;
+      return false;
     }
     var own = AR.flasks[f.side], od = norm(f.x - own.x, f.y - own.y);
     if (od.l < T.flaskR + f.r) { // на свою флягу не встать — иначе её можно закрыть телом; соскальзывает к краю (D-112)
@@ -372,19 +367,36 @@
     }
     var i = cellIdx(f.x, f.y), cl = s.cells[i];
     var breach = Sim.traitOn(s, f.side, 'breach') && (f.kind === 'bellows' || f.kind === 'spur');
-    if (cl.t && cl.t !== 'column' && breach) { setCell(s, i, null, null, -1, events); events.push({ t: 'label', id: f.id, text: '⛏ BREACH' }); }
+    if (cl.t && cl.t !== 'column' && cl.side !== f.side && breach) { setCell(s, i, null, null, -1, events); events.push({ t: 'label', id: f.id, text: '⛏ BREACH' }); } // чужой рельеф; свой не трогает (D-123)
+    if (cl.t === 'jet' && (A.jets || 0) < T.jetChain) { // Steam Jet (D-123): струя подбрасывает жабу на jetLen по стрелке стороны-создателя
+      A.jets = (A.jets || 0) + 1;
+      var jd = { x: 0, y: cl.side === 0 ? -1 : 1 };
+      events.push({ t: 'jet', id: f.id, i: i, side: cl.side, dir: jd });
+      return jump(s, f, jd, T.jetLen, events, false);
+    }
     if (cl.t === 'ward' && cl.side !== f.side) { // Static Ward: враг отбит назад, элемент не ложится
       events.push({ t: 'wardZap', id: f.id, i: i });
       damage(s, f, T.wardDmg, events, 'ward');
       var back = norm(-dir.x, -dir.y); if (!back.l) back = { x: 0, y: f.side === 0 ? 1 : -1 };
       if (s.frogs[f.id].x === f.x && cellIdx(f.x, f.y) === i) push(s, f, back, T.wardKnock, events, true);
       spendCharge(s, f, events);
-      return;
+      return false;
     }
-    if (cl.t === 'toxic' && cl.side !== f.side) { events.push({ t: 'toxic', id: f.id }); damage(s, f, T.toxicDmg, events, 'toxic'); }
-    if (!f.alive || cellIdx(f.x, f.y) !== i) { spendCharge(s, f, events); return; } // погибла — уже дома
+    if (cl.t === 'toxic' && cl.side !== f.side) { // Toxic Field (D-122): урон и выброс из поля к своей базе, элемент не ложится
+      events.push({ t: 'toxic', id: f.id, i: i, erupt: true });
+      damage(s, f, T.toxicDmg, events, 'toxic');
+      if (f.alive && cellIdx(f.x, f.y) === i) {
+        var home = { x: 0, y: f.side === 0 ? 1 : -1 }, tt = 16;
+        while (tt < C * 5) { var q = s.cells[cellIdx(f.x, f.y + home.y * tt)]; if (!(q.t === 'toxic' && q.side !== f.side)) break; tt += 16; }
+        push(s, f, home, tt + f.r * 0.6 + T.toxicKnock, events, true);
+      }
+      spendCharge(s, f, events);
+      return false;
+    }
+    if (!f.alive || cellIdx(f.x, f.y) !== i) { spendCharge(s, f, events); return false; } // погибла — уже дома
     if (baseOf(i) < 0) resolveCell(s, f, i, dir, events, A);
     spendCharge(s, f, events);
+    return false;
   }
 
   function spendCharge(s, f, events) {
@@ -426,8 +438,8 @@
         damage(s, e, T.detDmg * m, events, 'det');
         if (e.alive) knockFrom(s, e, p, T.detKnock * m, events, dir);
       });
-    } else if (key === 'lightning+poison' || key === 'fire+ice') { // TOXIC FIELD / STEAM: крест (усиленная — 3×3)
-      var t = key === 'fire+ice' ? 'steam' : 'toxic';
+    } else if (key === 'lightning+poison' || key === 'fire+ice') { // TOXIC FIELD / STEAM JET: крест (усиленная — 3×3)
+      var t = key === 'fire+ice' ? 'jet' : 'toxic';
       (amp ? square(i, 1) : [i].concat(neighbors4(i))).filter(cellsOk).forEach(function (j) { setCell(s, j, null, t, f.side, events); });
     } else if (key === 'ice+lightning' || key === 'ice+poison') { // STATIC WARD / CRYSTAL COLUMN: линия поперёк прыжка
       var t2 = key === 'ice+lightning' ? 'ward' : 'column', n = key === 'ice+lightning' ? (amp ? 5 : 3) : (amp ? 3 : 1);

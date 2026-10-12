@@ -49,7 +49,7 @@
     s.cells.forEach(function (cl, i) {
       if (!cl.t) return;
       var r = Math.floor(i / T.cols), ourHalf = side === 0 ? r >= T.rows / 2 - 1 : r <= T.rows / 2;
-      var w = cl.t === 'steam' ? 2 : (ourHalf ? 7 : 3);
+      var w = cl.t === 'jet' ? 4 : (ourHalf ? 7 : 3);
       v += (cl.side === side ? w : -w);
     });
     return v;
@@ -70,7 +70,8 @@
     s.cells.forEach(function (cl, i) {
       var c = Sim.cellCenter(i), d = Sim.dist(c.x, c.y, f.x, f.y);
       if (d > R || d < 60 || Sim.cellBase(i) >= 0) return;
-      if (cl.el && f.el && cl.el !== f.el) add(c.x, c.y, 'react');
+      if (cl.el && f.el && cl.el !== f.el && !cl.t) add(c.x, c.y, 'react');
+      if (cl.t === 'jet' && cl.side === side) add(c.x, c.y, 'jet'); // своя струя — бросок вперёд (D-123)
     });
     var N = 16;
     for (var a = 0; a < N; a++) {
@@ -101,6 +102,7 @@
   // Отзыв (§23): пустая жаба, только что опустевшая (ret = 2) и бесполезная как точка эстафеты, — домой сразу, на новый цикл
   function recallPick(s, side) {
     if (!s.frogs.some(function (f) { return f.side === side && Sim.canRecall(s, f); })) return null;
+    if (s.turn - s.recallTurn[side] < 2 * T.botRecallEvery) return null; // не чаще раза в botRecallEvery своих ходов (D-121)
     // сравнение оценок: позиция после отзыва (жаба дома, начнёт новый бак) против позиции без него
     var base = evalState(s, side), pick = null, best = T.botRecallGain;
     s.frogs.forEach(function (f) {
@@ -134,7 +136,7 @@
     var pick = top[Math.floor(rnd() * top.length)].cmd;
     if (pick.mode === 'jump') { // небольшая неточность руки
       var a = Math.atan2(pick.dy, pick.dx) + (rnd() - 0.5) * 2 * T.botAimNoiseDeg * Math.PI / 180, l = Math.hypot(pick.dx, pick.dy) * (1 + (rnd() - 0.5) * 2 * T.botAimNoisePow);
-      if (pick.tag === 'flask' || pick.tag === 'relay' || pick.tag === 'hit') { a = Math.atan2(pick.dy, pick.dx); l = Math.hypot(pick.dx, pick.dy); } // в цель — точно
+      if (pick.tag === 'flask' || pick.tag === 'relay' || pick.tag === 'hit' || pick.tag === 'jet') { a = Math.atan2(pick.dy, pick.dx); l = Math.hypot(pick.dx, pick.dy); } // в цель — точно
       pick = { frog: pick.frog, dx: Math.cos(a) * l, dy: Math.sin(a) * l, mode: 'jump', tag: pick.tag };
     }
     return pick;
@@ -145,14 +147,14 @@
     var s = Sim.createMatch(teamA, teamB, seed);
     Sim.startMatch(s);
     var r = seed % 233280, rnd = function () { r = (r * 9301 + 49297) % 233280; return r / 233280; };
-    var stats = { relays: 0, reactions: 0, recalls: 0, deaths: 0, terrain: 0, cmds: 0 };
+    var stats = { relays: 0, reactions: 0, recalls: 0, deaths: 0, terrain: 0, jets: 0, cmds: 0 };
     for (var n = 0; n < (maxCmds || 600) && s.phase === 'play'; n++) {
       var cmd = AI.choose(s, s.turnSide, rnd), res = Sim.apply(s, cmd);
       if (!res.ok) res = Sim.apply(s, s.pending ? { frog: s.pending.frog, mode: 'end' } : { mode: 'skip' });
       stats.cmds++;
       res.events.forEach(function (e) {
         if (e.t === 'relay') stats.relays++; if (e.t === 'reaction') stats.reactions++; if (e.t === 'recall') stats.recalls++;
-        if (e.t === 'death') stats.deaths++; if (e.t === 'cell' && e.tt) stats.terrain++;
+        if (e.t === 'death') stats.deaths++; if (e.t === 'cell' && e.tt) stats.terrain++; if (e.t === 'jet') stats.jets++;
       });
     }
     return { winner: s.winner, why: s.why, turns: s.turn, stats: stats };
