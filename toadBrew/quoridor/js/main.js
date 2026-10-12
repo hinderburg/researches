@@ -298,11 +298,12 @@
         break;
       }
       case 'recall': dur = 0.05; break;
-      case 'cell': { var cl = app.shown.cells[e.i]; cl.el = e.el; cl.t = e.tt; cl.side = e.side; var cp = Sim.cellCenter(e.i); if (e.el || e.tt) R.ring(cp.x, cp.y, 60, e.tt ? FB.TERRAIN[e.tt].color : ELC(e.el), 0.4); dur = 0.04; break; }
+      case 'cell': { var cl = app.shown.cells[e.i]; cl.el = e.el; cl.t = e.tt; cl.side = e.side; var cp = Sim.cellCenter(e.i); R.cellBurst(cp.x, cp.y, e.el, e.tt); dur = 0.04; break; } // всплеск смены клетки (D-129)
       case 'reaction':
+        if (e.combo) { var ce = e.key.split('+'); R.comboFx(e.x, e.y, ELC(ce[0]), ELC(ce[1])); } // комбо — двойная спираль цветов (D-129)
         R.reactionFx(e.key, e.x, e.y, { 'fire+lightning': T.cell * (e.amp ? 2.5 : 1.5), 'fire+poison': T.detR, 'lightning+poison': T.vortexR, 'fire+ice': T.cell * 1.4, 'ice+poison': T.cell * 0.8, 'ice+lightning': T.cell * 1.3 }[e.key] || 150);
         R.text(e.x, e.y, (e.combo ? '⚗ ' : '') + e.name + (e.amp ? '<br><small>🌀 ×' + T.ampMul + '</small>' : ''), 'rx'); R.shake(8); dur = 0.5; break;
-      case 'frozen': SF(e.id).frozen = 1; R.reactionFx('ice+poison', d.x, d.y, 70); R.text(d.x, d.y, '🧊 FROZEN', 'ice'); R.shake(6); dur = 0.3; break; // Frost Ward (D-125)
+      case 'frozen': SF(e.id).frozen = 1; R.freezeFx(d.x, d.y); R.text(d.x, d.y, '🧊 FROZEN', 'ice'); R.shake(6); dur = 0.3; break; // Frost Ward (D-125)
       case 'chill': SF(e.id).chill = 1; R.ring(d.x, d.y, 60, '#bfefff'); R.text(d.x, d.y, '❄ SLOWED', 'ice'); dur = 0.25; break;
       case 'thaw': if (e.slow) SF(e.id).chill = 0; else { SF(e.id).frozen = 0; R.text(d.x, d.y, 'THAW', 'ice'); } dur = 0.05; break;
       case 'jet': { var jp = Sim.cellCenter(e.i); R.reactionFx('fire+ice', jp.x, jp.y, 70); R.text(jp.x, jp.y, e.side === SF(e.id).side ? '⇧ JET' : '⇩ BLOWN BACK', 'gold'); dur = 0.2; break; } // Steam Jet (D-123)

@@ -263,10 +263,41 @@
       var ring = new THREE.Mesh(new THREE.RingGeometry(T.flaskR - 5, T.flaskR, 48), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.6, depthWrite: false }));
       ring.rotation.x = -Math.PI / 2; ring.position.y = 1.4; g.add(ring);
       g.position.set(p.x, 0, p.y); scene.add(g);
-      flaskObjs.push({ g: g, liquid: liquid, glow: glow, ring: ring });
+      flaskObjs.push({ g: g, liquid: liquid, glow: glow, ring: ring, ly: liquid.position.y });
     });
   }
   R.flaskObjs = flaskObjs;
+  // Жидкость во фляге — следующий элемент стороны из общей последовательности (D-130): им зарядится жаба, начинающая новый бак.
+  // Смена цвета — с перетеканием и всплеском; над колбой поднимаются пузыри этого цвета.
+  function syncFlasks(s, t) {
+    if (!s.seq || !s.ptr) return;
+    flaskObjs.forEach(function (F, side) {
+      var el = s.seq[s.ptr[side] % s.seq.length], E = FB.ELEMENTS[el];
+      if (!E) return;
+      if (F.el !== el) {
+        var first = !F.el; F.el = el; F.from = F.liquid.material.color.clone(); F.to = new THREE.Color(E.color); F.mixT = first ? 1 : 0;
+        if (!first) { var p = AR.flasks[side]; R.ring(p.x, p.y, T.flaskR * 1.3, E.color, 0.6); R.flash(p.x, p.y, 120, E.color); for (var k = 0; k < 8; k++) { var a = Math.random() * 6.28; particle(sprite(glowTex(), E.color, true), p.x, p.y, 60, { life: 0.8, v: { x: Math.cos(a) * 80, y: 120 + Math.random() * 80, z: Math.sin(a) * 80 }, drag: 2, s0: 22, s1: 8 }); } }
+      }
+      if (F.mixT < 1) F.mixT = Math.min(1, F.mixT + 0.02);
+      var c = F.from ? F.from.clone().lerp(F.to, F.mixT) : F.to;
+      F.liquid.material.color.copy(c); F.liquid.material.emissive.copy(c).multiplyScalar(0.3 + 0.08 * Math.sin(t * 3 + side));
+      F.glow.material.color.copy(c);
+      var ph = t * 2.4 + side * 2; // жидкость плещется: сплющивается то вдоль, то поперёк, уровень покачивается (D-130)
+      F.liquid.scale.set(1 + 0.06 * Math.sin(ph), 1 + 0.05 * Math.sin(ph * 1.3 + 1), 1 + 0.06 * Math.sin(ph + Math.PI / 2));
+      F.liquid.position.y = F.ly + 2.5 * Math.sin(ph * 0.9);
+      F.liquid.rotation.z = 0.12 * Math.sin(ph * 0.7); F.liquid.rotation.x = 0.1 * Math.sin(ph * 0.6 + 1);
+      if (T.ambient !== 0 && (!F.nextI || t > F.nextI)) { // мелкие пузырьки внутри колбы
+        F.nextI = t + 0.12 + Math.random() * 0.2;
+        var pi2 = AR.flasks[side];
+        particle(sprite(glowTex(), 0xffffff, true), pi2.x + (Math.random() - 0.5) * T.flaskR * 0.45, pi2.y + (Math.random() - 0.5) * T.flaskR * 0.45, 18, { life: 0.55, v: { x: 0, y: 70, z: 0 }, s0: 6, s1: 3, a0: 0.8 });
+      }
+      if (T.ambient !== 0 && (!F.nextB || t > F.nextB)) {
+        F.nextB = t + 0.25 + Math.random() * 0.35;
+        var q = AR.flasks[side];
+        particle(sprite(dotRingTex(), c.getHex(), false), q.x + (Math.random() - 0.5) * T.flaskR * 0.5, q.y + (Math.random() - 0.5) * T.flaskR * 0.4, 30, { life: 1.2, v: { x: 0, y: 60 + Math.random() * 40, z: 0 }, s0: 8, s1: 18, a0: 0.8 });
+      }
+    });
+  }
 
   // ---------- жабы ----------
   var POSES = { // градусы для левой стороны [плечо, предплечье]; правая — зеркально (D-053)
@@ -468,6 +499,75 @@
     g.position.set(p.x, 0, p.y); scene.add(g);
     return D;
   }
+  // Живые клетки (D-129): каждая поверхность всё время что-то делает — огонь искрит, яд пузырится, молния трещит,
+  // лёд поблёскивает, струя пыхает паром по стрелке, мороз сыплет снегом, кристалл бликует. Частицы короткие и редкие.
+  var AMB = { fire: [0.12, 0.28], poison: [0.2, 0.45], ice: [0.25, 0.6], lightning: [0.45, 1.1], jet: [0.2, 0.4], frost: [0.15, 0.32], column: [0.35, 0.8] };
+  function cellAmbient(D, cl, i, t) {
+    var kind = cl.t || cl.el, p = FB.Sim.cellCenter(i), cs = T.cell, rx = function () { return p.x + (Math.random() - 0.5) * cs * 0.8; }, ry = function () { return p.y + (Math.random() - 0.5) * cs * 0.8; };
+    // плитка «дышит»: огонь и молния мерцают, яд и лёд мягко пульсируют
+    var fl = kind === 'fire' ? 0.88 + 0.16 * Math.sin(t * 9 + i) * Math.sin(t * 5.3 + i * 2) : kind === 'lightning' ? (Math.random() < 0.06 ? 1.35 : 0.95) : kind === 'poison' ? 0.92 + 0.1 * Math.sin(t * 2.4 + i) : kind === 'ice' ? 0.95 + 0.07 * Math.sin(t * 1.7 + i) : 1;
+    D.tile.material.color.setScalar(fl);
+    if (!AMB[kind] || T.ambient === 0) return;
+    if (D.next === undefined) D.next = t + Math.random() * AMB[kind][1];
+    if (t < D.next) return;
+    D.next = t + AMB[kind][0] + Math.random() * (AMB[kind][1] - AMB[kind][0]);
+    var x = rx(), y = ry(), sp;
+    if (kind === 'fire') { // язычки и искры вверх
+      particle(sprite(glowTex(), Math.random() < 0.5 ? 0xff7a10 : 0xffc040, true), x, y, 6, { life: 0.7 + Math.random() * 0.4, v: { x: (Math.random() - 0.5) * 20, y: 70 + Math.random() * 60, z: (Math.random() - 0.5) * 20 }, s0: 52, s1: 10, a0: 0.95 });
+      if (Math.random() < 0.4) particle(sprite(dropTex(), 0xff5a00, false), rx(), ry(), 4, { life: 0.6, v: { x: (Math.random() - 0.5) * 60, y: 140, z: (Math.random() - 0.5) * 60 }, drag: 2.5, s0: 16, s1: 8 });
+    } else if (kind === 'poison') { // пузырь поднимается и лопается
+      particle(sprite(dotRingTex(), 0x9dff3a, false), x, y, 3, { life: 1.0 + Math.random() * 0.4, v: { x: 0, y: 26 + Math.random() * 18, z: 0 }, s0: 12, s1: 40, a0: 0.85 });
+    } else if (kind === 'ice') { // блик-звёздочка
+      particle(sprite(glowTex(), 0xe8fbff, true), x, y, 5, { life: 0.55, s0: 8, s1: 60, ease: true, a0: 1 });
+    } else if (kind === 'lightning') { // разряд поперёк клетки
+      var a = Math.random() * Math.PI, d = cs * 0.38;
+      R.bolt({ x: p.x - Math.cos(a) * d, y: p.y - Math.sin(a) * d }, { x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d }, Math.random() < 0.5 ? '#ffe100' : '#fff6a0', 6);
+    } else if (kind === 'jet') { // пых пара по стрелке
+      var dz = cl.side === 0 ? -1 : 1;
+      particle(sprite(puffTex(), 0xfff0dc, false), p.x + (Math.random() - 0.5) * 30, p.y - dz * cs * 0.3, 8, { life: 0.8, v: { x: (Math.random() - 0.5) * 20, y: 50, z: dz * 190 }, drag: 1.2, s0: 26, s1: 80, ease: true, a0: 0.6 });
+    } else if (kind === 'frost') { // снежинка падает с покачиванием
+      particle(sprite(glowTex(), 0xffffff, true), x, y, 70 + Math.random() * 30, { life: 1.6, v: { x: (Math.random() - 0.5) * 30, y: -45, z: (Math.random() - 0.5) * 30 }, s0: 18, s1: 12, a0: 0.9 });
+    } else if (kind === 'column' && D.hgt) { // блик бежит по грани кристалла
+      particle(sprite(glowTex(), 0xb0ffe0, true), p.x + (Math.random() - 0.5) * cs * 0.5, p.y + (Math.random() - 0.5) * cs * 0.3, 20 + Math.random() * D.hgt, { life: 0.5, s0: 14, s1: 64, ease: true, a0: 0.9 });
+    }
+  }
+  // Всплеск, когда клетка меняется (D-129): краска шлёпается, рельеф поднимается, очищенная клетка дымит
+  R.cellBurst = function (x, y, el, t) {
+    var i, a, c;
+    if (!el && !t) { // очищена: белая пыль и кольцо
+      for (i = 0; i < 5; i++) { a = Math.random() * 6.28; particle(sprite(puffTex(), 0xd8d0c0, false), x, y, 10, { life: 0.8, v: { x: Math.cos(a) * 70, y: 40, z: Math.sin(a) * 70 }, drag: 2, s0: 30, s1: 70, ease: true, a0: 0.55 }); }
+      particle(flatMesh(dotRingTex(), 0xffffff, 10, 2, false), x, y, 2, { life: 0.45, s0: 20, s1: T.cell * 1.1, ease: true, a0: 0.7 });
+      return;
+    }
+    c = t ? FB.TERRAIN[t].color : FB.ELEMENTS[el].color;
+    particle(flatMesh(dotRingTex(), c, 10, 2, false), x, y, 2, { life: 0.5, s0: 20, s1: T.cell * 1.15, ease: true, a0: 0.85 });
+    if (t === 'jet') for (i = 0; i < 3; i++) particle(sprite(puffTex(), 0xfff0dc, false), x, y, 10, { life: 0.9, v: { x: (Math.random() - 0.5) * 30, y: 160 + i * 60, z: (Math.random() - 0.5) * 30 }, drag: 1.5, s0: 30, s1: 90, ease: true, a0: 0.7 });
+    else if (t === 'frost') for (i = 0; i < 7; i++) { a = Math.random() * 6.28; var sh = sprite(shardTex(), 0xd8f6ff); sh.material.rotation = a; particle(sh, x, y, 10, { life: 0.7, v: { x: Math.cos(a) * 90, y: 90 + Math.random() * 80, z: Math.sin(a) * 90 }, drag: 2, s0: 22, s1: 10 }); }
+    else if (!t) for (i = 0; i < 6; i++) { a = i / 6 * 6.28 + Math.random() * 0.5; particle(sprite(el === 'lightning' || el === 'fire' ? glowTex() : el === 'ice' ? shardTex() : dropTex(), c, el === 'lightning' || el === 'fire'), x, y, 8, { life: 0.6, v: { x: Math.cos(a) * 110, y: 120 + Math.random() * 60, z: Math.sin(a) * 110 }, drag: 2.2, s0: 18, s1: 8 }); }
+  };
+  // Вихрь частиц: внутрь (стягивание) или наружу (комбо, заморозка)
+  function swirl(x, y, n, r0, colors, o) {
+    o = o || {};
+    for (var i = 0; i < n; i++) {
+      var add = i % 3 === 0, s2 = sprite(add ? glowTex() : (o.tex || dropTex()), colors[i % colors.length], add);
+      scene.add(s2);
+      fxList.push({ obj: s2, t: -i * (o.stagger || 0.012), life: o.life || 0.9, swirl: { x: x, y: y, a0: i / n * Math.PI * 2 * (o.turns || 3), r0: r0 * (0.75 + Math.random() * 0.35), w: o.w || 1.2, h: o.h || 16, lift: o.lift || 40, sz: o.sz || 22, out: !!o.out } });
+    }
+  }
+  // Комбо (D-129): две ленты цветов союзника и прыгуньи раскручиваются из точки, вспышка обоих цветов
+  R.comboFx = function (x, y, c1, c2) {
+    swirl(x, y, 36, 170, [c1, c2], { out: true, w: 0.9, turns: 2, life: 0.8, sz: 26, lift: 70 });
+    R.flash(x, y, 190, c1); setTimeout(function () { R.flash(x, y, 140, c2); }, 80);
+    R.ring(x, y, 130, c1, 0.5); setTimeout(function () { R.ring(x, y, 170, c2, 0.6); }, 110);
+  };
+  // Заморозка (D-129): ледяные осколки вокруг жабы, иней по кругу, белая вспышка
+  R.freezeFx = function (x, y) {
+    for (var i = 0; i < 14; i++) { var a = i / 14 * 6.28, sh = sprite(shardTex(), i % 2 ? 0xd8f6ff : 0x8fdcff); sh.material.rotation = a; particle(sh, x + Math.cos(a) * 30, y + Math.sin(a) * 30, 10, { life: 0.8, v: { x: Math.cos(a) * 40, y: 150 + Math.random() * 60, z: Math.sin(a) * 40 }, drag: 3, s0: 34, s1: 20 }); }
+    swirl(x, y, 18, 110, [0xffffff, 0xbfefff], { w: -1, turns: 1, life: 0.7, sz: 14, lift: 30 });
+    particle(flatMesh(hexTex(), 0xbfefff, 10, 3, false), x, y, 3, { life: 0.8, s0: 150, s1: 80, ease: true });
+    R.flash(x, y, 140, '#e8fbff');
+  };
+
   function syncDyn(s, t) {
     (s.cells || []).forEach(function (cl, i) {
       var key = cl.el || cl.t ? (cl.el || '') + '|' + (cl.t || '') + '|' + cl.side : '';
@@ -479,7 +579,7 @@
       D.tile.scale.set(pop, pop, 1);
       if (D.col) { var rise = Math.min(1, (t - D.born) * 2.5); D.col.scale.y = Math.max(0.02, rise); D.col.position.y = D.hgt / 2 * rise; D.tip.position.y = D.hgt * rise + 17; D.tip.visible = rise > 0.9; }
       if (D.gl) D.gl.material.opacity = (D.t === 'jet' ? 0.2 + 0.25 * Math.max(0, Math.sin(t * 5 - (i % T.cols) * 0.7)) : D.t === 'frost' ? 0.3 + 0.25 * Math.abs(Math.sin(t * 7 + i)) : 0.25 + 0.12 * Math.sin(t * 2.2 + i));
-      D.puffs.forEach(function (sp) { sp.position.y = 40 + Math.sin(t * 0.8 + sp.userData.ph) * 10; sp.material.opacity = (cl.side === 0 ? 0.32 : 0.6) * a; });
+      cellAmbient(D, cl, i, t);
     });
   }
 
@@ -649,18 +749,23 @@
       for (i = 0; i < 14; i++) { a = Math.random() * 6.28; particle(sprite(puffTex(), i % 2 ? 0x3a3020 : 0x4a5a20), x, y, 30, { life: 1.4, v: { x: Math.cos(a) * 120, y: 90 + Math.random() * 80, z: Math.sin(a) * 120 }, drag: 1.2, s0: 50, s1: 140, ease: true, fin: 0.15, a0: 0.75 }); }
       R.burst(x, y, '#ff7a00', 10, 30); R.burst(x, y, '#78ff14', 8, 30); R.shake(18);
     } else if (key === 'fire+lightning') { // PLASMA ORB — плазменный разряд: вспышка и лучи-молнии
+      particle(flatMesh(solidTex(), 0xff9a30, T.cell * 3, 1.5, true), x, y, 1.5, { life: 0.5, s0: T.cell * 2, s1: T.cell * 3.4, ease: true, a0: 0.7 }); // вспышка по квадрату 3×3 (D-129)
+      swirl(x, y, 24, r, [0xffe100, 0xff7a00], { out: true, w: 0.4, turns: 1, life: 0.6, sz: 20, lift: 40 });
       particle(sprite(solidTex(), 0xffb030, false), x, y, 40, { life: 0.45, s0: 30, s1: r * 1.4, ease: true });
       for (i = 0; i < 6; i++) { a = i / 6 * 6.28 + Math.random() * 0.3; R.bolt({ x: x, y: y }, { x: x + Math.cos(a) * r * 0.9, y: y + Math.sin(a) * r * 0.9 }, i % 2 ? '#ffe100' : '#ff7a00', 30); }
     } else if (key === 'ice+poison') { // TOXIC CRYSTAL — осколки разлетаются, морозная волна
       for (i = 0; i < 18; i++) { a = Math.random() * 6.28; var sh = sprite(shardTex(), i % 2 ? 0x8dff5a : 0x9fe8ff); sh.material.rotation = a; sp = 150 + Math.random() * 150; particle(sh, x, y, 30, { life: 0.9, v: { x: Math.cos(a) * sp, y: 60 + Math.random() * 120, z: Math.sin(a) * sp }, drag: 2, s0: 34, s1: 18 }); }
       particle(flatMesh(dotRingTex(), 0xb8ffe0, 10, 2.5, false), x, y, 2.5, { life: 0.7, s0: 20, s1: r * 1.8, ease: true });
-    } else if (key === 'ice+lightning') { // STATIC SHELL — шестигранник-щит вспыхивает, по кругу трещат молнии
-      particle(flatMesh(hexTex(), 0x2fd8ff, 10, 3, false), x, y, 3, { life: 0.9, s0: 160, s1: 90, ease: true, fin: 0.1 });
-      for (i = 0; i < 6; i++) { a = i / 6 * 6.28; var b = a + 1.05; R.bolt({ x: x + Math.cos(a) * 70, y: y + Math.sin(a) * 70 }, { x: x + Math.cos(b) * 70, y: y + Math.sin(b) * 70 }, '#9fe0ff', 40); }
-    } else if (key === 'lightning+poison') { // NEUROSHOCK — электрическая волна, фиолетово-лаймовая
-      particle(flatMesh(dotRingTex(), 0xc070ff, 10, 3, false), x, y, 3, { life: 0.8, s0: 20, s1: r * 2.2, ease: true });
-      particle(flatMesh(dotRingTex(), 0xc6ff00, 10, 3.2, false), x, y, 3.2, { life: 0.9, s0: 10, s1: r * 1.7, ease: true });
-      for (i = 0; i < 5; i++) { a = Math.random() * 6.28; R.bolt({ x: x, y: y }, { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r }, i % 2 ? '#c070ff' : '#c6ff00', 25); }
+    } else if (key === 'ice+lightning') { // FROST WARD (D-129) — морозная волна, иней и снежный вихрь, искры холода
+      particle(flatMesh(dotRingTex(), 0xd8f6ff, 10, 3, false), x, y, 3, { life: 0.8, s0: 20, s1: r * 2.4, ease: true });
+      particle(flatMesh(hexTex(), 0x9fe8ff, 10, 3.2, false), x, y, 3.2, { life: 0.9, s0: 60, s1: r * 1.6, ease: true, fin: 0.1 });
+      swirl(x, y, 30, r * 1.1, [0xffffff, 0xbfefff, 0x7ad8ff], { out: true, w: 0.6, turns: 2, life: 1.0, sz: 16, lift: 50, tex: shardTex() });
+      for (i = 0; i < 4; i++) { a = Math.random() * 6.28; R.bolt({ x: x, y: y }, { x: x + Math.cos(a) * r * 0.8, y: y + Math.sin(a) * r * 0.8 }, '#cff4ff', 20); }
+    } else if (key === 'lightning+poison') { // TOXIC VORTEX (D-129) — ядовитый смерч затягивает внутрь, кольцо сжимается
+      swirl(x, y, 54, r, [0x9dff3a, 0xc070ff, 0x78ff14], { w: 1.6, turns: 3, life: 1.1, sz: 24, lift: 60, stagger: 0.008 });
+      particle(flatMesh(dotRingTex(), 0x9dff3a, 10, 3, false), x, y, 3, { life: 0.9, s0: r * 2.2, s1: 30, ease: true, a0: 0.9 });
+      particle(flatMesh(dotRingTex(), 0xc070ff, 10, 3.2, false), x, y, 3.2, { life: 1.0, s0: r * 1.6, s1: 20, ease: true, a0: 0.8 });
+      for (i = 0; i < 6; i++) { a = i / 6 * 6.28; particle(sprite(puffTex(), i % 2 ? 0x5a8a20 : 0x6a3a8a), x + Math.cos(a) * r * 0.8, y + Math.sin(a) * r * 0.8, 20, { life: 1.0, v: { x: -Math.cos(a) * r * 0.8, y: 60, z: -Math.sin(a) * r * 0.8 }, drag: 1, s0: 60, s1: 30, a0: 0.6 }); }
     } else { // OVERCHARGE — белая вспышка
       particle(sprite(solidTex(), 0xffffff, false), x, y, 40, { life: 0.5, s0: 30, s1: r * 2, ease: true });
     }
@@ -719,6 +824,12 @@
       if (f.vx !== undefined) { // капля краски: падает и шлёпается в маленькое пятно
         f.vy -= f.g * dt; f.obj.position.x += f.vx * dt; f.obj.position.y += f.vy * dt; f.obj.position.z += f.vz * dt;
         if (f.obj.position.y <= 2) { scene.remove(f.obj); f.obj.material.dispose(); return false; } // капли без пятен: краска на полу — только клетки (D-120)
+      }
+      else if (f.swirl) { // вихрь (D-129): частица кружит и затягивается к центру (или разлетается, если out)
+        if (u < 0) return true; var W = f.swirl, k2 = W.out ? u : 1 - Math.pow(u, 0.8), rr = W.r0 * (W.out ? 0.15 + 0.85 * k2 : k2), aa = W.a0 + W.w * u * Math.PI * 2;
+        f.obj.position.set(W.x + Math.cos(aa) * rr, W.h + Math.sin(u * Math.PI) * W.lift, W.y + Math.sin(aa) * rr);
+        var sz2 = W.sz * (W.out ? 1 - u * 0.6 : 0.5 + 0.5 * (1 - u)); f.obj.scale.set(sz2, sz2, 1);
+        f.obj.material.opacity = u < 0.15 ? u / 0.15 : (u > 0.7 ? (1 - u) / 0.3 : 1);
       }
       else if (f.ring) { var r = f.ring * (0.2 + 0.8 * Math.sqrt(u)); f.obj.scale.set(r, r, r); f.obj.material.opacity = 1 - u; }
       else if (f.flash) { var s = f.flash * (0.5 + u); f.obj.scale.set(s, s, 1); f.obj.material.opacity = 1 - u; }
@@ -879,6 +990,7 @@
     var s = app.shown;
     if (s) {
       syncDyn(s, tAll);
+      syncFlasks(s, tAll);
       s.frogs.forEach(function (f) { var d = app.disp[f.id]; if (d) syncFrog(f, d, dt, tAll, d.hidden); });
     }
     stepFx(dt * R.fxScale); stepDecals(dt * R.fxScale); // fxScale — замедление эффектов для отладки

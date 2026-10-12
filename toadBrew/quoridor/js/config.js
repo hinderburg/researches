@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '5.2.0';
+FB.VERSION = '5.3.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -43,6 +43,7 @@ FB.T = {
   slamDamage: 8,                       // отброс в стену / колонну
   contactAssist: 14,
   hitAnimSec: 0.6,                     // анимация отброса (D-108)
+  ambient: 1,                          // живые клетки и фляги: частицы над поверхностями (D-129); ?t={"ambient":0} — выключить
 
   // Реакции на сетке (§36, D-116)
   plasmaDmg: 30, plasmaKnock: 80,                  // Plasma Burst: 3×3 клетки — урон врагам и лёгкий отброс
