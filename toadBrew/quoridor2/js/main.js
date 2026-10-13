@@ -695,9 +695,9 @@
   function emptyNudge(id) {
     var d = D(id); d.hitT = T.hitAnimSec * 0.5; d.hitPow = 0.35;
     R.text(d.x, d.y, '🪫 NO ELIXIR', 'dmg');
-    notice('🪫 EMPTY TANK', 'This frog can’t jump', 'Its spring is unwound. ⟲ on its card: home + refuel at once · or bounce off it', '#c8c0b4');
-    var c = $('fc-' + id), hb = c && c.querySelector('.home');
-    if (hb) { hb.classList.remove('nudge'); void hb.offsetWidth; hb.classList.add('nudge'); }
+    notice('🪫 EMPTY TANK', 'This frog can’t jump', 'Its spring is unwound. Tap its card below: home + refuel at once · or bounce off it', '#c8c0b4');
+    var c = $('fc-' + id);
+    if (c) { c.classList.remove('nudge'); void c.offsetWidth; c.classList.add('nudge'); }
     clearTimeout(legendT); legendT = setTimeout(function () { if (app.aimCmd) return; if (canAimNow()) updateThreat(); else notice(null); }, 2600);
     log('empty.nudge', { frog: id });
   }
@@ -757,7 +757,7 @@
     function W(o, r) { return { world: { x: o.x, y: o.y, r: r } }; }
     var list = [ // цель — на старте матча; дальше по ситуации, первая подходящая
       ['jump', act.length > 0, function () { app.ghostFrog = act[0].id; return W(act[0], act[0].r * 1.7); }],
-      ['empty', !!emptyF, function () { var c = $('fc-' + emptyF.id); return Object.assign(W(emptyF, emptyF.r * 1.7), { el: c && c.querySelector('.home') }); }],
+      ['empty', !!emptyF, function () { return Object.assign(W(emptyF, emptyF.r * 1.7), { el: $('fc-' + emptyF.id) }); }],
       ['relay', !!ally, function () { return W(ally, ally.r * 1.8); }]
     ];
     for (var k = 0; k < list.length; k++) if (!tips.seen[list[k][0]] && list[k][1]) { tips.turn = s.turn; return coach(list[k][0], list[k][2]()); }
@@ -768,28 +768,39 @@
     var b = $('banner'); b.className = 'banner show ' + (cls || ''); b.innerHTML = txt + (sub ? '<small>' + sub + '</small>' : '');
     clearTimeout(app.bannerT); app.bannerT = setTimeout(function () { b.className = 'banner'; }, 1100);
   }
-  // Свои очереди NEXT (D-142): у каждой стороны свой указатель в последовательности — следующие три элемента своей и чужой фляги
+  // Своя очередь NEXT — у своей колбы (D-156): колба уже налита следующим элементом, рядом ещё два.
+  // Очередь врага не показываем: его колба и так показывает, чем зарядится его следующий бак.
   var nextKey = '';
   function renderNext() {
-    var s = app.shown, box = $('seq'); if (!s) return;
-    var on = s.rules.economy && s.seq && s.seq.length;
+    var s = app.shown, box = $('nextq'); if (!s) return;
+    var on = !!(s.rules.economy && s.seq && s.seq.length && app.screen === 'battle');
     box.classList.toggle('hidden', !on); if (!on) return;
-    var key = s.ptr[0] + ':' + s.ptr[1]; if (key === nextKey) return; nextKey = key;
-    function q(side) {
-      var h = '';
-      for (var i = 0; i < 3; i++) { var e = s.seq[(s.ptr[side] + i) % s.seq.length]; h += '<div class="sqi' + (i ? '' : ' first') + '" style="--c:' + ELC(e) + '">' + FB.ELEMENTS[e].icon + '</div>'; }
-      return h;
-    }
-    box.innerHTML = '<div class="sq-h foe">ENEMY</div>' + q(1) + '<div class="sq-sep"></div><div class="sq-h me">NEXT</div>' + q(0);
+    var key = String(s.ptr[0]); if (key === nextKey) return; nextKey = key;
+    var h = '<div class="nq-h">NEXT</div><div class="nq-row">';
+    for (var i = 0; i < 3; i++) { var e = s.seq[(s.ptr[0] + i) % s.seq.length]; h += '<div class="nq-i' + (i ? '' : ' first') + '" style="--c:' + ELC(e) + '">' + FB.ELEMENTS[e].icon + '</div>'; }
+    box.innerHTML = h + '</div>';
+    box.classList.remove('pop'); void box.offsetWidth; box.classList.add('pop');
   }
-  $('seq').onclick = function () { if (app.shown) banner('NEXT ELEMENTS', 'p', 'Top: what your next new tank gets. A frog starts a new tank on its base when it has no elixir.'); };
+  function placeNext() { // справа от своей колбы; не заезжает под панели HUD и за край экрана
+    var box = $('nextq'); if (box.classList.contains('hidden')) return;
+    var fk = AR.flasks[0], p = R.toScreen(fk.x + T.flaskR * 1.15, 20, fk.y), top = document.querySelector('#hud .top'), bot = $('bottom');
+    var y0 = top ? top.getBoundingClientRect().bottom + 4 : 60, y1 = (bot ? bot.getBoundingClientRect().top : innerHeight) - box.offsetHeight - 4;
+    var x = Math.min(cv.clientWidth - box.offsetWidth - 6, Math.max(6, p.x)), y = Math.min(y1, Math.max(y0, p.y - box.offsetHeight / 2));
+    box.style.transform = 'translate(' + (x | 0) + 'px,' + (y | 0) + 'px)';
+  }
+  $('nextq').onclick = function () { if (app.shown) banner('NEXT', 'p', 'Your flask holds the next element — a frog that starts a new tank gets it'); };
   function buildCards() {
     [0, 1].forEach(function (side) {
       var box = $('cards-' + side); box.innerHTML = '';
       app.s.frogs.filter(function (f) { return f.side === side; }).forEach(function (f) {
         var c = document.createElement('div'); c.className = 'fcard ' + (side === 0 ? 'mine-c' : 'enemy'); c.id = 'fc-' + f.id;
-        c.innerHTML = '<div class="fpic"></div><div class="fbody"><div class="fn"></div><div class="hpb"><i></i><em></em></div><div class="ffl"></div></div>' + (side === 0 ? '<button class="home" aria-label="Home">⟲</button>' : '');
-        c.onclick = function () { if (side === 0 && canAimNow() && !app.s.pending) { app.sel = f.id; refreshHud(true); } var d = D(f.id); if (!d.hidden) R.focus(d.x, d.y); };
+        c.innerHTML = '<div class="fpic"></div><div class="fbody"><div class="fn"></div><div class="hpb"><i></i><em></em></div><div class="ffl"></div></div>' +
+          (side === 0 ? '<button class="home" aria-label="Home">⟲</button><div class="homecta"><b>⟲ HOME</b><small>tap to refuel</small></div>' : '');
+        c.onclick = function () {
+          if (side === 0 && c.classList.contains('cta')) return recall(f.id); // пустая в поле: тап по всей плашке — домой (D-156)
+          if (side === 0 && canAimNow() && !app.s.pending) { app.sel = f.id; refreshHud(true); }
+          var d = D(f.id); if (!d.hidden) R.focus(d.x, d.y);
+        };
         if (side === 0) c.querySelector('.home').onclick = function (ev) { ev.stopPropagation(); recall(f.id); };
         box.appendChild(c);
       });
@@ -821,7 +832,11 @@
       c.querySelector('.ffl').innerHTML = st;
       c.classList.toggle('empty', empty && !home);
       var hb = c.querySelector('.home');
-      if (hb) { var can = mine && !P && econ && !home && Sim.canRecall(app.s, app.s.frogs[f.id]); hb.classList.toggle('hidden', !econ || home); hb.disabled = !can; hb.classList.toggle('hot', can && empty); }
+      if (hb) { // «⟲ Домой» (D-156): у пустой в поле вся плашка — кнопка; у заряженной в поле — кнопка-опция в углу
+        var can = mine && !P && econ && !home && Sim.canRecall(app.s, app.s.frogs[f.id]);
+        c.classList.toggle('cta', can && empty);
+        hb.classList.toggle('hidden', !can || empty);
+      }
       c.classList.toggle('done', f.side === s.turnSide && !Sim.canAct(app.s, app.s.frogs[f.id]) && !app.s.pending);
       c.classList.toggle('sel', f.id === app.sel && myTurn());
     });
@@ -835,10 +850,10 @@
         var sem = Sim.isEmpty(app.s, sel), txt;
         if (sel.frozen) txt = 'Frozen: skips this turn';
         else if (sem && Sim.onBase(sel)) txt = 'Empty tank: the base refuels it next turn';
-        else if (sem) txt = 'Empty tank: it can’t jump · ⟲ on its card: home + refuel now · or bounce off it';
+        else if (sem) txt = 'Empty tank: it can’t jump · tap its card: home + refuel now · or bounce off it';
         else txt = 'Drag back to jump' + (econ ? ' · ' + sel.ch + ' elixir' : '');
         setPv((sel.el && !sem ? FB.ELEMENTS[sel.el].icon + ' ' : '') + FB.FROGS[sel.kind].name, txt);
-      } else setPv('Your turn', myActable().length ? 'Pick a frog' : 'No frog can jump — tap ⟲ on a card: home + refuel');
+      } else setPv('Your turn', myActable().length ? 'Pick a frog' : 'No frog can jump — tap an empty frog’s card: home + refuel');
     }
   }
 
@@ -874,7 +889,7 @@
         }
       }
       app.hudT -= dt; if (app.hudT <= 0) { app.hudT = 0.12; refreshHud(); }
-      placeCoachRing(); placeGhost();
+      placeCoachRing(); placeGhost(); placeNext();
     }
     R.frame(dt);
   }

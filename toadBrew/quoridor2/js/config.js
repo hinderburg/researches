@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '6.1.1';
+FB.VERSION = '6.2.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -124,7 +124,7 @@ FB.FROG_ORDER = ['spring', 'cling', 'bellows', 'spur'];
 FB.TIPS = {
   goal:  { icon: '⚗️', title: 'GOAL', text: 'Land any frog on the <b>enemy flask</b> at the far end — and you win. Don’t let the enemy reach yours.' },
   jump:  { icon: '🎯', title: 'JUMP', text: 'Drag back from a frog and release. The dotted arc shows where it lands and what happens there.' },
-  empty: { icon: '🪫', title: 'ELIXIR IS FUEL', text: 'Every jump burns 1 elixir ●●○. Out of elixir a frog can’t jump — tap <b>⟲</b> on its card: it flies home and refuels at once.' },
+  empty: { icon: '🪫', title: 'ELIXIR IS FUEL', text: 'Every jump burns 1 elixir ●●○. Out of elixir a frog can’t jump — <b>tap its card</b>: it flies home and refuels at once.' },
   relay: { icon: '↗️', title: 'RELAY', text: 'Land on <b>your own frog</b> — and jump again in the same turn. From its back you even fly over walls.' }
 };
 FB.TIP_CORE = ['goal', 'jump', 'empty', 'relay'];

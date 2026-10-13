@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Lilita+One&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?b=6.1.1-1791921306">
+<link rel="stylesheet" href="css/style.css?b=6.2.0-1791928473">
 </head>
 <body>
 <div id="app">
@@ -41,7 +41,7 @@
   <section id="alchemy" class="screen meta hidden">
     <div class="sec-head"><div class="plaque">⚗ ALCHEMY</div><div class="counter">ELEMENT = VERB</div></div>
     <div class="panel-box">
-      <div class="box-head">⚗ ELIXIR IS FUEL <span>Mechanical frogs jump on elixir. A frog on your base gets +1 every turn, up to 3. One activation (a whole relay chain) burns 1. An empty frog stands still — it can still be a relay point — until ⟲ on its card flies it home: there it refuels at once.</span></div>
+      <div class="box-head">⚗ ELIXIR IS FUEL <span>Mechanical frogs jump on elixir. A frog on your base gets +1 every turn, up to 3. One activation (a whole relay chain) burns 1. An empty frog stands still — it can still be a relay point — until a tap on its card flies it home: there it refuels at once. Your flask holds the element of the next new tank; the NEXT queue beside it shows two more.</span></div>
       <div id="verbs" class="verbs"></div>
       <div class="box-head">▦ REACTION = VERB + VERB <span>Your final landing paints its cell. Land in a cell of <b>another</b> element — or bounce off an ally with another element — and the two verbs fire together. Base cells never change.</span></div>
       <div id="reactions" class="reactions"></div>
@@ -63,7 +63,7 @@
         <div class="tring off" id="tring"><svg viewBox="0 0 40 40"><circle class="bg" cx="20" cy="20" r="17"/><circle class="fg" id="tring-fg" cx="20" cy="20" r="17"/></svg><span id="tring-n">20</span></div>
       </div>
     </div>
-        <div id="seq" class="seq"></div>
+        <div id="nextq" class="nextq hidden"></div>
     <div id="notice" class="notice hidden"></div>
     <div class="zoomer"><button id="z-in">＋</button><button id="z-out">－</button><button id="z-all" title="Whole board">▦</button></div>
     <div class="bottom" id="bottom">
@@ -134,7 +134,7 @@
       <p><b>Goal.</b> Land any frog on the <b>enemy Base Flask</b> at the far end. 3 vs 3; each turn you activate one frog. From turn 24 both flask zones grow — matches don’t drag.</p>
       <p><b>Jump.</b> Drag back from a frog, aim, release. Every frog has the same range. The arc, bounces, the cell you land in and what happens there show before you let go.</p>
       <p><b>Relay.</b> Land on your own frog — jump again in the same activation. Each ally once. The frog you bounce off gives its <b>perk</b> (🏹 longer jump, ⚓ can’t be pushed, 🌀 bigger reaction, ☄️ harder hit). Bounce off an ally with <b>another element</b> — the chain ends with their reaction. Landing on an enemy hits and knocks it back.</p>
-      <p><b>Elixir is fuel.</b> Every activation burns 1 elixir (●●○). Frogs on your base refuel +1 per turn, up to 3; a new tank takes the next element from your <b>NEXT</b> queue on the left. Empty — the frog can’t jump (🪫), but allies can still bounce off it. ⟲ on its card flies it home and refuels it at once — free, any number per turn.</p>
+      <p><b>Elixir is fuel.</b> Every activation burns 1 elixir (●●○). Frogs on your base refuel +1 per turn, up to 3; a new tank takes the next element — your flask holds it, the <b>NEXT</b> queue beside it shows two more. Empty — the frog can’t jump (🪫), but allies can still bounce off it. Tap its card: it flies home and refuels at once — free, any number per turn. A charged frog in the field has a ⟲ button on its card for the same.</p>
       <p><b>Cells.</b> Each element is a verb: 🔥 damage, ❄ stop, ☠ zone, ⚡ push. Land in a cell of another element — both verbs fire (see ALCHEMY). Tap any cell to see what it does.</p>
       <p><b>Walls.</b> A Crystal Column is a wall: only a jump off an ally’s back gets over it. A column can never close the last path to a flask.</p>
       <p><b>Check.</b> On your turn, red rings show where the enemy reaches next turn; red dots — its route to your flask (⚠ CHECK). Gold dots — your route to its flask.</p>
@@ -146,11 +146,11 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>window.FB_BUILD = '6.1.1-1791921306'; // tools/deploy.sh ставит сюда метку сборки — браузер не берёт старые файлы из кэша</script>
-<script src="js/config.js?b=6.1.1-1791921306"></script>
-<script src="js/sim.js?b=6.1.1-1791921306"></script>
-<script src="js/ai.js?b=6.1.1-1791921306"></script>
-<script src="js/render3d.js?b=6.1.1-1791921306"></script>
-<script src="js/main.js?b=6.1.1-1791921306"></script>
+<script>window.FB_BUILD = '6.2.0-1791928473'; // tools/deploy.sh ставит сюда метку сборки — браузер не берёт старые файлы из кэша</script>
+<script src="js/config.js?b=6.2.0-1791928473"></script>
+<script src="js/sim.js?b=6.2.0-1791928473"></script>
+<script src="js/ai.js?b=6.2.0-1791928473"></script>
+<script src="js/render3d.js?b=6.2.0-1791928473"></script>
+<script src="js/main.js?b=6.2.0-1791928473"></script>
 </body>
 </html>
