@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '6.1.0';
+FB.VERSION = '6.1.1';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -25,6 +25,7 @@ FB.T = {
   jumpR: 400, minPull: 0.1,
   wallBonus: 0.1, maxBounces: 2,       // отскок от стены: остаток дальности +10%, не больше 2 отскоков
   perchH: 14,                          // высота спины союзника: с неё стартует прыжок эстафеты (и пролетает над колоннами, D-145)
+  colVisH: 200,                        // высота кристальной колонны на экране; прыжок со спины над ней поднимается выше (D-155)
   relayAuto: 0.25,                     // не прыгнула со спины до конца хода — автоотскок 25% дальности по ходу (D-110)
 
   // Эликсир (§12–§17, D-141, D-142)
@@ -119,22 +120,14 @@ FB.FROGS = {
 };
 FB.FROG_ORDER = ['spring', 'cling', 'bellows', 'spur'];
 
-// Подсказки первого матча (D-154): всплывают по ситуации на поле, каждая один раз; вместо ступеней обучения (D-148)
+// Подсказки первого матча (D-154, D-155): всего четыре — цель, прыжок, топливо, эстафета; всплывают по ситуации на поле
 FB.TIPS = {
-  goal:   { icon: '⚗️', title: 'GOAL', text: 'Land any frog on the <b>enemy flask</b> at the far end — and you win. Don’t let the enemy reach yours.' },
-  jump:   { icon: '🎯', title: 'JUMP', text: 'Drag back from a frog and release. The dotted arc shows where it lands and what happens there.' },
-  elixir: { icon: '🧪', title: 'ELIXIR IS FUEL', text: 'Every jump burns 1 elixir from the frog’s tank ●●○. Frogs standing on your base refuel +1 every turn.' },
-  paint:  { icon: '🎨', title: 'PAINT', text: 'Your landing painted the cell with the frog’s element. Each element is a verb: 🔥 damage · ❄ stop · ☠ zone · ⚡ push.' },
-  relay:  { icon: '↗️', title: 'RELAY', text: 'Land on <b>your own frog</b> — and jump again in the same turn. The fastest way across the board.' },
-  perk:   { icon: '🏹', title: 'PERKS', text: 'The frog you bounce off gives a bonus: 🏹 longer jump · ⚓ can’t be pushed · 🌀 bigger reaction · ☄️ harder hit.' },
-  empty:  { icon: '🪫', title: 'EMPTY TANK', text: 'Out of elixir, a frog can’t jump — its spring is unwound. It still works as a relay point. Tap <b>⟲</b> on its card: it flies home and refuels at once.' },
-  react:  { icon: '⚗️', title: 'REACTION', text: 'Land in a cell of <b>another</b> element — both verbs fire: 🔥+⚡ = damage + push. All six are in ALCHEMY.' },
-  hit:    { icon: '💥', title: 'HIT', text: 'Land on an enemy frog to hit it and knock it back. At 0 HP it goes home with an empty tank.' },
-  check:  { icon: '⚠️', title: 'CHECK', text: 'The enemy can reach your flask next turn! The red dots show its route — hit it, freeze it or wall it off.' },
-  column: { icon: '🧱', title: 'WALL', text: 'A Crystal Column blocks jumps. Only a jump off an ally’s back flies over it.' },
-  next:   { icon: '🔜', title: 'NEXT', text: 'A new tank takes the next element from your NEXT queue on the left. The enemy’s queue is above it.' }
+  goal:  { icon: '⚗️', title: 'GOAL', text: 'Land any frog on the <b>enemy flask</b> at the far end — and you win. Don’t let the enemy reach yours.' },
+  jump:  { icon: '🎯', title: 'JUMP', text: 'Drag back from a frog and release. The dotted arc shows where it lands and what happens there.' },
+  empty: { icon: '🪫', title: 'ELIXIR IS FUEL', text: 'Every jump burns 1 elixir ●●○. Out of elixir a frog can’t jump — tap <b>⟲</b> on its card: it flies home and refuels at once.' },
+  relay: { icon: '↗️', title: 'RELAY', text: 'Land on <b>your own frog</b> — and jump again in the same turn. From its back you even fly over walls.' }
 };
-FB.TIP_CORE = ['goal', 'jump', 'elixir', 'relay', 'empty', 'react', 'hit', 'check']; // все показаны — обучение пройдено
+FB.TIP_CORE = ['goal', 'jump', 'empty', 'relay'];
 
 // Арена (§4, D-112): прямоугольное поле 6 × 14 клеток поверх пола макета; две базы с флягами на торцах.
 (function () {

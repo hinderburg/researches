@@ -10,7 +10,7 @@
   var BOT_NOISE = { deg: T.botAimNoiseDeg, pow: T.botAimNoisePow };
   // подсказки первого матча (D-154): какие уже показаны, выключены ли; ?tips=1 — показать заново
   if (/[?&]tips=1/.test(location.search)) { store.set('tipsSeen', {}); store.set('tipsOff', false); }
-  var tips = { seen: store.get('tipsSeen') || {}, off: !!store.get('tipsOff'), flags: {} };
+  var tips = { seen: store.get('tipsSeen') || {}, off: !!store.get('tipsOff') };
   var app = FB.app = {
     screen: 'team', picks: store.get('picks3') || ['spring', 'cling', 'bellows'],
     s: null, shown: null, disp: {}, queue: [], cur: null, busy: false, playing: false, speed: 1, paused: false,
@@ -194,7 +194,6 @@
     app.botTeam = botTeam;
     // матч с подсказками (D-154): пока не показаны главные подсказки; в нём бот мажет сильнее
     app.tipsMatch = !app.auto && !tips.off && FB.TIP_CORE.some(function (id) { return !tips.seen[id]; });
-    tips.flags = {};
     var k = app.tipsMatch ? T.firstBotNoise : 1;
     T.botAimNoiseDeg = BOT_NOISE.deg * k; T.botAimNoisePow = BOT_NOISE.pow * k;
     app.s = Sim.createMatch(app.picks, botTeam, seed);
@@ -333,7 +332,7 @@
     switch (e.t) {
       case 'act': if (!d.hidden) R.focus(d.x, d.y); app.sel = e.id; dur = 0.12; break;
       case 'jump': {
-        if (SF(e.id).side === 0) tips.flags.jumped = 1;
+        e.segs.forEach(function (sg) { if (sg.over !== undefined) { var op = Sim.cellCenter(sg.over); R.text(op.x, op.y, '⤴ OVER THE WALL<br><small>jump from an ally’s back</small>', 'gold'); } }); // перелёт колонны видно (D-155)
         app.s.frogs.forEach(function (o) { var A = D(o.id); if (A.dark) { A.dark = 0; if (A.pose === 'squash') setPose(A, 'idle'); } }); // спрыгнула со спины — нижняя распрямляется
         var segs = e.segs, durs = segs.map(function (sg) { return 0.3 + sg.len / 1250; }), tot = durs.reduce(function (a, b) { return a + b; }, 0);
         var pre = 0.12, last = -1; dur = pre + tot;
@@ -370,7 +369,6 @@
       case 'relay':
         if (e.combo) { var al = D(e.ally); if (!d.hidden) R.chargeFx({ x: al.x, y: al.y }, { x: d.x, y: d.y }, ELC(e.els[0]), ELC(e.els[1])); } // комбо-заряд от союзника (D-127)
         if (e.perk === 'cling') SF(e.ally).anchor = 1;
-        if (SF(e.id).side === 0) { tips.flags.relayed = 1; if (e.perk) tips.flags.perk = e.perk; }
         R.text(d.x, d.y, (e.combo ? '⚗ COMBO: ' + FB.REACTIONS[e.combo].name + '<br>' : '') + 'RELAY ' + e.n + (e.perk ? '<br><small>' + FB.FROGS[e.perk].perk.icon + ' ' + FB.FROGS[e.perk].perk.name + '</small>' : ''), 'charge'); R.ring(d.x, d.y, 70, SIDE_C[SF(e.id).side]); dur = 0.3; break; // перк жабы, от которой отскочили (D-144)
       case 'impact': {
         var atk = D(e.by);
@@ -414,7 +412,7 @@
         break;
       }
       case 'recall': dur = 0.05; break;
-      case 'cell': { var cl = app.shown.cells[e.i]; cl.el = e.el; cl.t = e.tt; cl.side = e.side; if (e.side === 0 && e.el) tips.flags.painted = e.i + 1; var cp = Sim.cellCenter(e.i); R.cellBurst(cp.x, cp.y, e.el, e.tt); dur = 0.04; break; } // всплеск смены клетки (D-129)
+      case 'cell': { var cl = app.shown.cells[e.i]; cl.el = e.el; cl.t = e.tt; cl.side = e.side; var cp = Sim.cellCenter(e.i); R.cellBurst(cp.x, cp.y, e.el, e.tt); dur = 0.04; break; } // всплеск смены клетки (D-129)
       case 'reaction':
         if (e.combo) { var ce = e.key.split('+'); R.comboFx(e.x, e.y, ELC(ce[0]), ELC(ce[1])); } // комбо — двойная спираль цветов (D-129)
         R.reactionFx(e.key, e.x, e.y, { 'fire+lightning': T.cell * (e.amp ? 2.5 : 1.5), 'fire+poison': T.cell * (e.amp ? 2.5 : 1.6), 'lightning+poison': T.vortexR, 'fire+ice': T.cell * 1.4, 'ice+poison': T.cell * 0.8, 'ice+lightning': T.cell * 1.3 }[e.key] || 150);
@@ -434,7 +432,19 @@
         });
         dur = app.queue.length && app.queue[0].t === 'tick' ? 0.06 : 0.34; break;
       }
-      case 'flask': { var fk = AR.flasks[1 - e.side]; R.flaskBurst(1 - e.side); R.text(fk.x, fk.y, 'FLASK SHATTERED!', 'ko'); dur = 1.3; break; } // колба взрывается, эликсир разливается (D-137)
+      case 'flask': { // жаба ныряет с края зоны в саму колбу (D-155), колба взрывается, эликсир разливается (D-137)
+        var fk = AR.flasks[1 - e.side], f0 = e.from || fk, far = Math.hypot(fk.x - f0.x, fk.y - f0.y), burst = false, kh = far > 20 ? 0.4 + far / 1500 : 0;
+        var boom = function () { if (burst) return; burst = true; d.z = 0; d.squash = 0.3; R.flaskBurst(1 - e.side); R.text(fk.x, fk.y, 'FLASK SHATTERED!', 'ko'); };
+        dur = kh + 1.3;
+        upd = function (u) {
+          var t = u * dur;
+          if (t >= kh) return boom();
+          var q = t / kh; d.x = f0.x + (fk.x - f0.x) * q; d.y = f0.y + (fk.y - f0.y) * q; d.z = Math.sin(Math.PI * q) * Math.min(110, 40 + far * 0.25);
+          d.pose = q > 0.55 ? 'fall' : 'air'; faceDir(d, fk.x - f0.x, fk.y - f0.y); if (!cam().user) R.focus(d.x, d.y);
+        };
+        if (!kh) boom();
+        break;
+      }
       case 'turn': app.shown.turnSide = e.side; app.shown.turn = e.turn; app.shown.recalls = 0; frameSide(e.side); banner(e.side === 0 ? 'YOUR TURN' : 'ENEMY TURN', e.side === 0 ? 'p' : 'b', 'Turn ' + e.turn); dur = 0.3; break;
       case 'label': if (d) R.text(d.x, d.y, e.text, 'gold'); dur = 0.25; break;
       case 'skip': if (d) R.text(d.x, d.y, 'PASS', 'dmg'); dur = 0.25; break;
@@ -473,7 +483,11 @@
     var frozen = [], combo = null, perk = null, dmg = {}, deaths = {}, info = { title: (f.el ? FB.ELEMENTS[f.el].icon + ' ' : '') + FB.FROGS[f.kind].name, lines: [] }, reacted = null, relayTo = -1, won = false, painted = [];
     var start = {}; app.s.frogs.forEach(function (x) { start[x.id] = { x: x.x, y: x.y }; });
     pv.events.forEach(function (e) {
-      if (e.t === 'jump') a.segs = a.segs.concat(e.segs);
+      if (e.t === 'jump') {
+        a.segs = a.segs.concat(e.segs);
+        if (e.segs.some(function (sg) { return sg.hit === 'column'; })) info.lines.push('✋ The column blocks the jump — from an ally’s back you fly over');
+        e.segs.forEach(function (sg) { if (sg.over === undefined) return; var op = Sim.cellCenter(sg.over); a.labels.push({ x: op.x, y: op.y, text: '⤴ OVER THE WALL', cls: 'charge', h: 130 }); info.lines.push('⤴ From an ally’s back it flies over the column'); });
+      }
       if (e.t === 'land' && e.id === f.id) a.land = { x: e.x, y: e.y };
       if (e.t === 'hit') dmg[e.id] = (dmg[e.id] || 0) + e.dmg;
       if (e.t === 'death') deaths[e.id] = true;
@@ -737,29 +751,14 @@
   // Какая подсказка нужна сейчас: первая по порядку из ещё не показанных, чьё условие есть на поле
   function tipCheck() {
     if (!app.tipsMatch || app.coach || app.screen !== 'battle' || !canAimNow() || tips.turn === app.s.turn) return; // не больше одной за ход
-    var s = app.s, R0 = T.jumpR, act = myActable(), mine = myFrogs(), F = tips.flags;
-    function near(a, b) { return Sim.dist(a.x, a.y, b.x, b.y) <= R0; }
-    var emptyF = mine.filter(function (f) { return f.alive && Sim.isEmpty(s, f) && !Sim.onBase(f); })[0];
-    var ally = null, foe = null, rx = -1;
-    act.forEach(function (f) {
-      mine.forEach(function (m) { if (!ally && m !== f && m.alive && !Sim.onBase(m) && near(f, m)) ally = m; });
-      s.frogs.forEach(function (e) { if (!foe && e.alive && e.side === 1 && near(f, e)) foe = e; });
-      if (f.el) s.cells.forEach(function (cl, i) { if (rx < 0 && cl.el && cl.el !== f.el && !cl.t && Sim.cellBase(i) < 0 && near(f, Sim.cellCenter(i))) rx = i; });
-    });
-    var col = s.cells.map(function (cl) { return cl.t; }).indexOf('column');
+    var s = app.s, act = myActable(), mine = myFrogs();
+    var emptyF = mine.filter(function (f) { return f.alive && Sim.isEmpty(s, f) && !Sim.onBase(f); })[0], ally = null;
+    act.forEach(function (f) { mine.forEach(function (m) { if (!ally && m !== f && m.alive && !Sim.onBase(m) && Sim.dist(f.x, f.y, m.x, m.y) <= T.jumpR) ally = m; }); });
     function W(o, r) { return { world: { x: o.x, y: o.y, r: r } }; }
-    var list = [
+    var list = [ // цель — на старте матча; дальше по ситуации, первая подходящая
       ['jump', act.length > 0, function () { app.ghostFrog = act[0].id; return W(act[0], act[0].r * 1.7); }],
-      ['check', !!app.check, function () { return W(AR.flasks[0], Sim.flaskR(s) + 30); }],
       ['empty', !!emptyF, function () { var c = $('fc-' + emptyF.id); return Object.assign(W(emptyF, emptyF.r * 1.7), { el: c && c.querySelector('.home') }); }],
-      ['relay', !!ally, function () { return W(ally, ally.r * 1.8); }],
-      ['elixir', !!F.jumped, function () { return { el: $('cards-0') }; }],
-      ['paint', !!F.painted, function () { return W(Sim.cellCenter(F.painted - 1), T.cell * 0.62); }],
-      ['perk', !!F.perk, function () { return {}; }],
-      ['hit', !!foe, function () { return W(foe, foe.r * 1.8); }],
-      ['react', rx >= 0, function () { return W(Sim.cellCenter(rx), T.cell * 0.62); }],
-      ['column', col >= 0, function () { return W(Sim.cellCenter(col), T.cell * 0.62); }],
-      ['next', s.turn >= 7, function () { return { el: $('seq') }; }]
+      ['relay', !!ally, function () { return W(ally, ally.r * 1.8); }]
     ];
     for (var k = 0; k < list.length; k++) if (!tips.seen[list[k][0]] && list[k][1]) { tips.turn = s.turn; return coach(list[k][0], list[k][2]()); }
   }

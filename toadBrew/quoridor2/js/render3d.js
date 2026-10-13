@@ -583,7 +583,7 @@
     tile.rotation.x = -Math.PI / 2; tile.position.y = 1.2; tile.renderOrder = 2; g.add(tile);
     var D = { obj: g, tile: tile, born: tAll, t: cl.t, puffs: [] };
     if (cl.t === 'column') { // Crystal Column: шестигранный кристалл на всю клетку (§21)
-      var hgt = T.wallH * 0.8; // колонна — стена (D-145): выше любой дуги, перелетает только эстафета
+      var hgt = T.colVisH; // колонна — стена (D-145): выше обычной дуги, перелетает только прыжок со спины союзника (D-155)
       var m = new THREE.Mesh(new THREE.CylinderGeometry(cs * 0.36, cs * 0.44, hgt, 6), new THREE.MeshLambertMaterial({ color: 0x5cffb0, emissive: new THREE.Color(0x0f7a50), transparent: true, opacity: 0.9 }));
       m.position.y = hgt / 2; m.castShadow = true; g.add(m);
       var tip = new THREE.Mesh(new THREE.ConeGeometry(cs * 0.36, 34, 6), m.material); tip.position.y = hgt + 17; g.add(tip);

@@ -127,7 +127,7 @@
     var fl = Sim.flight(s, f, { x: f.x, y: f.y }, { x: 0, y: -1 }, T.jumpR, {});
     ok(fl.segs[0].hit === 'column', 'full-length jump bounces off the column');
     var fr = Sim.flight(s, f, { x: f.x, y: f.y }, { x: 0, y: -1 }, T.jumpR, { relay: true, h0: T.perchH });
-    ok(!fr.segs[0].hit, 'relay jump flies over');
+    ok(!fr.segs[0].hit, 'relay jump flies over'); ok(fr.segs[0].over === 10 * T.cols + 2 && Sim.arcAt(fr.segs[0].h0, fr.segs[0].H, 0.5) * T.visH > T.colVisH * 0.8, 'the arc rises above the crystal');
     for (var i = 0; i < 6; i++) skip(s); eq(cell(s, 2, 10).t, 'column', 'still there');
   });
   test('Crystal Column: can never close every path between the bases (Quoridor rule)', function () {
@@ -214,7 +214,7 @@
   test('victory: any frog landing on the enemy flask wins; the flask zone grows late in the match', function () {
     var s = match(), fk = AR.flasks[1]; s.frogs[0].x = fk.x; s.frogs[0].y = fk.y + 300;
     var r = jumpTo(s, 0, fk.x, fk.y);
-    ok(has(r, 'flask')); eq(s.phase, 'over'); eq(s.winner, 0);
+    ok(has(r, 'flask')); eq(s.phase, 'over'); eq(s.winner, 0); var fe = ev(r, 'flask')[0]; ok(fe.from && fe.to.x === fk.x, 'dives into the flask'); eq(s.frogs[0].x, fk.x);
     ok(Sim.flaskR(s, T.overloadTurn - 1) === T.flaskR && Sim.flaskR(s, T.overloadTurn + 4) > T.flaskR + 100, 'overload grows');
   });
   test('an empty frog is no threat; next turn it may fly home, refuel and jump from the base', function () {

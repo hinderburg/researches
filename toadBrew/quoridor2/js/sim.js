@@ -96,7 +96,22 @@
   Sim.flight = function (s, f, from, dir, len, opts) {
     opts = opts || {};
     var segs = [], pos = { x: from.x, y: from.y }, d = norm(dir.x, dir.y), remaining = len, h0 = opts.h0 || 0, air = 0, bounces = 0, step = 6;
-    var obs = opts.relay ? [] : obstacles(s).filter(function (o) { return !inObst(o, from.x, from.y, f.r * 0.75); });
+    var all = obstacles(s), obs = opts.relay ? [] : all.filter(function (o) { return !inObst(o, from.x, from.y, f.r * 0.75); });
+    // со спины союзника колонны перелетаются (D-145): дуга поднимается выше кристалла, чтобы перелёт было видно (D-155)
+    function overWall(seg) {
+      if (!opts.relay || !all.length) return seg;
+      var need = 0;
+      for (var t2 = 0; t2 <= seg.len; t2 += step) {
+        var x2 = seg.from.x + d.x * t2, y2 = seg.from.y + d.y * t2;
+        for (var k2 = 0; k2 < all.length; k2++) if (inObst(all[k2], x2, y2, f.r * 0.5)) {
+          var u2 = Math.max(0.12, Math.min(0.88, t2 / Math.max(1, seg.len)));
+          need = Math.max(need, (T.colVisH / T.visH + 12 - seg.h0 * (1 - u2)) / (4 * u2 * (1 - u2)));
+          if (seg.over === undefined) seg.over = all[k2].cell;
+        }
+      }
+      seg.H = Math.max(seg.H, Math.min(170, need));
+      return seg;
+    }
     while (true) {
       var segLen = Math.max(1, remaining), H = Sim.arcHeight(segLen), hit = null, t;
       for (t = step; t <= segLen + 0.01; t += step) {
@@ -110,12 +125,12 @@
       }
       if (!hit) {
         var end = { x: pos.x + d.x * segLen, y: pos.y + d.y * segLen };
-        segs.push({ from: pos, to: end, len: segLen, H: H, h0: h0 });
+        segs.push(overWall({ from: pos, to: end, len: segLen, H: H, h0: h0 }));
         air += segLen;
         return { segs: segs, land: end, dir: d, air: air, bounces: bounces };
       }
       var ht = Math.max(0, hit.t), c = { x: pos.x + d.x * ht, y: pos.y + d.y * ht };
-      segs.push({ from: pos, to: c, len: ht, H: H, h0: h0, hit: hit.kind });
+      segs.push(overWall({ from: pos, to: c, len: ht, H: H, h0: h0, hit: hit.kind }));
       air += ht;
       if (bounces >= T.maxBounces || segLen - ht < 8) return { segs: segs, land: c, dir: d, air: air, bounces: bounces, stopped: true };
       bounces++;
@@ -377,7 +392,8 @@
   function finalLanding(s, f, dir, events, A) {
     var fk = AR.flasks[1 - f.side];
     if (dist(f.x, f.y, fk.x, fk.y) <= Sim.flaskR(s) + f.r * 0.5) { // победа (§3): любая жаба; зона растёт к концу матча (D-149)
-      events.push({ t: 'flask', id: f.id, side: f.side });
+      events.push({ t: 'flask', id: f.id, side: f.side, from: { x: f.x, y: f.y }, to: { x: fk.x, y: fk.y } }); // с края зоны жаба ныряет в саму колбу (D-155)
+      f.x = fk.x; f.y = fk.y;
       spendCharge(s, f, events, A);
       finish(s, f.side, events, 'flask');
       return false;
