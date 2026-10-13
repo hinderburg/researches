@@ -43,32 +43,29 @@
     ok(3 * T.jumpR * (1 + T.wallBonus) < Sim.dist(p.x, p.y, fk.x, fk.y) - T.flaskR, 'map long enough');
   });
 
-  test('jump paints a neutral cell; one activation costs one charge; a frog out of elixir stays where it is (no auto-return)', function () {
+  test('jump paints a neutral cell; one activation costs one charge; an empty frog stays where it is (no auto-return) and can’t jump', function () {
     var s = match(), f = s.frogs[0];
     var r = jumpCell(s, 0, 1, 10);
-    ok(r.ok); eq(cell(s, 1, 10).el, f.el); eq(f.ch, 0); eq(s.turnSide, 1);
+    ok(r.ok); eq(cell(s, 1, 10).el, f.el); eq(f.ch, 0); eq(s.turnSide, 1); ok(ev(r, 'spend')[0].empty, 'emptied in the field');
     var x = f.x, y = f.y;
     for (var i = 0; i < 7; i++) skip(s);
-    eq(s.turnSide, 0); eq(f.x, x); eq(f.y, y, 'still in the field'); ok(Sim.canAct(s, f), 'can still act');
+    eq(s.turnSide, 0); eq(f.x, x); eq(f.y, y, 'still in the field'); ok(!Sim.canAct(s, f), 'can’t jump'); ok(Sim.canRecall(s, f), 'can go home');
+    ok(!Sim.apply(s, { frog: 0, dx: 0, dy: -200 }).ok, 'jump refused');
   });
 
-  test('dry hop: out of elixir the frog still jumps — half range, no element, no reaction, still hits and relays', function () {
-    var s = match(); put(s, 0, 2, 10); s.frogs[0].ch = 0; cell(s, 2, 8).el = 'poison';
-    ok(Sim.canAct(s, s.frogs[0])); ok(Math.abs(Sim.rangeFor(s, s.frogs[0], 'jump') - T.jumpR * T.dryMul) < 1, 'half range');
-    var r = jumpCell(s, 0, 2, 7);
-    ok(ev(r, 'act')[0].dry, 'dry'); ok(Math.abs(cy(10) - s.frogs[0].y - T.jumpR * T.dryMul) < 12, 'flew only half a jump'); ok(!has(r, 'reaction') && !has(r, 'cell'), 'no paint, no reaction'); eq(s.frogs[0].ch, 0);
-    s = match(); put(s, 0, 2, 10); s.frogs[0].ch = 0; put(s, 4, 2, 9);
-    var hp = s.frogs[4].hp; r = jumpTo(s, 0, s.frogs[4].x, s.frogs[4].y);
-    ok(has(r, 'impact') && s.frogs[4].hp < hp, 'dry hop still hits');
+  test('empty tank: still a relay point for allies', function () {
+    var s = match(); put(s, 1, 2, 10); s.frogs[1].ch = 0;
+    var r = jumpTo(s, 0, s.frogs[1].x, s.frogs[1].y);
+    ok(r.continues && has(r, 'relay'), 'relay off an empty ally');
   });
 
-  test('«⟲ Home»: free, any number of frogs per turn, empties the tank; base pours a new tank next turn', function () {
-    var s = match(); put(s, 0, 2, 9); put(s, 1, 3, 9);
+  test('«⟲ Home»: free, any number of field frogs per turn; home refuels at once (next element) — it can jump this very turn', function () {
+    var s = match(); put(s, 0, 2, 9); put(s, 1, 3, 9); s.frogs[0].ch = 0; s.frogs[1].ch = 0;
     var r = Sim.apply(s, { frog: 0, mode: 'recall' });
-    ok(r.ok && Sim.onBase(s.frogs[0])); eq(s.frogs[0].ch, 0); eq(s.frogs[0].el, null); eq(s.turnSide, 0, 'still my turn');
+    ok(r.ok && Sim.onBase(s.frogs[0])); eq(s.frogs[0].ch, T.homeFill); eq(s.frogs[0].el, s.seq[3], 'next element of my pointer'); eq(s.turnSide, 0, 'still my turn'); ok(has(r, 'tick'), 'pour shown');
     ok(Sim.apply(s, { frog: 1, mode: 'recall' }).ok, 'a second one too');
-    jumpCell(s, 2, 1, 10); skip(s);
-    eq(s.frogs[0].ch, 1); eq(s.frogs[0].el, s.seq[3], 'next element of my pointer');
+    ok(!Sim.canRecall(s, s.frogs[2]), 'not from the base');
+    ok(Sim.canAct(s, s.frogs[0]), 'jumps right away'); jumpCell(s, 0, 1, 10); eq(s.frogs[0].ch, 0);
   });
 
   test('base charging: +1 per own turn up to 3', function () {
@@ -168,13 +165,11 @@
     r = jumpCell(s, 1, 2, 11);
     eq(ev(r, 'jet').length, 2, 'slides chain'); ok(Math.abs(s.frogs[1].y - cy(7)) < 30, 'thrown forward 4 cells');
   });
-  test('Relay combo: an ally of another element always adds its element — no charge needed; a dry hop gets no combo', function () {
+  test('Relay combo: an ally of another element always adds its element — no charge needed', function () {
     var s = match(); put(s, 1, 2, 10); s.frogs[0].el = 'ice'; s.frogs[1].el = 'poison'; s.frogs[1].ch = 0;
     var r1 = jumpTo(s, 0, s.frogs[1].x, s.frogs[1].y);
     eq(ev(r1, 'relay')[0].combo, 'ice+poison');
     var rx = ev(jumpCell(s, 0, 2, 7), 'reaction')[0]; ok(rx && rx.key === 'ice+poison' && rx.combo, 'combo fired');
-    s = match(); put(s, 1, 2, 10); put(s, 0, 2, 11); s.frogs[0].el = 'ice'; s.frogs[0].ch = 0; s.frogs[1].el = 'poison';
-    eq(ev(jumpTo(s, 0, s.frogs[1].x, s.frogs[1].y), 'relay')[0].combo, null, 'dry — no combo');
   });
 
   test('perk Springjack: bounce off it — the next jump ×1.4', function () {
@@ -222,17 +217,9 @@
     ok(has(r, 'flask')); eq(s.phase, 'over'); eq(s.winner, 0);
     ok(Sim.flaskR(s, T.overloadTurn - 1) === T.flaskR && Sim.flaskR(s, T.overloadTurn + 4) > T.flaskR + 100, 'overload grows');
   });
-  test('only elixir breaks the flask: a dry frog bounces off it; a dry frog never counts as a winning route', function () {
-    var s = match(), fk = AR.flasks[1], f = s.frogs[0]; f.x = fk.x; f.y = fk.y + 150; f.ch = 0;
-    var r = jumpTo(s, 0, fk.x, fk.y);
-    ok(!has(r, 'flask') && s.phase === 'play', 'no win'); ok(Sim.dist(f.x, f.y, fk.x, fk.y) > T.flaskR + f.r, 'thrown off the zone');
+  test('an empty frog is no threat; next turn it may fly home, refuel and jump from the base', function () {
     var s2 = match(); s2.frogs[3].x = AR.flasks[0].x; s2.frogs[3].y = AR.flasks[0].y - 250; s2.frogs[3].ch = 0;
-    ok(!Sim.reach(s2, 1, false).win, 'dry is not a threat'); s2.frogs[3].ch = 1; ok(Sim.reach(s2, 1, false).win, 'with elixir it is');
-  });
-  test('springboard: from an ally’s back even a dry frog jumps full range', function () {
-    var s = match(); put(s, 0, 2, 10); put(s, 1, 2, 9); s.frogs[0].ch = 0;
-    var r = jumpTo(s, 0, s.frogs[1].x, s.frogs[1].y);
-    ok(r.continues, 'relay'); ok(Math.abs(Sim.rangeFor(s, s.frogs[0], 'jump') - T.jumpR) < 1, 'full range from the back');
+    ok(!Sim.reach(s2, 1, false).win, 'empty is not a threat'); s2.frogs[3].ch = 1; ok(Sim.reach(s2, 1, false).win, 'with elixir it is');
   });
   test('second-player lever (off by default): secondBonus frogs get +1 extra on side 1’s first turn', function () {
     var old = T.secondBonus; T.secondBonus = 1;
@@ -281,7 +268,7 @@
     var sum = function (k) { return all.reduce(function (s, r) { return s + r.stats[k]; }, 0); };
     var why = {}; all.forEach(function (r) { why[r.why] = (why[r.why] || 0) + 1; });
     var p0 = all.filter(function (r) { return r.winner === 0; }).length;
-    var per = {}; ['relays', 'jets', 'reactions', 'recalls', 'deaths', 'terrain', 'dry', 'skips'].forEach(function (k) { per[k] = +(sum(k) / all.length).toFixed(1); });
+    var per = {}; ['relays', 'jets', 'reactions', 'recalls', 'deaths', 'terrain', 'empty', 'skips'].forEach(function (k) { per[k] = +(sum(k) / all.length).toFixed(1); });
     return { rows: rows, n: all.length, turns: med(all.map(function (r) { return r.turns; })), why: why, first: p0, perMatch: per };
   }
   window.runMatrix = runMatrix;

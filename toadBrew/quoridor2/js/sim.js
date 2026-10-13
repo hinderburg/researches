@@ -1,4 +1,4 @@
-// Симуляция TOADBREW — Relay Alchemy 2 (ветка Quoridor2, D-141). Без DOM и WebGL: состояние — простой объект, ход — команда.
+// Симуляция TOADBREW — Relay Alchemy 2 (ветка Quoridor2, D-153). Без DOM и WebGL: состояние — простой объект, ход — команда.
 // apply(state, cmd) меняет состояние и возвращает события для анимации. Случайность — только от сида.
 // Жабы прыгают свободно; клетки сетки под полем хранят элементы и рельеф (§4, §5).
 // Правила 6.0 (GDD, блок «Правки 2026-10-13»): жаба всегда может прыгнуть — без эликсира это короткий «сухой» прыжок;
@@ -168,21 +168,19 @@
   };
 
   // ---------- запросы ----------
-  Sim.isDry = function (s, f) { return !!s.rules.economy && f.ch <= 0; };
-  // жаба ходит всегда, кроме закованной в лёд (D-141): без эликсира — сухой прыжок
+  // Эликсир — топливо механической жабы (D-153): пустой бак — пружина не заведена, жаба стоит (но остаётся точкой эстафеты)
+  Sim.isEmpty = function (s, f) { return !!s.rules.economy && f.ch <= 0; };
   Sim.canAct = function (s, f) {
     if (s.phase !== 'play' || !f.alive || f.side !== s.turnSide) return false;
     if (s.pending) return s.pending.frog === f.id;
-    return !f.frozen;
+    return !f.frozen && !Sim.isEmpty(s, f);
   };
-  // «⟲ Домой» (D-141): только по решению игрока, бесплатно, до активации; лимит — по числу жаб
+  // «⟲ Домой» (D-153): только по решению игрока, бесплатно, до активации, любой своей жабе в поле; дома бак сразу наливается
   Sim.canRecall = function (s, f) {
-    return s.rules.economy && s.phase === 'play' && !s.pending && !s.act && f.side === s.turnSide && s.recalls < T.recallsPerTurn && !(Sim.onBase(f) && (!f.el || !f.ch));
+    return s.rules.economy && s.phase === 'play' && !s.pending && !s.act && f.alive && f.side === s.turnSide && !Sim.onBase(f);
   };
   Sim.rangeFor = function (s, f, mode) {
     var r = mode === 'end' ? T.jumpR * T.relayAuto : T.jumpR, act = s.act && s.act.frog === f.id;
-    var relay = s.pending && s.pending.frog === f.id;
-    if ((act ? s.act.dry : Sim.isDry(s, f)) && !(relay && T.springboard)) r *= T.dryMul; // сухой прыжок — вдвое короче (D-141); со спины своей — полный (D-151)
     if (mode !== 'end' && s.pending && s.pending.frog === f.id && act && s.act.perk === 'spring') r *= T.catapultMul; // перк Springjack (D-144)
     return r;
   };
@@ -267,20 +265,22 @@
       return { ok: true, events: events };
     }
     if (!f) return { ok: false, events: events, why: 'no frog' };
-    if (mode === 'recall') { // «⟲ Домой» (§23, D-141): бесплатно, до активации
+    if (mode === 'recall') { // «⟲ Домой» (§23, D-153): бесплатно, до активации; дома база сразу наливает новый бак — можно прыгать в этот же ход
       if (!Sim.canRecall(s, f)) return { ok: false, events: events, why: 'cannot recall' };
       s.recalls++;
       s.recallTurn[f.side] = s.turn;
       events.push({ t: 'recall', id: f.id });
       sendHome(s, f, events, 'recall');
+      f.el = takeEl(s, f.side); f.ch = Math.min(T.tank, T.homeFill);
+      events.push({ t: 'tick', id: f.id, ch: f.ch, el: f.el, fresh: true });
       return { ok: true, events: events, free: true };
     }
     if (!Sim.canAct(s, f)) return { ok: false, events: events, why: 'cannot act' };
     var P = s.pending;
     if (mode === 'end' && !P) return { ok: false, events: events, why: 'nothing pending' };
     if (!P) {
-      s.act = { frog: f.id, used: {}, relays: 0, dry: Sim.isDry(s, f), perk: null, amp: false, power: false, combo: null, jets: 0 };
-      events.push({ t: 'act', id: f.id, side: f.side, dry: s.act.dry });
+      s.act = { frog: f.id, used: {}, relays: 0, perk: null, amp: false, power: false, combo: null, jets: 0 };
+      events.push({ t: 'act', id: f.id, side: f.side });
     }
     var maxR = Sim.rangeFor(s, f, mode === 'end' ? 'end' : 'jump'); // до сброса pending: перк Springjack смотрит на него
     s.pending = null;
@@ -304,7 +304,7 @@
     var from = { x: f.x, y: f.y }, A = s.act;
     var fl = Sim.flight(s, f, from, v, len, { h0: fromAlly ? T.perchH : 0, relay: fromAlly });
     f.facing = Math.atan2(fl.dir.x, -fl.dir.y);
-    events.push({ t: 'jump', id: f.id, segs: fl.segs, relay: fromAlly, dry: A.dry });
+    events.push({ t: 'jump', id: f.id, segs: fl.segs, relay: fromAlly });
     fl.segs.forEach(function (sg) { if (sg.hit) events.push({ t: 'bounce', id: f.id, x: sg.to.x, y: sg.to.y, kind: sg.hit }); });
     return land(s, f, fl.land, fl.dir, len / T.jumpR, events, A);
   }
@@ -330,7 +330,7 @@
       if (perk === 'cling') ally.anchor = 1;
       // комбо через союзника (D-127, D-143): элемент союзника другого цвета — реакция пары в конце цепочки, без условия заряда
       var comboKey = null;
-      if (!A.combo && !A.dry && ally.el && f.el && ally.el !== f.el) A.combo = comboKey = FB.reactionKey(f.el, ally.el);
+      if (!A.combo && ally.el && f.el && ally.el !== f.el) A.combo = comboKey = FB.reactionKey(f.el, ally.el);
       f.x = ally.x; f.y = ally.y;
       events.push({ t: 'land', id: f.id, x: f.x, y: f.y, onAlly: ally.id, perch: true });
       events.push({ t: 'relay', id: f.id, ally: ally.id, n: A.relays, perk: perk, combo: comboKey, els: comboKey ? [f.el, ally.el] : null });
@@ -376,15 +376,11 @@
   // Финальное приземление (§8, §18, §19): фляга врага, ледяная горка, огонь, комбо или элемент в клетку, заряд
   function finalLanding(s, f, dir, events, A) {
     var fk = AR.flasks[1 - f.side];
-    if (dist(f.x, f.y, fk.x, fk.y) <= Sim.flaskR(s) + f.r * 0.5) { // победа (§3); зона растёт к концу матча (D-149)
-      if (!A.dry) {
-        events.push({ t: 'flask', id: f.id, side: f.side });
-        spendCharge(s, f, events, A);
-        finish(s, f.side, events, 'flask');
-        return false;
-      }
-      events.push({ t: 'label', id: f.id, text: 'NO ELIXIR' }); // флягу разбивает только эликсир — сухая отскакивает (D-150)
-      slideOff(s, f, fk, Sim.flaskR(s), events);
+    if (dist(f.x, f.y, fk.x, fk.y) <= Sim.flaskR(s) + f.r * 0.5) { // победа (§3): любая жаба; зона растёт к концу матча (D-149)
+      events.push({ t: 'flask', id: f.id, side: f.side });
+      spendCharge(s, f, events, A);
+      finish(s, f.side, events, 'flask');
+      return false;
     }
     var own = AR.flasks[f.side];
     if (dist(f.x, f.y, own.x, own.y) < T.flaskR + f.r) slideOff(s, f, own, T.flaskR, events); // на свою флягу не встать — иначе её можно закрыть телом (D-112)
@@ -397,10 +393,8 @@
     }
     if (cl.t === 'blaze' && cl.side !== f.side) { events.push({ t: 'burn', id: f.id, i: i }); damage(s, f, T.blazeDmg, events, 'burn'); } // горящее поле врага жжёт
     if (!f.alive || cellIdx(f.x, f.y) !== i) { spendCharge(s, f, events, A); return false; } // погибла — уже дома
-    if (!A.dry) { // сухой прыжок — без элемента и реакций (D-141)
-      if (A.combo) fireCombo(s, f, i, dir, events, A); // элемент союзника — реакция там, где кончилась цепочка
-      else if (baseOf(i) < 0) resolveCell(s, f, i, dir, events, A);
-    }
+    if (A.combo) fireCombo(s, f, i, dir, events, A); // элемент союзника — реакция там, где кончилась цепочка
+    else if (baseOf(i) < 0) resolveCell(s, f, i, dir, events, A);
     spendCharge(s, f, events, A);
     return false;
   }
@@ -414,9 +408,9 @@
     events.push({ t: 'push', id: f.id, from: { x: f.x, y: f.y }, to: to, soft: true }); f.x = to.x; f.y = to.y;
   }
   function spendCharge(s, f, events, A) {
-    if (!s.rules.economy || A.dry) return;
+    if (!s.rules.economy) return;
     if (f.ch > 0) f.ch--;
-    events.push({ t: 'spend', id: f.id, ch: f.ch });
+    events.push({ t: 'spend', id: f.id, ch: f.ch, empty: f.ch <= 0 && !Sim.onBase(f) }); // бак кончился в поле — жаба встаёт (D-153)
   }
   function fireCombo(s, f, i, dir, events, A) {
     if (baseOf(i) < 0 && s.cells[i].t !== 'column' && (s.cells[i].el || s.cells[i].t)) setCell(s, i, null, null, -1, events);
@@ -578,14 +572,18 @@
     var mates = s.frogs.filter(function (f) { return f.alive && f.side === side; });
     mates.forEach(function (st) {
       if (st.frozen) return;
-      var ch = st.ch + (next && s.rules.economy && Sim.onBase(st) ? 1 : 0), dry = s.rules.economy && ch <= 0;
-      var R0 = T.jumpR * (dry ? T.dryMul : 1), seen = {}, queue = [{ f: st, path: [{ x: st.x, y: st.y }] }];
+      var start = st, onBase = Sim.onBase(st);
+      if (s.rules.economy && st.ch + (next && onBase ? 1 : 0) <= 0) { // пустая в поле не прыгает (D-153) — только ступенька; к следующему ходу её могут вернуть «⟲ Домой» и сразу прыгнуть с базы
+        if (!next || onBase) return;
+        var p = AR.slots[side][st.slot]; start = { id: st.id, x: p.x, y: p.y };
+      }
+      var R = T.jumpR, seen = {}, queue = [{ f: start, path: [{ x: start.x, y: start.y }] }];
       seen[st.id] = 1;
       while (queue.length) {
-        var n = queue.shift(), R = n.f === st || !T.springboard ? R0 : T.jumpR, d = dist(n.f.x, n.f.y, fk.x, fk.y) - R - fr; // со спины своей — полная дальность (D-151)
-        rings.push({ x: n.f.x, y: n.f.y, r: R, dry: dry });
-        if (!dry && d < best) best = d; // сухая флягу не разобьёт (D-150) — она только ступенька для заряженных
-        if (!dry && d <= 0 && (!win || n.path.length < win.length)) win = n.path.concat([{ x: fk.x, y: fk.y }]);
+        var n = queue.shift(), d = dist(n.f.x, n.f.y, fk.x, fk.y) - R - fr;
+        rings.push({ x: n.f.x, y: n.f.y, r: R });
+        if (d < best) best = d;
+        if (d <= 0 && (!win || n.path.length < win.length)) win = n.path.concat([{ x: fk.x, y: fk.y }]);
         mates.forEach(function (m) { if (!seen[m.id] && dist(n.f.x, n.f.y, m.x, m.y) <= R) { seen[m.id] = 1; queue.push({ f: m, path: n.path.concat([{ x: m.x, y: m.y }]) }); } });
       }
     });

@@ -3,7 +3,7 @@
 var FB = window.FB || {};
 window.FB = FB;
 
-FB.VERSION = '6.0.0';
+FB.VERSION = '6.1.0';
 
 // Мир: координаты = пиксели макета арены × K (art/src/arena.webp, 941×1672)
 FB.K = 1.6;
@@ -23,14 +23,13 @@ FB.T = {
 
   // Прыжок (§7, D-113): дальность у всех жаб одна — 400 (≈3 клетки)
   jumpR: 400, minPull: 0.1,
-  dryMul: 0.5,                         // без эликсира — «сухой» прыжок вдвое короче, без элемента (D-141)
-  springboard: 1,                      // со спины своей жабы прыжок всегда полный, даже сухой (D-151)
   wallBonus: 0.1, maxBounces: 2,       // отскок от стены: остаток дальности +10%, не больше 2 отскоков
   perchH: 14,                          // высота спины союзника: с неё стартует прыжок эстафеты (и пролетает над колоннами, D-145)
   relayAuto: 0.25,                     // не прыгнула со спины до конца хода — автоотскок 25% дальности по ходу (D-110)
 
   // Эликсир (§12–§17, D-141, D-142)
-  tank: 3, recallsPerTurn: 3,          // «⟲ Домой» — сколько угодно своих жаб за ход
+  tank: 3,                             // бак — топливо прыжка: пустой — жаба стоит (D-153)
+  homeFill: 1,                         // «⟲ Домой»: дома бак сразу наливается на столько — можно прыгать в тот же ход (D-153)
   secondBonus: 0,                      // второй ходящий: в свой первый ход база наливает на столько больше (D-152)
   seqLen: 96,                          // последовательность элементов: мешки (каждые 4 подряд — все элементы)
 
@@ -68,6 +67,7 @@ FB.T = {
   botChargeV: 7, botFullTank: 0, botNear: 35, // оценка бота: цена заряда, штраф за полный бак на базе, бонус жабе со своими в досягаемости — строй для эстафет (D-151)
   botRecallGain: 30, botRecallEvery: 4,  // отзыв бота: когда позиция после него заметно лучше и не чаще раза в 4 своих хода (D-121)
   botDelay: 0.3, botAimShow: 0.55,     // паузы бота: перед ходом и показ прицела, с (темп, D-149)
+  firstBotNoise: 2,                    // в первом матче (с подсказками) бот мажет вдвое сильнее (D-154)
   animSpeed: 1
 };
 
@@ -119,17 +119,22 @@ FB.FROGS = {
 };
 FB.FROG_ORDER = ['spring', 'cling', 'bellows', 'spur'];
 
-// Ступени обучения (D-148): механики открываются по одной, как арены в Clash Royale. Ступень 4 — полная игра
-FB.STAGES = [
-  { n: 1, name: 'JUMP & RELAY', els: [], economy: false, perks: false, botNoise: 3,
-    goal: 'Jump with your frogs, land on your own frog to jump again — and reach the enemy flask.' },
-  { n: 2, name: 'ELEMENTS', els: ['fire', 'ice'], economy: false, perks: false, botNoise: 2.5,
-    goal: 'Your landing paints its cell. Land in a cell of the other element — 🔥+❄ ICE BLAST.' },
-  { n: 3, name: 'ELIXIR', els: ['fire', 'ice', 'lightning'], economy: true, perks: false, botNoise: 1.6,
-    goal: 'Each jump spends 1 elixir; your base pours +1 per turn. No elixir — a short dry hop, and only elixir breaks the flask.' },
-  { n: 4, name: 'FULL GAME', els: ['fire', 'ice', 'poison', 'lightning'], economy: true, perks: true, botNoise: 1,
-    goal: 'Four elements, six reactions, and every frog gives a bonus when you bounce off it.' }
-];
+// Подсказки первого матча (D-154): всплывают по ситуации на поле, каждая один раз; вместо ступеней обучения (D-148)
+FB.TIPS = {
+  goal:   { icon: '⚗️', title: 'GOAL', text: 'Land any frog on the <b>enemy flask</b> at the far end — and you win. Don’t let the enemy reach yours.' },
+  jump:   { icon: '🎯', title: 'JUMP', text: 'Drag back from a frog and release. The dotted arc shows where it lands and what happens there.' },
+  elixir: { icon: '🧪', title: 'ELIXIR IS FUEL', text: 'Every jump burns 1 elixir from the frog’s tank ●●○. Frogs standing on your base refuel +1 every turn.' },
+  paint:  { icon: '🎨', title: 'PAINT', text: 'Your landing painted the cell with the frog’s element. Each element is a verb: 🔥 damage · ❄ stop · ☠ zone · ⚡ push.' },
+  relay:  { icon: '↗️', title: 'RELAY', text: 'Land on <b>your own frog</b> — and jump again in the same turn. The fastest way across the board.' },
+  perk:   { icon: '🏹', title: 'PERKS', text: 'The frog you bounce off gives a bonus: 🏹 longer jump · ⚓ can’t be pushed · 🌀 bigger reaction · ☄️ harder hit.' },
+  empty:  { icon: '🪫', title: 'EMPTY TANK', text: 'Out of elixir, a frog can’t jump — its spring is unwound. It still works as a relay point. Tap <b>⟲</b> on its card: it flies home and refuels at once.' },
+  react:  { icon: '⚗️', title: 'REACTION', text: 'Land in a cell of <b>another</b> element — both verbs fire: 🔥+⚡ = damage + push. All six are in ALCHEMY.' },
+  hit:    { icon: '💥', title: 'HIT', text: 'Land on an enemy frog to hit it and knock it back. At 0 HP it goes home with an empty tank.' },
+  check:  { icon: '⚠️', title: 'CHECK', text: 'The enemy can reach your flask next turn! The red dots show its route — hit it, freeze it or wall it off.' },
+  column: { icon: '🧱', title: 'WALL', text: 'A Crystal Column blocks jumps. Only a jump off an ally’s back flies over it.' },
+  next:   { icon: '🔜', title: 'NEXT', text: 'A new tank takes the next element from your NEXT queue on the left. The enemy’s queue is above it.' }
+};
+FB.TIP_CORE = ['goal', 'jump', 'elixir', 'relay', 'empty', 'react', 'hit', 'check']; // все показаны — обучение пройдено
 
 // Арена (§4, D-112): прямоугольное поле 6 × 14 клеток поверх пола макета; две базы с флягами на торцах.
 (function () {

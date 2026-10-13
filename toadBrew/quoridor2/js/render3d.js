@@ -336,7 +336,7 @@
     R.threat = th || null;
     if (!th) return;
     threatGroup = new THREE.Group(); scene.add(threatGroup);
-    (th.rings || []).forEach(function (r) { var m = flatRing(r.x, r.y, r.r - 5, r.r, 0xff5a4a, r.dry ? 0.16 : 0.3); m.renderOrder = 7; threatGroup.add(m); });
+    (th.rings || []).forEach(function (r) { var m = flatRing(r.x, r.y, r.r - 5, r.r, 0xff5a4a, 0.3); m.renderOrder = 7; threatGroup.add(m); });
     function path(p, col) { threatGroup.add(dots(p.map(function (q) { return new THREE.Vector3(q.x, 12, q.y); }), new THREE.Color(col), 14, 26)); }
     if (th.foe) path(th.foe, 0xff4a3a);
     if (th.mine) path(th.mine, 0xffd040);
@@ -391,7 +391,8 @@
     grip:  { f: [38, -18], r: [14, 4], s: 1 },
     dead:  { f: [-34, 20], r: [34, -20], s: 0.95 },
     perch: { f: [-18, 26], r: [26, -30], s: 0.93 },   // сидит на спине союзника, лапы чуть поджаты (D-083)
-    squash: { f: [-40, 46], r: [44, -52], s: 0.86 }   // на неё запрыгнули: лапы под телом, сплющилась
+    squash: { f: [-40, 46], r: [44, -52], s: 0.86 },  // на неё запрыгнули: лапы под телом, сплющилась
+    rest:   { f: [-30, 40], r: [40, -48], s: 0.88 }   // пустой бак в поле (D-153): пружина спущена — осела, лапы поджаты
   };
   function wrapA(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
   function buildFrog(f) {
@@ -485,8 +486,8 @@
 
   function syncFrog(f, d, dt, t, hidden) {
     var F = frogs[f.id] || (frogs[f.id] = buildFrog(f));
-    var rules = app.shown && app.shown.rules || {}, econ = !!rules.economy, dry = econ && f.ch <= 0;
-    var tk = econ ? (f.el && !dry ? f.el : '') : (f.el || 'orig'); // без эликсира — серый резервуар (§37); без экономики — элемент навсегда или исходный арт
+    var rules = app.shown && app.shown.rules || {}, econ = !!rules.economy, empty = econ && f.ch <= 0, stuck = empty && !FB.Sim.onBase(f) && d.alive;
+    var tk = econ ? (f.el && !empty ? f.el : '') : (f.el || 'orig'); // без эликсира — серый резервуар (§37); без экономики — элемент навсегда или исходный арт
     if (F.el !== tk) { F.el = tk; F.mat.map = atlasTex(f.kind, tk); F.mat.needsUpdate = true; if (FB.ELEMENTS[tk]) F.glow.material.color.set(FB.ELEMENTS[tk].color); }
     F.grp.visible = !hidden;
     F.label.style.display = hidden || !d.alive ? 'none' : '';
@@ -498,7 +499,7 @@
     F.lift.rotation.x = F.pitch; // нос вверх на взлёте, вниз на снижении
     F.blob.material.opacity = d.alive ? 0.42 * Math.max(0.15, 1 - hv / 320) : 0.2;
     F.blob.scale.setScalar(Math.max(0.45, 1 - hv / 450));
-    var pose = POSES[d.pose] || POSES.idle, k = Math.min(1, dt * (pose.dir ? 18 : 12));
+    var pose = (stuck && d.pose === 'idle' ? POSES.rest : POSES[d.pose]) || POSES.idle, k = Math.min(1, dt * (pose.dir ? 18 : 12));
     F.order.forEach(function (I) {
       var pc = I.parent ? I.parent.cum : F.rootA;
       if (I.limb) {
@@ -512,7 +513,7 @@
       }
       I.cum = pc + I.cur;
     });
-    var breathe = d.pose === 'idle' && d.alive ? 1 + Math.sin(t * 2.4 + f.id) * 0.018 : 1;
+    var breathe = d.pose === 'idle' && d.alive && !stuck ? 1 + Math.sin(t * 2.4 + f.id) * 0.018 : 1;
     F.sc = (F.sc || 1) + ((pose.s * breathe * (1 + (d.squash || 0))) - (F.sc || 1)) * Math.min(1, dt * 16);
     F.st = (F.st || 0) + ((d.stretch || 0) - (F.st || 0)) * Math.min(1, dt * 14);
     // реакция на отброс (D-108), видна сверху: «желе» — сплющило вдоль тела и раздуло вширь, потом наоборот,
@@ -532,7 +533,8 @@
     if (!d.alive) { F.mat.color.setRGB(0.35, 0.33, 0.32); F.glow.visible = false; }
     else {
       var fl = d.flash || 0; F.dk = (F.dk || 0) + ((d.dark ? 1 : 0) - (F.dk || 0)) * Math.min(1, dt * 8); var sh = 1 - F.dk * 0.5; // тень от жабы сверху (D-083)
-      var iz = f.frozen ? [0.6, 0.85, 1.25] : [1, 1, 1]; // во льду — голубая (D-125)
+      var iz = f.frozen ? [0.6, 0.85, 1.25] : stuck ? [0.62, 0.6, 0.58] : [1, 1, 1]; // во льду — голубая (D-125); пустая в поле — тусклая (D-153)
+      if (stuck && !hidden && T.ambient !== 0 && (!F.puffT || t > F.puffT)) { F.puffT = t + 1.6 + Math.random(); particle(sprite(puffTex(), 0x8a8580, false), d.x, d.y, 30, { life: 1.3, v: { x: 0, y: 50, z: 0 }, s0: 16, s1: 46, ease: true, a0: 0.45 }); } // струйка пара из пустого бака
       F.mat.color.setRGB((1 + fl * 2) * sh * iz[0], (1 + fl * 1.2) * sh * iz[1], (1 + fl * 1.2) * sh * iz[2]);
       F.mat.emissive && F.mat.emissive.setRGB(fl * 0.6, fl * 0.2, fl * 0.2);
       F.glow.visible = !!FB.ELEMENTS[F.el]; F.glow.material.opacity = (0.25 + 0.2 * Math.sin(t * 3 + f.id * 1.7)) * (0.5 + 0.5 * f.ch / T.tank);
@@ -543,9 +545,9 @@
     // подпись над жабой (§37, D-147): элемент и заряды ●●○; без эликсира — «DRY ½»; перк жабы — значком; якорь — ⚓
     var st = rules.perks && FB.FROGS[f.kind].perk ? '<span class="pk">' + FB.FROGS[f.kind].perk.icon + '</span>' : '';
     if (f.frozen) st += '<span class="emp ice">🧊 FROZEN</span>';
-    else if (f.el && !dry) { st += '<span class="elb" style="--c:' + FB.ELEMENTS[f.el].color + '">' + FB.ELEMENTS[f.el].icon + '</span>'; if (econ) { st += '<span class="pips">'; for (var pi = 0; pi < T.tank; pi++) st += '<i class="' + (pi < f.ch ? 'on' : '') + '" style="--c:' + FB.ELEMENTS[f.el].color + '"></i>'; st += '</span>'; } } // крупный бейдж элемента и точки зарядов (D-132)
+    else if (f.el && !empty) { st += '<span class="elb" style="--c:' + FB.ELEMENTS[f.el].color + '">' + FB.ELEMENTS[f.el].icon + '</span>'; if (econ) { st += '<span class="pips">'; for (var pi = 0; pi < T.tank; pi++) st += '<i class="' + (pi < f.ch ? 'on' : '') + '" style="--c:' + FB.ELEMENTS[f.el].color + '"></i>'; st += '</span>'; } } // крупный бейдж элемента и точки зарядов (D-132)
     else if (econ && FB.Sim.onBase(f)) st += '<span class="emp">⏳</span>';
-    else if (econ) st += '<span class="emp dry">DRY ½</span>';
+    else if (econ) st += '<span class="emp empty">🪫 EMPTY</span>'; // пружина спущена: стоит, пока «⟲ Домой» не заправит (D-153)
     if (f.anchor) st += '<span class="emp anc">⚓</span>';
     if (F.stHtml !== st) { F.stHtml = st; F.label.firstChild.innerHTML = st; }
     var w = Math.max(0, f.hp / f.maxHp) * 100;
@@ -658,6 +660,11 @@
     R.ring(x, y, 130, c1, 0.5); setTimeout(function () { R.ring(x, y, 170, c2, 0.6); }, 110);
   };
   // Заморозка (D-129): ледяные осколки вокруг жабы, иней по кругу, белая вспышка
+  // Бак опустел (D-153): серый пых из резервуара, жаба оседает
+  R.emptyFx = function (x, y) {
+    for (var i = 0; i < 6; i++) { var a = i / 6 * 6.28; particle(sprite(puffTex(), 0x9a948c, false), x, y, 26, { life: 0.9, v: { x: Math.cos(a) * 60, y: 70, z: Math.sin(a) * 60 }, drag: 2, s0: 24, s1: 60, ease: true, a0: 0.6 }); }
+    R.ring(x, y, 80, '#8a8580', 0.5);
+  };
   R.freezeFx = function (x, y) {
     for (var i = 0; i < 14; i++) { var a = i / 14 * 6.28, sh = sprite(shardTex(), i % 2 ? 0xd8f6ff : 0x8fdcff); sh.material.rotation = a; particle(sh, x + Math.cos(a) * 30, y + Math.sin(a) * 30, 10, { life: 0.8, v: { x: Math.cos(a) * 40, y: 150 + Math.random() * 60, z: Math.sin(a) * 40 }, drag: 3, s0: 34, s1: 20 }); }
     swirl(x, y, 18, 110, [0xffffff, 0xbfefff], { w: -1, turns: 1, life: 0.7, sz: 14, lift: 30 });

@@ -8,7 +8,7 @@
   // Сколько не хватит до фляги врага за одну активацию следующего хода стороны (эстафета через своих, сухой прыжок короче) — Sim.reach (D-146)
   function remaining(s, side) { return Sim.reach(s, side, true).remaining; }
   AI.remaining = remaining;
-  function reachOf(s, f) { return T.jumpR * (s.rules.economy && f.ch <= 0 && !Sim.onBase(f) ? T.dryMul : 1); }
+  function reachOf(s, f) { return s.rules.economy && f.ch <= 0 && !Sim.onBase(f) ? 0 : T.jumpR; } // пустая в поле не прыгает (D-153)
 
   function evalState(s, side) {
     if (s.phase === 'over') return s.winner === side ? 1e6 : (s.winner === -1 ? 0 : -1e6);
@@ -57,7 +57,7 @@
     s.cells.forEach(function (cl, i) {
       var c = Sim.cellCenter(i), d = Sim.dist(c.x, c.y, f.x, f.y);
       if (d > R || d < 60 || Sim.cellBase(i) >= 0) return;
-      if (cl.el && f.el && cl.el !== f.el && !cl.t && !Sim.isDry(s, f)) add(c.x, c.y, 'react');
+      if (cl.el && f.el && cl.el !== f.el && !cl.t) add(c.x, c.y, 'react');
       if (cl.t === 'jet' && cl.side === side) add(c.x, c.y, 'jet'); // своя струя — бросок вперёд (D-123)
     });
     var N = 16;
@@ -86,15 +86,16 @@
     return { cmd: cmd, v: evalState(c, side) };
   }
 
-  // «⟲ Домой» (§23, D-141): жаба без эликсира в поле — домой за новым баком, если позиция от этого не хуже
-  function recallPick(s, side) {
-    if (!s.frogs.some(function (f) { return f.side === side && Sim.canRecall(s, f); })) return null;
-    if (s.turn - s.recallTurn[side] < 2 * T.botRecallEvery) return null; // не чаще раза в botRecallEvery своих ходов (D-121)
-    // сравнение оценок: позиция после отзыва (жаба дома, начнёт новый бак) против позиции без него
-    var base = evalState(s, side), pick = null, best = T.botRecallGain;
-    s.frogs.forEach(function (f) {
-      if (f.side !== side || !Sim.canRecall(s, f) || Sim.onBase(f)) return;
-      if (f.ch > 0) return; // с зарядами в поле — пусть работает
+  // «⟲ Домой» (§23, D-153): пустая жаба в поле — домой за новым баком. Если прыгнуть некому — обязательно, иначе по выгоде
+  function recallPick(s, side, force) { // force — лучше отозвать пустую, чем пасовать
+    var field = s.frogs.filter(function (f) { return f.side === side && Sim.canRecall(s, f); });
+    if (!field.length) return null;
+    var stuck = !s.frogs.some(function (f) { return f.side === side && Sim.canAct(s, f); });
+    if (!stuck && !force && s.turn - s.recallTurn[side] < 2 * T.botRecallEvery) return null; // по выгоде — не чаще раза в botRecallEvery своих ходов (D-121)
+    // сравнение оценок: позиция после отзыва (жаба дома с новым баком) против позиции без него
+    var base = evalState(s, side), pick = null, best = stuck || force ? -1e9 : T.botRecallGain;
+    field.forEach(function (f) {
+      if (f.ch > 0 && !stuck) return; // с зарядами в поле — пусть работает
       var c = Sim.clone(s); Sim.apply(c, { frog: f.id, mode: 'recall' });
       var g = evalState(c, side) - base;
       if (g > best) { best = g; pick = f; }
@@ -117,7 +118,10 @@
     list.slice(0, T.botDepthTop).forEach(function (e) { if (e.cmd.tag === 'relay') { var d = evalCmd(view, e.cmd, side, 2); if (d) e.v = Math.max(e.v, d.v); } });
     list.sort(function (a, b) { return b.v - a.v; });
     var skip = Sim.clone(view); Sim.apply(skip, { mode: 'skip' }, { noEnd: true });
-    if (!s.pending && list.length && evalState(skip, side) > list[0].v + 1) return { mode: 'skip' };
+    if (!s.pending && list.length && evalState(skip, side) > list[0].v + 1) { // пасовать незачем, если можно вернуть пустую домой — она сразу заправится (D-153)
+      var rc2 = !s.recalls && recallPick(view, side, true);
+      return rc2 ? { frog: rc2.id, mode: 'recall' } : { mode: 'skip' };
+    }
     if (!list.length) return s.pending ? { frog: s.pending.frog, mode: 'end' } : { mode: 'skip' };
     var top = list.filter(function (e) { return e.v >= list[0].v - 6; }).slice(0, T.botTopPick);
     var pick = top[Math.floor(rnd() * top.length)].cmd;
@@ -134,7 +138,7 @@
     var s = Sim.createMatch(teamA, teamB, seed, rules);
     Sim.startMatch(s);
     var r = seed % 233280, rnd = function () { r = (r * 9301 + 49297) % 233280; return r / 233280; };
-    var stats = { relays: 0, reactions: 0, recalls: 0, deaths: 0, terrain: 0, jets: 0, dry: 0, skips: 0, cmds: 0 };
+    var stats = { relays: 0, reactions: 0, recalls: 0, deaths: 0, terrain: 0, jets: 0, empty: 0, skips: 0, cmds: 0 };
     for (var n = 0; n < (maxCmds || 600) && s.phase === 'play'; n++) {
       var cmd = AI.choose(s, s.turnSide, rnd), res = Sim.apply(s, cmd);
       if (!res.ok) res = Sim.apply(s, s.pending ? { frog: s.pending.frog, mode: 'end' } : { mode: 'skip' });
@@ -142,7 +146,7 @@
       res.events.forEach(function (e) {
         if (e.t === 'relay') stats.relays++; if (e.t === 'reaction') stats.reactions++; if (e.t === 'recall') stats.recalls++;
         if (e.t === 'death') stats.deaths++; if (e.t === 'cell' && e.tt) stats.terrain++; if (e.t === 'jet') stats.jets++;
-        if (e.t === 'act' && e.dry) stats.dry++; if (e.t === 'skip') stats.skips++;
+        if (e.t === 'spend' && e.empty) stats.empty++; if (e.t === 'skip') stats.skips++;
       });
     }
     return { winner: s.winner, why: s.why, turns: s.turn, stats: stats };
