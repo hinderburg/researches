@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1c140e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>TOADBREW — Relay Alchemy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Lilita+One&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css?b=6.0.0-1791917681">
+</head>
+<body>
+<div id="app">
+  <canvas id="gl"></canvas>
+  <div id="labels"></div>
+  <div id="loading" class="loading">Brewing…</div>
+
+  <header id="topbar" class="topbar">
+    <div class="logo"><div class="logo-a">T<span class="flask-o">⚗</span>ADBREW</div><div class="logo-b">RELAY ALCHEMY 2</div></div>
+    <button id="btn-help" class="chip">How to play</button>
+  </header>
+
+  <!-- TEAM (§6, §29): три жабы из четырёх, три пары — три свойства -->
+  <section id="team" class="screen meta">
+    <div class="sec-head"><div class="plaque">TEAM</div><div class="counter" id="pick-n">🐸 PICK 3 OF 4</div></div>
+    <!-- по макету автора (D-138): три слота треугольником, между соседними — свойство пары со стрелками к ним -->
+    <div id="stagebar" class="stagebar"></div>
+    <div class="tri" id="teamwrap">
+      <svg id="tarrows" class="tarrows"></svg>
+      <button class="tslot" data-i="0"></button><button class="tslot" data-i="1"></button><button class="tslot" data-i="2"></button>
+      <div class="syn2 perkb" data-s="0"></div><div class="syn2 perkb" data-s="1"></div><div class="syn2 perkb" data-s="2"></div>
+    </div>
+    <!-- попап выбора жабы для слота (D-138) -->
+    <div id="pickpop" class="pickpop hidden"><div class="pp-card"><div class="pp-h" id="pp-h">CHOOSE A FROG</div><div id="roster" class="pp-grid"></div><button id="pp-clear" class="chip">Empty this slot</button></div></div>
+  </section>
+
+  <!-- ALCHEMY (§15, §18, §36): общая последовательность и реакции на сетке -->
+  <section id="alchemy" class="screen meta hidden">
+    <div class="sec-head"><div class="plaque">⚗ ALCHEMY</div><div class="counter">ELEMENT = VERB</div></div>
+    <div class="panel-box">
+      <div class="box-head">⚗ ELIXIR <span>A frog on your base gets +1 elixir every turn, up to 3. One activation (a whole relay chain) spends 1. No elixir — a dry hop: half range, no paint, but it still hits and relays. Only a frog with elixir breaks the enemy flask. ⟲ on a frog’s card sends it home for a new tank.</span></div>
+      <div id="verbs" class="verbs"></div>
+      <div class="box-head">▦ REACTION = VERB + VERB <span>Your final landing paints its cell. Land in a cell of <b>another</b> element — or bounce off an ally with another element — and the two verbs fire together. Base cells never change.</span></div>
+      <div id="reactions" class="reactions"></div>
+    </div>
+  </section>
+
+  <nav id="nav" class="nav">
+    <button class="tab" data-tab="alchemy"><span class="ti">⚗</span>ALCHEMY</button>
+    <button id="btn-battle" class="battle-btn"><span>⚔</span> BATTLE</button>
+    <button class="tab on" data-tab="team"><span class="ti">👥</span>TEAM</button>
+  </nav>
+
+  <!-- Боевой HUD (§37) -->
+  <div id="hud" class="hidden">
+    <div class="top">
+      <div class="cards3" id="cards-1"></div>
+      <div class="turnbox" id="turnbox">
+        <div class="tb-l" id="tb-l">TURN</div><div class="tb-n" id="turn-n">1</div>
+        <div class="tring off" id="tring"><svg viewBox="0 0 40 40"><circle class="bg" cx="20" cy="20" r="17"/><circle class="fg" id="tring-fg" cx="20" cy="20" r="17"/></svg><span id="tring-n">20</span></div>
+      </div>
+    </div>
+        <div id="seq" class="seq"></div>
+    <div id="notice" class="notice hidden"></div>
+    <div class="zoomer"><button id="z-in">＋</button><button id="z-out">－</button><button id="z-all" title="Whole board">▦</button></div>
+    <div class="bottom" id="bottom">
+            <div class="cards3 mine" id="cards-0"></div>
+      <div class="actbar">
+        <button id="btn-menu" class="gear" aria-label="Menu">⚙</button>
+        <div class="pvcard" id="pvcard"></div>
+        <div class="acts">
+                    <button id="btn-skip" class="skip">PASS</button>
+        </div>
+      </div>
+      <div class="timer" id="timer"><b><i></i></b><span>20</span></div>
+    </div>
+  </div>
+
+  <div id="banner" class="banner"></div>
+
+  <!-- Совет перед матчем (D-088): главное правило режима -->
+  <section id="tip" class="tipbox hidden">
+    <div class="tip-card">
+      <div class="tip-h" id="tip-h">RELAY ALCHEMY</div>
+      <div class="tip-ic" id="tip-ic">🐸➜⚗️</div>
+      <div class="tip-g">🎯 GOAL</div>
+      <div class="tip-n" id="tip-n">JUMP A FROG INTO THE ENEMY FLASK</div>
+      <div class="tip-t" id="tip-t"></div>
+      <div class="tip-bar"><i></i></div>
+      <div class="tip-s">tap to start</div>
+    </div>
+  </section>
+
+  <section id="result" class="screen hidden">
+    <div class="res-title" id="res-title">VICTORY</div>
+    <div class="res-teams">
+      <div class="res-team mine"><div class="rt-h">⚔ YOUR TEAM</div><div class="rt-f" id="res-0"></div></div>
+      <div class="res-team enemy"><div class="rt-h">⚔ ENEMY TEAM</div><div class="rt-f" id="res-1"></div></div>
+    </div>
+    <div class="res-sub" id="res-sub"></div>
+    <button id="btn-continue" class="big-btn">⚔ CONTINUE</button>
+    <button id="btn-rematch" class="chip">Rematch</button>
+  </section>
+
+  <section id="menu" class="modal hidden">
+    <div class="panel">
+      <h2>Paused</h2>
+      <button id="m-resume" class="big-btn">Resume</button>
+      <button id="m-speed" class="chip wide">Animation speed: x1</button>
+      <button id="m-help" class="chip wide">How to play</button>
+      <button id="m-quit" class="chip wide danger">Quit match</button>
+    </div>
+  </section>
+
+  <section id="help" class="modal hidden">
+    <div class="panel help">
+      <h2>How to play</h2>
+      <p><b>Goal.</b> Land a frog <b>with elixir</b> on the <b>enemy Base Flask</b> at the far end. 3 vs 3; each turn you activate one frog. From turn 24 both flask zones grow — matches don’t drag.</p>
+      <p><b>Jump.</b> Drag back from a frog, aim, release. Every frog has the same range. The arc, bounces, the cell you land in and what happens there show before you let go.</p>
+      <p><b>Relay.</b> Land on your own frog — jump again in the same activation, always at full range. Each ally once. The frog you bounce off gives its <b>perk</b> (🏹 longer jump, ⚓ can’t be pushed, 🌀 bigger reaction, ☄️ harder hit). Bounce off an ally with <b>another element</b> — the chain ends with their reaction. Landing on an enemy hits and knocks it back.</p>
+      <p><b>Elixir.</b> A frog on your base gets +1 per turn, up to 3 (●●●). An activation spends 1. A new tank takes the next element from your <b>NEXT</b> queue on the left. No elixir — a <b>dry hop</b>: half range, no paint, but it hits and relays. ⟲ on a frog’s card sends it home for a new tank — free, any number per turn.</p>
+      <p><b>Cells.</b> Each element is a verb: 🔥 damage, ❄ stop, ☠ zone, ⚡ push. Land in a cell of another element — both verbs fire (see ALCHEMY). Tap any cell to see what it does.</p>
+      <p><b>Walls.</b> A Crystal Column is a wall: only a jump off an ally’s back gets over it. A column can never close the last path to a flask.</p>
+      <p><b>Check.</b> On your turn, red rings show where the enemy reaches next turn; red dots — its route to your flask (⚠ CHECK). Gold dots — your route to its flask.</p>
+      <p><b>Death.</b> At 0 HP a frog goes home with an empty tank.</p>
+      <p><b>Camera.</b> Drag the floor to scroll, pinch / wheel / ＋－ to zoom, ▦ to see the whole board.</p>
+      <button id="h-close" class="big-btn">Got it</button>
+    </div>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>window.FB_BUILD = '6.0.0-1791917681'; // tools/deploy.sh ставит сюда метку сборки — браузер не берёт старые файлы из кэша</script>
+<script src="js/config.js?b=6.0.0-1791917681"></script>
+<script src="js/sim.js?b=6.0.0-1791917681"></script>
+<script src="js/ai.js?b=6.0.0-1791917681"></script>
+<script src="js/render3d.js?b=6.0.0-1791917681"></script>
+<script src="js/main.js?b=6.0.0-1791917681"></script>
+</body>
+</html>
