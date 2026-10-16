@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <title>Sea Duel</title>
+    <!-- Полный экран с ярлыка «На экран Домой»: на iPhone Fullscreen API для страниц нет, это единственный путь. -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <style>
+      /*
+        The stock template lays the player out as a fixed 1024x576 box, absolutely
+        positioned and centred with a translate. Absolute positioning takes it out of the flow, so the
+        page has no height of its own and cannot scroll - and centring a box taller than the window puts
+        its top edge at a negative offset. On any screen shorter than the canvas, the top of the game was
+        therefore both cut off and unreachable: nothing to scroll, nowhere to scroll to.
+
+        Here the canvas is fitted to the window instead, keeping the aspect the camera framing is built
+        around. Whichever of the two limits binds first decides the size, so the player is letterboxed
+        rather than cropped or stretched.
+      */
+      :root {
+        --app-height: 100vh;
+        --ground: #14110c;
+      }
+
+      /* Mobile browsers count the space under their own collapsing toolbars in 100vh, which hides the
+         top of the canvas behind the address bar. dvh is the height actually on screen. */
+      @supports (height: 100dvh) {
+        :root { --app-height: 100dvh; }
+      }
+
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: var(--ground);
+        overflow: hidden;
+      }
+
+      #unity-container {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      #unity-canvas {
+        display: block;
+        background: var(--ground);
+        width: min(100vw, calc(var(--app-height) * 1024 / 576));
+        height: min(var(--app-height), calc(100vw * 576 / 1024));
+
+        /* The game is played by dragging and tapping on the arena. Without this the browser reads a
+           drag as a scroll or a pinch and takes the input for itself. */
+        touch-action: none;
+      }
+
+      #unity-canvas:focus { outline: none; }
+
+      #unity-loading {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: min(60vw, 240px);
+        font: 14px/1.4 system-ui, sans-serif;
+        color: #c9bda2;
+        text-align: center;
+      }
+
+      #unity-loading-track {
+        margin-top: 10px;
+        height: 4px;
+        border-radius: 2px;
+        background: #2b2620;
+        overflow: hidden;
+      }
+
+      #unity-loading-fill {
+        width: 0%;
+        height: 100%;
+        background: #a6392c;
+        transition: width 0.15s linear;
+      }
+
+      #unity-warning {
+        position: fixed;
+        left: 50%;
+        top: 12px;
+        transform: translateX(-50%);
+        max-width: 90vw;
+        font: 13px/1.4 system-ui, sans-serif;
+        z-index: 2;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="unity-container">
+      <canvas id="unity-canvas" width="1024" height="576" tabindex="-1"></canvas>
+    </div>
+
+    <div id="unity-loading">
+      Sea Duel
+      <div id="unity-loading-track"><div id="unity-loading-fill"></div></div>
+    </div>
+
+    <div id="unity-warning"></div>
+
+    <script>
+      var canvas = document.querySelector("#unity-canvas");
+
+      function unityShowBanner(msg, type) {
+        var banner = document.querySelector("#unity-warning");
+        var div = document.createElement("div");
+        div.innerHTML = msg;
+        div.style.cssText = "padding:8px;border-radius:8px;margin-bottom:6px;background:" +
+          (type === "error" ? "#a6392c" : type === "warning" ? "#8a6410" : "#2b2620") + ";color:#fff";
+        banner.appendChild(div);
+        if (type !== "error") setTimeout(function () { banner.removeChild(div); }, 5000);
+      }
+
+      // Обход кэша GitHub Pages/браузера (ловушка из tech-profile): index.html не меняется между
+      // деплоями, а имя каталога билда читается из build.txt с антикэш-параметром — tools/deploy.sh
+      // пишет туда Build-<epoch>. Локально build.txt нет → каталог Build.
+      var buildUrl = (function () {
+        try {
+          var x = new XMLHttpRequest(); x.open("GET", "build.txt?t=" + Date.now(), false); x.send();
+          if (x.status === 200 && /^Build[\w-]*$/.test(x.responseText.trim())) return x.responseText.trim();
+        } catch (e) {}
+        return "Build";
+      })();
+      // М47, телефон: холст Unity по умолчанию рисуется в плотности экрана устройства — на телефоне с DPR 3
+      // это втрое больше пикселей по каждой оси, вдевятеро больше работы на кадр. Держим буфер рисования сами:
+      // плотность не выше 2 и не больше бюджета пикселей. CSS растягивает холст как прежде.
+      // М53 (автор: «можем пиксельность эту убрать»): бюджет поднят до 2.1 млн — холст перестал быть меньше
+      // своего места на экране, и HUD с текстом рисуется точка в точку. Мир при этом дешевле холста:
+      // URP рисует сцену в render scale 0.75 и растягивает её FSR'ом, а интерфейс (Screen Space - Overlay)
+      // идёт мимо этого и остаётся резким. Бюджет подкручивается ссылкой: ?px=900000 — мягче к телефону.
+      var MAX_PIXELS = (function () {
+        var m = /[?&]px=(\d+)/.exec(location.search);
+        return m ? Math.max(120000, Math.min(4000000, parseInt(m[1], 10))) : 2100000;   // ~1920×1094
+      })();
+      function sizeCanvas() {
+        var rect = canvas.getBoundingClientRect();
+        var dpr = Math.min(window.devicePixelRatio || 1, 2);
+        var w = Math.max(1, Math.round(rect.width * dpr));
+        var h = Math.max(1, Math.round(rect.height * dpr));
+        var scale = Math.sqrt(MAX_PIXELS / (w * h));
+        if (scale < 1) { w = Math.max(1, Math.round(w * scale)); h = Math.max(1, Math.round(h * scale)); }
+        if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+      }
+      sizeCanvas();
+      window.addEventListener("resize", sizeCanvas);
+      window.addEventListener("orientationchange", sizeCanvas);
+
+      // Полный экран (автор: «чтобы игра всегда открывалась на полный экран»). Сама страница войти в него
+      // не может — браузер разрешает это только из жеста пользователя, — поэтому вход по первому касанию,
+      // клику или клавише. На телефоне — и снова после случайного выхода (свайп от края, «назад»); с мышью —
+      // один раз за загрузку, чтобы Esc оставался выходом. Альбомный кадр заодно фиксирует ориентацию
+      // (Android). На холсте ничего не перехватываем: касание доходит до игры как обычно. ?fs=0 — выключить.
+      (function () {
+        if (/[?&]fs=0(&|$)/.test(location.search)) return;
+        var root = document.documentElement;
+        var request = root.requestFullscreen || root.webkitRequestFullscreen;
+        if (!request) return;   // iPhone: только через ярлык на экране «Домой», см. meta в head
+        var orientation = 1024 >= 576 ? "landscape" : "portrait";
+        var tried = false, busy = false;
+
+        function isFullscreen() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+
+        function lockOrientation() {
+          try {
+            if (screen.orientation && screen.orientation.lock)
+              screen.orientation.lock(orientation).catch(function () {});
+          } catch (e) {}
+        }
+
+        function enter(e) {
+          if (busy || isFullscreen()) return;
+          var touch = e.type === "touchend" || e.pointerType === "touch" || e.pointerType === "pen";
+          if (tried && !touch) return;
+          tried = true;
+          busy = true;
+          var done = function () { busy = false; };
+          try {
+            var p = request.call(root, { navigationUI: "hide" });
+            if (p && p.then) p.then(function () { done(); lockOrientation(); }, done);
+            else { done(); lockOrientation(); }
+          } catch (err) { done(); }
+        }
+
+        // На отпускании, а не на нажатии: касание даёт странице право на полный экран только при отпускании.
+        document.addEventListener("pointerup", enter, true);
+        document.addEventListener("touchend", enter, true);
+        document.addEventListener("keydown", function (e) { if (e.key !== "Escape") enter(e); }, true);
+      })();
+
+      var config = {
+        matchWebGLToCanvasSize: false,
+        arguments: [],
+        dataUrl: buildUrl + "/WebGL.data.unityweb",
+        frameworkUrl: buildUrl + "/WebGL.framework.js.unityweb",
+        codeUrl: buildUrl + "/WebGL.wasm.unityweb",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "TashaDz",
+        productName: "Sea Duel",
+        productVersion: "iteration 4932f32 2026-10-17 00:00",
+        showBanner: unityShowBanner,
+      };
+
+      var script = document.createElement("script");
+      script.src = buildUrl + "/WebGL.loader.js";
+      script.onload = function () {
+        createUnityInstance(canvas, config, function (progress) {
+          document.querySelector("#unity-loading-fill").style.width = (100 * progress) + "%";
+        }).then(function () {
+          document.querySelector("#unity-loading").style.display = "none";
+          canvas.focus();
+        }).catch(function (message) {
+          unityShowBanner(message, "error");
+        });
+      };
+      document.body.appendChild(script);
+    </script>
+  </body>
+</html>
