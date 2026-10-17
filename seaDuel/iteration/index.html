@@ -97,12 +97,43 @@
         font: 13px/1.4 system-ui, sans-serif;
         z-index: 2;
       }
+
+      /* v0.4.1 (автор: «открытие на весь экран по умолчанию на старте»): браузер даёт полный экран только из
+         касания — поэтому сразу после загрузки заставка ловит первое касание и разворачивает игру. */
+      #tap-to-play {
+        position: fixed;
+        inset: 0;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: rgba(10, 18, 26, 0.62);
+        color: #f3ead6;
+        font: 600 40px/1.2 system-ui, sans-serif;
+        z-index: 3;
+        cursor: pointer;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      #tap-to-play .cta {
+        margin-top: 18px;
+        padding: 12px 34px;
+        border-radius: 999px;
+        background: #2f8fd6;
+        color: #fff;
+        font-size: 22px;
+        animation: tap-pulse 1.2s ease-in-out infinite;
+      }
+      @keyframes tap-pulse { 50% { transform: scale(1.06); } }
     </style>
   </head>
   <body>
     <div id="unity-container">
       <canvas id="unity-canvas" width="1024" height="576" tabindex="-1"></canvas>
     </div>
+
+    <div id="tap-to-play"><div>Sea Duel</div><div class="cta">Tap to play</div></div>
 
     <div id="unity-loading">
       Sea Duel
@@ -198,6 +229,22 @@
         document.addEventListener("pointerup", enter, true);
         document.addEventListener("touchend", enter, true);
         document.addEventListener("keydown", function (e) { if (e.key !== "Escape") enter(e); }, true);
+
+        // v0.4.1: заставка «Tap to play» сразу после загрузки — первое касание разворачивает игру (оно же доходит
+        // до слушателей выше) и в игру не проходит, так что случайно ничего в меню не нажимается.
+        var tap = document.querySelector("#tap-to-play");
+        window.showTapToPlay = function () {
+          if (!tap || isFullscreen()) return;
+          tap.style.display = "flex";
+          var hide = function (e) {
+            enter(e);
+            tap.style.display = "none";
+            tap.removeEventListener("pointerup", hide);
+            tap.removeEventListener("touchend", hide);
+          };
+          tap.addEventListener("pointerup", hide);
+          tap.addEventListener("touchend", hide);
+        };
       })();
 
       var config = {
@@ -209,7 +256,7 @@
         streamingAssetsUrl: "StreamingAssets",
         companyName: "TashaDz",
         productName: "Sea Duel",
-        productVersion: "iteration 3868b0e 2026-10-17 01:51",
+        productVersion: "iteration 539d5a3 2026-10-17 18:30",
         showBanner: unityShowBanner,
       };
 
@@ -221,6 +268,7 @@
         }).then(function () {
           document.querySelector("#unity-loading").style.display = "none";
           canvas.focus();
+          if (window.showTapToPlay) window.showTapToPlay();
         }).catch(function (message) {
           unityShowBanner(message, "error");
         });
